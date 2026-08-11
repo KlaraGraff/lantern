@@ -75,7 +75,7 @@ export default function DeleteCardDialog({ slotLabel, onCancel, onMoveInstead, o
             {t("profile.deleteCard.suggestMove")}
           </p>
         </div>
-        <div className="mt-3.5 flex items-center gap-2 border-t border-border-light px-5 py-3.5">
+        <div className="mt-3.5 flex flex-wrap items-center gap-2 border-t border-border-light px-5 py-3.5">
           <Button variant="ghost" size="sm" disabled={busy !== null} onClick={onCancel}>{t("common.cancel")}</Button>
           <span className="flex-1" />
           <Button
@@ -91,7 +91,7 @@ export default function DeleteCardDialog({ slotLabel, onCancel, onMoveInstead, o
             type="button"
             disabled={busy !== null}
             onClick={() => void runDelete()}
-            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-danger px-3 text-[13px] font-medium text-white transition-colors hover:bg-danger-hover disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-danger px-3 text-[13px] font-medium text-white transition-colors hover:bg-danger-hover disabled:pointer-events-none disabled:opacity-50 touch:h-11 touch:px-3.5"
           >
             {busy === "delete" && <Loader2 size={14} className="animate-spin" />}
             {t("common.delete")}

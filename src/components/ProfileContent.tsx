@@ -457,14 +457,17 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
       <header className={`relative shrink-0 border-b border-border px-page pb-4 ${embedded ? "pt-4" : "pt-titlebar"}`}>
         {!embedded && <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />}
-        <div className="flex items-start justify-between gap-4">
+        {/* Title beside buttons needs about 500px. Inside the settings modal
+            on a phone there are roughly 310px, and the two buttons take 200 of
+            them — so the row becomes two rows, title first. */}
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
           <div className="min-w-0">
             <h1 className={`${embedded ? "text-[18px]" : "text-[24px]"} font-semibold text-text-primary`}>{t("profile.title")}</h1>
             <p className="mt-1 max-w-[58ch] text-[13px] leading-[1.6] text-text-secondary">
               {state.enabled ? t("profile.subtitle") : t("profile.subtitleOff")}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {/* Off means the summariser is not running; offering to run it once
                 anyway would contradict the line right above. */}
             <Button
@@ -580,7 +583,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                 <p className="mt-1.5 text-[11.5px] leading-[1.6] text-warning">{t("profile.yourText.softHint")}</p>
               )}
               {saveFailed && <p className="mt-1.5 text-[11.5px] text-danger-text">{t("profile.yourText.saveFailed")}</p>}
-              <div className="mt-2.5 flex items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <Button size="sm" disabled={saving} onClick={() => void attemptSave()}>
                   {saving && <Loader2 size={14} className="animate-spin" />}
                   {t("common.save")}
@@ -663,7 +666,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                   const expanded = expandedGhosts.has(card.slot);
                   return (
                     <div key={card.slot} className="rounded-xl border border-dashed border-border bg-bg-muted p-3.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Icon size={14} className="shrink-0 text-text-muted" />
                         <h5 className="text-[13px] font-semibold text-text-muted">{label}</h5>
                         <span className="inline-flex items-center rounded-md bg-accent-bg px-1.5 py-0.5 text-[10.5px] font-semibold text-accent-text">
@@ -730,7 +733,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                         <button
                           type="button"
                           onClick={() => toggleEvidenceExpanded(card.slot)}
-                          className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-text-muted hover:text-text-secondary"
+                          className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-text-muted hover:text-text-secondary touch:min-h-11"
                         >
                           {expandedEvidence.has(card.slot) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                           {expandedEvidence.has(card.slot) ? t("profile.collapse") : t("profile.expand")}
@@ -791,14 +794,14 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
         </div>
       </div>
 
-      <div className="flex items-center gap-2.5 border-t border-border bg-bg-muted px-page py-3 text-[11.5px] text-text-muted">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-border bg-bg-muted px-page py-3 text-[11.5px] text-text-muted">
         <span>{t("profile.footer.autoAnalysisHint")}</span>
         <span className="flex-1" />
         {!nothingToDelete && (
           <button
             type="button"
             onClick={() => setConfirmingDeleteAll(true)}
-            className="text-[12px] font-medium text-danger-text hover:opacity-75"
+            className="text-[12px] font-medium text-danger-text hover:opacity-75 touch:inline-flex touch:min-h-11 touch:items-center"
           >
             {t("profile.deleteAll.trigger")}
           </button>

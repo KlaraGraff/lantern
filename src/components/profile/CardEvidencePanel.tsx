@@ -199,7 +199,10 @@ function ExampleSourceBody({ payload }: { payload: ExampleSourceEvidence }) {
         {books.map((book, index) => (
           <li key={index} className="flex items-baseline gap-2 rounded-md bg-bg-surface px-2 py-1.5">
             <span className="min-w-0 flex-1 truncate text-[11.8px] text-text-primary">{book.title}</span>
-            <span className="shrink-0 text-[11.2px] text-text-muted">{book.author}</span>
+            {/* Capped rather than `shrink-0`: a long author name would
+                otherwise eat the whole row on a phone and leave the title,
+                which is what the row is about, truncated to nothing. */}
+            <span className="max-w-[40%] shrink-0 truncate text-[11.2px] text-text-muted">{book.author}</span>
             <span className="shrink-0 text-[11px] tabular-nums text-text-placeholder">
               {t("profile.evidence.exampleSource.share", { share: Math.round((book.share ?? 0) * 100) })}
             </span>

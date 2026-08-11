@@ -36,7 +36,7 @@ export default function InjectionPreviewBlock({ preview, enabled }: InjectionPre
 
   return (
     <section className="mb-6 rounded-xl border border-soft-lilac bg-bg-muted p-3.5">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Sparkles size={14} className="shrink-0 text-text-secondary" />
         <h2 className="text-[13px] font-semibold tracking-tight text-text-primary">
           {t("profile.injection.heading")}
