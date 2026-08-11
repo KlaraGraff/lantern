@@ -15,6 +15,7 @@ import {
 import {
   parseReaderBindings,
   SHOW_MENU_SHORTCUTS_SETTING_KEY,
+  menuShortcutsVisible,
   type ReaderActionBinding,
 } from "../../components/reader-bindings";
 import {
@@ -75,7 +76,7 @@ export function useReadingAssistanceSettings() {
     const nextBindings = parseReaderBindings(settings.reader_bindings).bindings;
     readerBindingsRef.current = nextBindings;
     setReaderBindings(nextBindings);
-    setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
+    setShowMenuShortcuts(menuShortcutsVisible(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY]));
     setMarkerStyle(nextMarkerStyle);
     setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config));
     setPassiveVocab(parsePassiveVocabSettings(settings));

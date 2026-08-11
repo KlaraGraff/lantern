@@ -1,10 +1,33 @@
 import type { InteractionKind } from "./reader-interaction.ts";
 import { platform } from "../services/platform.ts";
+import { isCoarsePointer } from "../hooks/useCoarsePointer.ts";
 
 export const DEFAULT_PREVIOUS_PAGE_BINDING = "key:ArrowLeft";
 export const DEFAULT_NEXT_PAGE_BINDING = "key:ArrowRight";
 export const READER_BINDINGS_SETTING_KEY = "reader_bindings";
 export const SHOW_MENU_SHORTCUTS_SETTING_KEY = "show_menu_shortcuts";
+
+/**
+ * Whether the selection menu prints each row's shortcut on its right edge.
+ *
+ * Unset means "whatever suits the thing you are touching it with". Under a
+ * finger there are no keys to press and no ⌘ to press them with, so every hint
+ * is a dead label in the narrowest column the app has — and the reserved ⌘C on
+ * Copy is printed whether or not a key is bound, so the menu advertises a
+ * chord the device cannot produce. Under a mouse they are the fastest way to
+ * learn the bindings, so they stay on.
+ *
+ * A default, not a gate, and deliberately so: an iPad with a Magic Keyboard
+ * reports a coarse pointer and can still press ⌘C, so the toggle in
+ * 设置 · 工具 wins in both directions the moment it is touched. Same reasoning
+ * as the "not a capability" note in `services/platform.ts` — keyboard-
+ * dependence is not platform-dependence.
+ */
+export function menuShortcutsVisible(stored: string | undefined): boolean {
+  if (stored === "true") return true;
+  if (stored === "false") return false;
+  return !isCoarsePointer();
+}
 
 export type BuiltInReaderActionId = "lookup" | "speak" | "translate" | "collect" | "highlight" | "copy" | "ask_ai" | "explain";
 export type ReaderActionId = BuiltInReaderActionId | `custom_${string}`;

@@ -51,6 +51,7 @@ import {
   parseReaderBindings,
   READER_BINDINGS_SETTING_KEY,
   SHOW_MENU_SHORTCUTS_SETTING_KEY,
+  menuShortcutsVisible,
   type ReaderActionBinding,
 } from "../reader-bindings";
 import {
@@ -266,7 +267,7 @@ export default function ToolsSettings({
     setDictionaryLookupEnabled(settings.dictionary_lookup_enabled !== "false");
     setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
     setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
-    setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
+    setShowMenuShortcuts(menuShortcutsVisible(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY]));
     setReaderBindings(parseReaderBindings(settings[READER_BINDINGS_SETTING_KEY]).bindings);
     appliedRef.current = appliedSnapshot(REHYDRATION_KEYS, settings);
     hydratedRef.current = true;
@@ -316,7 +317,7 @@ export default function ToolsSettings({
           setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
           break;
         case "menuShortcuts":
-          setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
+          setShowMenuShortcuts(menuShortcutsVisible(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY]));
           break;
         case "bindings":
           setReaderBindings(parseReaderBindings(settings[READER_BINDINGS_SETTING_KEY]).bindings);

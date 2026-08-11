@@ -28,3 +28,12 @@ const getSnapshot = () => getCoarsePointerQuery()?.matches === true;
 export function useCoarsePointer(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
+
+/**
+ * The same answer outside React, for code that resolves a value once rather
+ * than re-rendering on it — a setting's default, say. Asks the same query, so
+ * it can never disagree with the hook or the stylesheet.
+ */
+export function isCoarsePointer(): boolean {
+  return getSnapshot();
+}

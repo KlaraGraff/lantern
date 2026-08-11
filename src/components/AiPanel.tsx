@@ -8,6 +8,8 @@ import { timeAgo } from "../utils/timeAgo";
 import MessageBubble from "./MessageBubble";
 import type { AiChatScope, CitedSource, ContextKind, QuotedSource } from "../hooks/useAiChat";
 import IndexManagerModal from "./IndexManagerModal";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { isSendKey } from "./chat-input-keys";
 
 interface AiPanelProps {
   bookId?: string;
@@ -140,6 +142,7 @@ interface ComposerQuote {
 
 function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onLookupWord, onSelectText }: AiPanelProps) {
   const { t } = useTranslation();
+  const coarsePointer = useCoarsePointer();
 
   const SUGGESTED_PROMPTS = [
     t("ai.prompt.summarize"),
@@ -298,7 +301,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (isSendKey(e, coarsePointer)) {
       e.preventDefault();
       handleSend();
     } else if (e.key === "Escape" && quoteChips.length > 0) {
@@ -598,7 +601,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className="text-[12px] text-text-muted truncate">
-            {t("ai.sendHint")}
+            {t(coarsePointer ? "ai.sendHintTouch" : "ai.sendHint")}
           </p>
           <ScopePicker scope={scope} onChange={setScope} />
         </div>

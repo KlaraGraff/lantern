@@ -4,6 +4,7 @@ import { usePronunciation } from "./speech/usePronunciation";
 import { GLANCE_SAFE_ATTR } from "./dictionary-glance";
 import { prefersReducedMotion } from "./page-turn-transition";
 import { motionDuration, motionEasing } from "./motion";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 
 export interface DictionaryGroup {
   pos: string;
@@ -104,6 +105,7 @@ export default function DictionaryCard({
   showAiHint: boolean;
 }) {
   const { t } = useTranslation();
+  const coarsePointer = useCoarsePointer();
   const [expanded, setExpanded] = useState(false);
   const [clippedSenses, setClippedSenses] = useState(0);
   const sensesRef = useRef<HTMLDivElement>(null);
@@ -205,9 +207,11 @@ export default function DictionaryCard({
     return () => animation.cancel();
   }, [expanded]);
 
-  const aiHint = t("dictionary.askAiHint", {
-    defaultValue: "双击让 AI 告诉你这里是哪个意思",
-  });
+  // A finger does not double-click, it double-taps — and iOS names that
+  // gesture 「轻点两下」, not 「双击」.
+  const aiHint = coarsePointer
+    ? t("dictionary.askAiHintTouch")
+    : t("dictionary.askAiHint");
 
   return (
     <div className="mx-1 mb-1 border-b border-border-light px-2 pb-2 pt-1.5">

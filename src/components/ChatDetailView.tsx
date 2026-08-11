@@ -9,6 +9,8 @@ import type { ChatSummary } from "../hooks/useChats";
 import Button from "./ui/Button";
 import MessageBubble from "./MessageBubble";
 import { TOP_INSET } from "../utils/top-inset";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { isSendKey } from "./chat-input-keys";
 
 interface ChatDetailViewProps {
   chat: ChatSummary;
@@ -19,6 +21,7 @@ interface ChatDetailViewProps {
 export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDetailViewProps) {
   const { t } = useTranslation();
   const openInReader = useOpenBook();
+  const coarsePointer = useCoarsePointer();
   const {
     messages, streaming, send, initialize, swapAlias,
     chatId, chats, titling, initializing, loadChat, deleteChat, renameChat,
@@ -54,10 +57,9 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (!isSendKey(e, coarsePointer)) return;
+    e.preventDefault();
+    handleSend();
   };
 
   const handleTitleSubmit = () => {
@@ -213,7 +215,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
           </button>
         </div>
         <p className="text-[12px] text-text-muted">
-          {t("ai.sendHint")}
+          {t(coarsePointer ? "ai.sendHintTouch" : "ai.sendHint")}
         </p>
       </div>
 
