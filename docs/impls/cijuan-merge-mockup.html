@@ -395,6 +395,83 @@
   .toast{display:inline-flex;align-items:center;gap:8px;background:var(--text-primary);color:var(--bg-surface);
     border-radius:9999px;padding:8px 15px;font-size:12.8px;box-shadow:var(--shadow-context)}
 
+  /* ══ v2 新增 ══ */
+
+  /* 复习面板右上角双入口 */
+  .mheadrow{display:flex;align-items:flex-start;gap:16px}
+  .mheadrow .spacer{flex:1}
+  .entrybtns{display:flex;align-items:center;gap:8px;flex:none;padding-top:4px}
+  .btn .cnt{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;
+    background:color-mix(in srgb,currentColor 14%,transparent);border-radius:9999px;padding:1px 7px}
+  .btn.secondary .cnt{background:var(--bg-input);color:var(--text-muted)}
+
+  /* 词卷页 / 翻卡页的页内导航 */
+  .fnav{display:inline-flex;background:var(--bg-input);border-radius:8px;padding:3px;gap:2px}
+  .fnav span{font-size:13px;font-weight:500;color:var(--text-secondary);padding:4px 13px;border-radius:6px;
+    letter-spacing:-.15px;display:inline-flex;align-items:center;gap:6px}
+  .fnav span.on{background:var(--bg-surface);color:var(--accent-text);font-weight:600;box-shadow:var(--shadow-card)}
+  .fnav span .c{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+
+  /* ── 试卷感卷面：版式仿 QuizView，视觉是 Lantern ── */
+  .tabs2{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);margin-bottom:20px}
+  .tabs2 button{border:1px solid transparent;border-bottom:0;background:transparent;color:var(--text-muted);
+    border-radius:8px 8px 0 0;height:34px;padding:0 15px;font-size:13.5px;font-weight:500;font-family:inherit;
+    cursor:pointer;display:inline-flex;align-items:center;gap:7px;letter-spacing:-.15px;position:relative;top:1px}
+  .tabs2 button.on{background:var(--bg-surface);border-color:var(--border);color:var(--text-primary);font-weight:600}
+  .tabs2 .bdg{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;
+    background:var(--accent-bg);color:var(--accent-text);border-radius:9999px;padding:1px 7px}
+
+  .paper{border:1px solid var(--border);background:var(--bg-surface);border-radius:12px;padding:24px 28px 10px}
+  .paper .ptitle{font-family:Georgia,"Libre Baskerville",serif;font-size:21px;font-weight:600;
+    letter-spacing:.1px;line-height:1.4}
+  .paper .pmeta{font-size:12px;color:var(--text-muted);margin:4px 0 17px;letter-spacing:0}
+  .paper .ptext p{font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:16px;line-height:1.85;
+    color:var(--text-body);max-width:62ch;margin-bottom:14px;letter-spacing:.1px}
+  .paper .ptext p:last-child{margin-bottom:0}
+  .qsec{margin-top:26px;padding-top:15px;border-top:1px solid var(--border);font-size:11.5px;font-weight:600;
+    letter-spacing:.35px;text-transform:uppercase;color:var(--text-muted);display:flex;align-items:baseline;gap:10px}
+  .qsec .hintx{font-size:11.5px;font-weight:400;letter-spacing:-.1px;text-transform:none}
+  .qq{border-top:1px solid var(--border-light);padding:17px 0}
+  .qq.first{border-top:0;padding-top:14px}
+  .qq .stem{font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:15.5px;line-height:1.75;
+    color:var(--text-body);font-weight:600;margin-bottom:11px;letter-spacing:.1px;max-width:64ch}
+  .qq .stem.plain{font-weight:400;margin-bottom:0}
+  .qq .qno{font-family:Georgia,serif;color:var(--accent-text);font-weight:700;margin-right:8px}
+  .optlist{display:grid;gap:8px;max-width:560px}
+  .optb{display:flex;gap:11px;align-items:baseline;padding:9px 14px;border:1px solid var(--border);
+    border-radius:8px;font-family:Georgia,"Libre Baskerville",serif;font-size:14.5px;
+    color:var(--text-body);letter-spacing:.1px;line-height:1.6}
+  .optb .radio{width:15px;height:15px;border-radius:9999px;border:1.5px solid var(--border);flex:none;transform:translateY(3px)}
+  .optb.picked{border-color:var(--accent);background:var(--accent-bg)}
+  .optb.picked .radio{border-color:var(--accent);box-shadow:inset 0 0 0 4px var(--accent)}
+  .optb .lb{font-weight:700;color:var(--text-muted);flex:none}
+
+  /* 解析补生成（两阶段生成的唯一新增态） */
+  .skel{display:flex;flex-direction:column;gap:9px}
+  .skel i{display:block;height:11px;border-radius:6px;background:var(--bg-input)}
+  .skel i.s1{width:26%}.skel i.s2{width:92%}.skel i.s3{width:78%}.skel i.s4{width:34%}.skel i.s5{width:60%}
+  .pendbar{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-muted)}
+  .pendbar .spacer{flex:1}
+  .spin{display:inline-block;color:var(--accent-text)}
+
+  /* 翻卡独立页面 */
+  .flipcard{border:1px solid var(--border);background:var(--bg-surface);border-radius:14px;
+    padding:26px 24px 20px;display:flex;flex-direction:column;min-height:330px;text-align:center}
+  .flipcard .src{font-size:12px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;gap:7px}
+  .flipcard .cloze{font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:20px;line-height:1.85;
+    color:var(--text-primary);margin-top:18px;letter-spacing:.1px}
+  .flipcard .cloze .gap{display:inline-block;width:104px;border-bottom:2px solid var(--accent);
+    vertical-align:baseline;margin:0 5px}
+  .flipcard .bigword{font-size:24px;font-weight:600;letter-spacing:-.3px;margin-top:14px}
+  .flipcard .def{font-size:13.5px;color:var(--text-secondary);line-height:1.8;margin-top:9px;max-width:44ch;
+    margin-left:auto;margin-right:auto}
+  .flipcard .foot{margin-top:auto;padding-top:20px}
+  .ratings{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .ratings .btn{flex:1;min-width:88px;justify-content:center;flex-direction:column;height:auto;padding:8px 6px;gap:2px}
+  .ratings .btn small{font-size:10.5px;color:var(--text-muted);font-weight:400}
+  .prog2{height:2px;border-radius:9999px;background:var(--bg-muted);overflow:hidden;margin:12px 0 0}
+  .prog2 i{display:block;height:100%;background:var(--accent);border-radius:9999px}
+
   @media (max-width:900px){
     .gradelayout{grid-template-columns:1fr}
     .drawer{border-left:0;border-top:1px solid var(--border)}
@@ -405,20 +482,45 @@
 <body>
 
 <div class="topbar">
-  <span class="tb-title">词卷样张</span>
-  <a href="#entry">A 入口</a>
+  <span class="tb-title">词卷样张 v2</span>
+  <a href="#entry">A 入口双按钮</a>
+  <a href="#cijuanpage">A2 词卷页</a>
+  <a href="#flippage">A3 翻卡页</a>
   <a href="#setup">B 出卷设置</a>
   <a href="#generating">C 生成中</a>
   <a href="#quiz">D 做题</a>
   <a href="#grading">E 评卷</a>
   <a href="#pool">F 错词池</a>
-  <a href="#history">G 历史</a>
+  <a href="#history">G 往卷</a>
   <a href="#copy">H 文案约定</a>
 </div>
 
 <div class="wrap">
 
-<h1>词卷并入单词复习板块 · 静态样张</h1>
+<h1>词卷并入单词复习板块 · 静态样张 <span style="font-size:14px;font-weight:600;color:var(--accent-text);border:1px solid var(--lavender);border-radius:9999px;padding:2px 11px;vertical-align:6px;letter-spacing:0">v2</span></h1>
+
+<div class="card" style="border-color:var(--lavender);background:var(--accent-bg);margin:14px 0 20px">
+  <div style="font-size:14px;font-weight:600;margin-bottom:9px">v2 相对 v1 改了三处（评审反馈，方案 §四.6 / §四.7 / §四.8）</div>
+  <ol style="font-size:13px;color:var(--text-secondary);line-height:1.85;padding-left:20px;display:flex;flex-direction:column;gap:6px">
+    <li><b>入口改成独立页面</b>（§四.6）——复习板块面板<b>右上角并排两个入口</b>「翻卡复习」「词卷」，
+      各自打开独立全屏页面。v1 那张长在面板里的词卷卡<b>已撤掉</b>。翻卡从现在的内联弹层搬进独立页面，
+      交互一步不改，只换容器。见 <a href="#entry" style="color:var(--accent-text)">§A</a> /
+      <a href="#cijuanpage" style="color:var(--accent-text)">§A2</a> /
+      <a href="#flippage" style="color:var(--accent-text)">§A3</a>。</li>
+    <li><b>做题屏卷面仿原版重排</b>（§四.7）——文章与题目在<b>同一张卷面上</b>连排、题间用细分隔线而非一题一卡，
+      题号 Georgia、选项带单选圆点、标签页改文件夹式。<b>视觉语言仍是 Lantern</b>（字体、色板、圆角、分隔线一律沿用 v1，
+      溯源与选区高亮维持阅读器紫，不用原版黄色马克笔）。见 <a href="#quiz" style="color:var(--accent-text)">§D</a>。</li>
+    <li><b>两阶段生成对应的状态</b>（§四.8 + §二.6）——生成中屏步骤改为
+      <b>拆词 → 撰写文章与题目 → 校验（明答+遮词）→ 重出（如有）→ 发卷</b>；
+      评卷屏新增<b>唯一一种</b>新状态：个别题的「解析补生成中」骨架屏卡片，以及同一题的「点击补生成」形态。
+      没有、也不会有「错题解析批量生成」等待态。见 <a href="#generating" style="color:var(--accent-text)">§C</a> /
+      <a href="#grading" style="color:var(--accent-text)">§E</a>。</li>
+  </ol>
+  <div style="font-size:12.3px;color:var(--text-muted);line-height:1.75;margin-top:11px;padding-top:10px;border-top:1px solid var(--border)">
+    v1 的既定决议全部保留，未回退：设置屏词 chip 三档来路标注（卷面不标）· 错词池已出池词默认折叠 ·
+    做题用时只在交卷当次显示 ·「复制为词表」· 交卷确认弹层 · 各屏空态与失败态。
+  </div>
+</div>
 
 <p class="lede" style="border-left:4px solid var(--accent);padding-left:14px">
   <b>这是样张，不是实现。</b>
@@ -431,30 +533,39 @@
 <p class="lede">
   <b>词卷</b>是把「今天背完的词」变成一份 AI 出的卷子：阅读理解考词义在语境里的辨认，语法填空考词形。
   交卷后原位判分、结构化讲解、答案可溯源回原文，答错的词进错词池按 +2 天 / +7 天两级重现。
-  并入 Lantern 后它住在<b>单词复习板块</b>里，与生词本<b>双向联动</b>（方案 §二.5）：
+  并入 Lantern 后它挂在<b>单词复习板块</b>下，从面板右上角的「词卷」按钮进入一个<b>独立页面</b>（v2，方案 §四.6），与生词本<b>双向联动</b>（方案 §二.5）：
   出卷时可从生词本导入到期词，交卷时考点词若在生词本中则按对错写回 FSRS。
 </p>
 
 <p class="meta">
   内容说明 · 样张里的英文短文与讲解均为示例，按 <code>labs/cijuan/src/types.ts</code> 的字段口径写实。
   目标词 12 个：<span class="serif">curb, subsidy, incentive, in particular, retrofit, phase out, offset, scrutiny, mandate, allocate, plausible, advocate</span>。<br>
-  信息结构参考 · 评卷屏来自 <code>labs/cijuan/docs/mockups/review-redesign.html</code>，视觉换成 Lantern 语言；
-  其余屏来自 <code>labs/cijuan/src/ui/</code> 五屏的字段，不沿用其样式。<br>
+  信息结构参考 · 评卷屏来自 <code>labs/cijuan/docs/mockups/review-redesign.html</code>；
+  做题屏卷面的<b>排版节奏</b>（标签页、文章栏、题号、题间分隔、选项与语法填空版式）照
+  <code>labs/cijuan/src/ui/QuizView.tsx</code> 与 <code>src/index.css</code> 重排——
+  <b>只搬版式，不搬视觉</b>：颜色、字体、圆角、分隔线全部用 Lantern 令牌。
+  其余屏来自 <code>labs/cijuan/src/ui/</code> 五屏的字段。<br>
   语气约定 · 复习相关界面<b>不出现催促、责怪、倒计时、积压天数</b>；错词与到期只陈述机制，不施压。见 <a href="#copy" style="color:var(--accent-text)">§H</a>。
 </p>
 
 <!-- ══════════════ A ══════════════ -->
-<h2 class="sec" id="entry"><span class="n">A</span> 入口：单词复习板块里的词卷区块</h2>
+<h2 class="sec" id="entry"><span class="n">A</span> 入口：复习板块右上角的两个按钮 <span class="tagx" style="font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--accent-text);border:1px solid var(--lavender);border-radius:4px;padding:1px 6px">v2 改</span></h2>
 <p class="why">
-  词卷不占侧栏一级位置，也不做成新页面：它是「单词」筛选下的一张卡，跟着回顾板一起滚。
-  点「出卷」进入<b>全屏</b>做题（方案拍板点 A）。卡片有两种态——
-  <b>有到期错词</b>时说明这一卷会带上哪些词，<b>空态</b>时只说明它是什么、怎么开始。
+  <b>v1 的做法（已废弃）</b>：词卷是「单词」面板里的一张卡，跟着回顾板一起往下滚。
+  <b>v2 的做法（方案 §四.6）</b>：面板<b>标题行右上角</b>并排两个入口按钮——「翻卡复习」和「词卷」，
+  各自打开一个<b>独立的全屏页面</b>。理由是这两件事都是沉浸任务（一坐十几分钟），
+  放在滚动列表里既容易被划过去，也没法在做的过程中保持页面稳定。
+</p>
+<p class="why" style="margin-top:-12px">
+  两个按钮<b>地位平级</b>，顺序是「翻卡复习」在左、「词卷」在右——翻卡是每天的常规动作，
+  词卷是背完一批词之后的加练。按钮上的数字是<b>各自调度的到期量</b>，两套互不换算：
+  翻卡的 18 来自 FSRS，词卷的 6 来自错词池。
 </p>
 
-<h3 class="sub">状态 1 <span class="tagx">错词池有到期词</span></h3>
+<h3 class="sub">A-1 <span class="tagx">复习面板 · 两个入口都有到期量</span></h3>
 <p class="subwhy">
-  「6 个词到了重现的时候」是对<b>卷面构成</b>的说明，不是待办提醒——它解释的是「这一卷里会多出哪些词」。
-  重现词混进卷子后<b>不在卷面上标记</b>（词卷既定机制），这里是唯一一次告知。
+  「6」是对<b>下一卷卷面构成</b>的说明，不是待办提醒——它解释的是「这一卷里会多出哪些词」。
+  重现词混进卷子后<b>不在卷面上标记</b>（词卷既定机制），入口和出卷设置屏是仅有的两次告知。
 </p>
 
 <div class="app">
@@ -472,8 +583,23 @@
   </div>
   <div class="mainpane">
     <div class="mhead">
-      <h2>单词</h2>
-      <div class="sub">18 个词到期复习 · 共 264 个词</div>
+      <div class="mheadrow">
+        <div>
+          <h2>单词</h2>
+          <div class="sub">18 个词到期复习 · 共 264 个词</div>
+        </div>
+        <span class="spacer"></span>
+        <div class="entrybtns">
+          <button class="btn secondary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            翻卡复习 <span class="cnt">18</span>
+          </button>
+          <button class="btn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
+            词卷 <span class="cnt">6</span>
+          </button>
+        </div>
+      </div>
       <div class="mtools">
         <div class="search">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -486,22 +612,7 @@
     </div>
     <div class="mbody">
 
-      <!-- 词卷入口卡 -->
-      <div class="cj">
-        <div class="ic">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
-        </div>
-        <div class="tx">
-          <div class="t1">词卷 · 出一份卷子 <span class="pill wait" style="height:20px;font-size:11px;padding:0 8px">阅读 + 语法填空</span></div>
-          <div class="t2">把今天背完的词交给 AI 出成阅读理解和语法填空，做完原位判分、逐题讲解，答案可以溯源回原文。</div>
-          <div class="t3">错词池里有 <b>6 个词</b>到了重现的时候，出卷时会自动混进这一卷（卷面上不标出来）。上一卷 8 月 9 日 · 8 / 10</div>
-        </div>
-        <div class="act">
-          <button class="btn">出卷
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
-        </div>
-      </div>
+      <!-- v2：v1 的词卷入口卡已撤掉，入口上移到标题行右上角 -->
 
       <!-- 已有的回顾板，保持不动 -->
       <div class="card" style="padding:15px 16px 14px">
@@ -524,41 +635,207 @@
   </div>
 </div>
 <p class="cap">
-  <b>位置</b>：词卷卡在回顾板<b>上方</b>，两者是并列的两条路——回顾板是翻卡（认不认识），词卷是做题（会不会用）。
-  卡片随内容滚走，不常驻顶栏。<b>侧栏不加新入口</b>，「单词」那一行的角标含义不变（FSRS 到期数，与错词池无关）。
+  <b>位置</b>：两个按钮在面板标题行右上角，与既有的导出／导入／视图切换图标<b>同一行</b>，排在它们左侧，
+  因为它们是「去做点什么」，图标组是「管理这些数据」。按钮<b>不随内容滚动</b>——标题行本来就是常驻的。<br>
+  <b>侧栏不动</b>：不加新的一级入口，「单词」那一行的角标含义不变（FSRS 到期数，与错词池无关）。
+  面板主体（回顾板、词表、生词／查词历史两个标签）<b>一律不改</b>。
 </p>
 
-<h3 class="sub">状态 2 <span class="tagx">空态 · 从没出过卷</span></h3>
-<p class="subwhy">错词池为空、也没有历史卷。卡片降为虚线，只解释这是什么、第一步做什么，不出现任何数字。</p>
+<h3 class="sub">A-2 <span class="tagx">复习面板 · 从没出过卷（词卷侧空态）</span></h3>
+<p class="subwhy">
+  按钮<b>不隐藏、不禁用</b>——它是唯一能发现词卷的地方。只是去掉数字、降为次要样式。
+  第一次进入这个面板时，标题行下方多一条可关掉的一次性说明，解释词卷是什么；关掉后不再出现。
+</p>
 
 <div class="stage plain">
-  <div class="cj quiet">
-    <div class="ic">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
+  <div class="mheadrow" style="max-width:720px">
+    <div>
+      <h2 style="font-size:24px;font-weight:600;letter-spacing:.07px">单词</h2>
+      <div style="font-size:12.5px;color:var(--text-muted);margin-top:5px">18 个词到期复习 · 共 264 个词</div>
     </div>
-    <div class="tx">
-      <div class="t1">词卷</div>
-      <div class="t2">粘贴今天背完的词，或从生词本里挑几个，AI 会写一篇带这些词的短文，配上阅读理解和语法填空。做完能看到每个选项为什么对、为什么错。</div>
+    <span class="spacer"></span>
+    <div class="entrybtns">
+      <button class="btn secondary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        翻卡复习 <span class="cnt">18</span>
+      </button>
+      <button class="btn secondary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
+        词卷
+      </button>
     </div>
-    <div class="act"><button class="btn secondary">出第一卷</button></div>
+  </div>
+  <div class="banner accent" style="margin-top:16px;max-width:720px">
+    <span class="tag">新</span>
+    <span><b>词卷</b>：粘贴今天背完的词，或从生词本里挑几个，AI 会写一篇带这些词的短文，配上阅读理解和语法填空。
+      做完能看到每个选项为什么对、为什么错。<span style="color:var(--text-muted)">—— 一次性说明，右侧有关闭叉，关掉不再出现。</span></span>
+    <span style="flex:none;color:var(--text-muted);margin-top:1px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </span>
   </div>
 </div>
-<p class="cap"><b>为什么空态也留着卡</b>：这是唯一能发现词卷的地方。降成虚线是为了不与回顾板抢注意力，但不能藏起来。</p>
+<p class="cap">
+  <b>不做的事</b>：不给「翻卡复习」也配一条说明——它是既有功能，用户已经知道。
+  说明条只为新板块出现一次。
+</p>
+
+<!-- ─────── A2 词卷独立页面 ─────── -->
+<h2 class="sec" id="cijuanpage"><span class="n">A2</span> 词卷独立页面 <span class="tagx" style="font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--accent-text);border:1px solid var(--lavender);border-radius:4px;padding:1px 6px">v2 新增</span></h2>
+<p class="why">
+  点「词卷」进的是这一页，<b>占满窗口</b>，不是弹层。页内用一条分段导航挂三块内容：
+  <b>出卷</b>（默认落地）· <b>错词池</b> · <b>往卷</b>。三块都是这一页的内部标签页，
+  不是三个独立页面——它们共享同一个返回口，返回一次就回到「单词」面板。
+</p>
+<div class="banner" style="margin-bottom:18px;max-width:84ch">
+  <span class="tag">承载关系</span>
+  <span>
+    「出卷」标签的完整表单见 <a href="#setup" style="color:var(--accent-text)">§B</a>（本节只画到表单上沿）；
+    「错词池」标签的内容就是 <a href="#pool" style="color:var(--accent-text)">§F</a> 整屏；
+    「往卷」标签的内容就是 <a href="#history" style="color:var(--accent-text)">§G</a> 整屏。
+    <b>做题（§D）与评卷（§E）不是标签</b>——它们从「出卷」或「往卷」进入后<b>接管整页</b>，
+    页内导航让位给「退出」，避免做题中途误点标签丢作答。
+  </span>
+</div>
+
+<div class="full">
+  <div class="fhead">
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>单词</button>
+    <span class="ttl">词卷</span>
+    <span class="spacer"></span>
+    <div class="fnav">
+      <span class="on">出卷</span>
+      <span>错词池 <span class="c">6</span></span>
+      <span>往卷 <span class="c">12</span></span>
+    </div>
+  </div>
+  <div class="fbody">
+
+    <!-- 未交完的卷：优先级最高，压在最上面 -->
+    <div class="cj" style="margin-bottom:14px">
+      <div class="ic">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+      </div>
+      <div class="tx">
+        <div class="t1">8 月 11 日那份卷还没交 <span class="pill wait" style="height:20px;font-size:11px;padding:0 8px">已答 5 / 13</span></div>
+        <div class="t2">作答已经存成草稿，接着做就行。也可以放着不管，它会一直留在往卷里。</div>
+      </div>
+      <div class="act">
+        <button class="btn secondary">接着做</button>
+      </div>
+    </div>
+
+    <!-- 出卷标签的落地内容 -->
+    <div class="banner accent" style="margin-bottom:16px">
+      <span class="tag">这一卷</span>
+      <span>错词池里有 <b>6 个词</b>到了重现的时候，出卷时会自动混进这一卷（<b>卷面上不标出来</b>）。上一卷 8 月 9 日 · 8 / 10。</span>
+    </div>
+
+    <div class="fieldlabel">今天的词 <span class="hintx">粘贴，或从生词本导入</span></div>
+    <div class="inputbox textarea ph" style="padding:12px 14px">粘贴今天背完的单词，一行一个或用逗号分隔
+词组（in particular）算一个词，行首序号会自动去掉</div>
+    <div class="banner" style="margin-top:14px">
+      <span class="tag">下接</span>
+      <span>难度与风格、题型开关、从生词本导入的勾选列表、生成按钮——完整表单见 <a href="#setup" style="color:var(--accent-text)">§B 出卷设置屏</a>，此处不重复。</span>
+    </div>
+  </div>
+</div>
+<p class="cap">
+  <b>落地在「出卷」而不是一张概览页</b>：从入口点进来的人十有八九是要出卷的，多插一层概览等于多一次点击。
+  错词池和往卷的<b>数量</b>已经在导航上，想去随时切。<br>
+  <b>未交完的卷排在最上面</b>，但用的是次要按钮、不带催促文案——只陈述「草稿还在」。
+  没有未交完的卷时这张卡整块不出现。
+</p>
+
+<!-- ─────── A3 翻卡独立页面 ─────── -->
+<h2 class="sec" id="flippage"><span class="n">A3</span> 翻卡复习独立页面 <span class="tagx" style="font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--accent-text);border:1px solid var(--lavender);border-radius:4px;padding:1px 6px">v2 新增 · 范围扩展</span></h2>
+<p class="why">
+  这是<b>现有翻卡复习</b>的新容器：今天它是一个 520px 宽的居中弹层，v2 把它搬进独立全屏页面。
+  <b>交互一步不改</b>——出处行、挖空句、发音、「看句子中文」、「显示答案」、四档评分、进度条、
+  合并条目提示，全部照搬现有实现，只是外面的框从弹层换成页面。做这件事的理由是与词卷对齐：
+  两个入口点开的东西应当是同一种形态，一个弹层一个整页会让人以为它们是两个层级的功能。
+</p>
+
+<div class="duo">
+  <div>
+    <h3 class="sub" style="margin-top:0">正面 <span class="tagx">挖空句，答案未揭</span></h3>
+    <div class="full">
+      <div class="fhead">
+        <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>单词</button>
+        <span class="ttl">翻卡复习</span>
+        <span class="spacer"></span>
+        <span class="sub" style="font-variant-numeric:tabular-nums">3 / 18</span>
+      </div>
+      <div style="padding:0 22px"><div class="prog2"><i style="width:16.6%"></i></div></div>
+      <div class="fbody" style="padding:18px 22px 22px">
+        <div class="flipcard">
+          <div class="src">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            《经济学人》选读 · Energy in transition
+          </div>
+          <div class="cloze">Manufacturers have learned to wait out programmes whose <span class="gap"></span> change with every election.</div>
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:20px">
+            <span class="btn secondary sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>朗读</span>
+            <span class="btn secondary sm">看句子中文</span>
+          </div>
+          <div class="foot"><button class="btn lg" style="width:100%;justify-content:center">显示答案</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h3 class="sub" style="margin-top:0">背面 <span class="tagx">答案已揭 · 四档评分</span></h3>
+    <div class="full">
+      <div class="fhead">
+        <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>单词</button>
+        <span class="ttl">翻卡复习</span>
+        <span class="spacer"></span>
+        <span class="sub" style="font-variant-numeric:tabular-nums">3 / 18</span>
+      </div>
+      <div style="padding:0 22px"><div class="prog2"><i style="width:16.6%"></i></div></div>
+      <div class="fbody" style="padding:18px 22px 22px">
+        <div class="flipcard">
+          <div class="src">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            《经济学人》选读 · Energy in transition
+          </div>
+          <div class="cloze">…programmes whose <mark class="serif">subsidies</mark> change with every election.</div>
+          <div class="bigword serif">subsidy</div>
+          <div class="def">n. 补贴、津贴 —— 政府给企业或行业的资金支持。文中指随选举更迭而变的补贴政策。</div>
+          <div class="foot">
+            <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:9px">刚才回忆得怎么样？</div>
+            <div class="ratings">
+              <span class="btn secondary">不记得<small>&lt; 1 分钟</small></span>
+              <span class="btn secondary">困难<small>1 天</small></span>
+              <span class="btn secondary">掌握<small>4 天</small></span>
+              <span class="btn secondary">简单<small>9 天</small></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">
+  <b>只换容器，不换逻辑</b>：卡片本体仍是现有的 520px 内容宽度，在整页里居中，两侧留白。
+  评分档位、间隔天数、合并条目提示、「今天的复习完成了」结束态，全部沿用现有实现，本样张不重画。<br>
+  <b>关掉的是弹层，不是功能</b>：面板内其它触发翻卡的地方（回顾板的堆卡片等）如果保留，点开后一样进这个页面。
+</p>
 
 <!-- ══════════════ B ══════════════ -->
-<h2 class="sec" id="setup"><span class="n">B</span> 出卷设置屏</h2>
+<h2 class="sec" id="setup"><span class="n">B</span> 出卷设置屏（词卷页 ·「出卷」标签）</h2>
 <p class="why">
+  这是 <a href="#cijuanpage" style="color:var(--accent-text)">§A2 词卷页</a>「出卷」标签的完整形态。
   两列：左边是<b>词从哪来</b>（粘贴 + 从生词本导入），右边是<b>卷子长什么样</b>（难度、题型、自检）。
   「从生词本导入」是方案 §二.5 双向联动的<b>导入方向</b>——默认展开到期待复习的词（现成命令 <code>list_vocab_due_for_review</code>），可逐个勾选。
 </p>
 
 <div class="full">
   <div class="fhead">
-    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回单词</button>
-    <span class="ttl">出卷</span>
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>单词</button>
+    <span class="ttl">词卷</span>
     <span class="spacer"></span>
-    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>错词池 <span style="color:var(--text-muted)">6</span></button>
-    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>往卷 12</button>
+    <div class="fnav"><span class="on">出卷</span><span>错词池 <span class="c">6</span></span><span>往卷 <span class="c">12</span></span></div>
   </div>
   <div class="fbody">
     <div class="duo" style="gap:26px">
@@ -702,10 +979,18 @@ scrutiny</div>
 <p class="cap"><b>上限提示</b>（未单画）：超过 40 个词时出现一条 <span class="pill wait" style="height:20px;font-size:11px;padding:0 8px">提示</span> 横幅建议分两卷；超过 60 个词按钮禁用，横幅改为「请删掉一部分，分成两卷」。</p>
 
 <!-- ══════════════ C ══════════════ -->
-<h2 class="sec" id="generating"><span class="n">C</span> 生成中屏</h2>
+<h2 class="sec" id="generating"><span class="n">C</span> 生成中屏 <span class="tagx" style="font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--accent-text);border:1px solid var(--lavender);border-radius:4px;padding:1px 6px">v2 改</span></h2>
 <p class="why">
-  四步，逐步点亮。第三步「遮词自检」需要一句解释——它是词卷最反直觉的一步（生成完了还要再跑一遍），
-  不解释用户会以为卡住了。进度条是节拍指示，不承诺精确百分比。
+  <b>v2 改动（方案 §二.6 两阶段生成）</b>：步骤从四步改成<b>五步</b>——
+  拆词 → 撰写文章与题目 → 校验（明答+遮词）→ 重出（如有）→ 发卷。
+  两次质检合并成一个「校验」步（它们并行跑），但小字里要分别解释：
+  <b>明答校验</b>查「答案对不对」，<b>遮词自检</b>查「不认识这个词能不能做出来」，两者互补，缺一个都不行。
+</p>
+<p class="why" style="margin-top:-12px">
+  「发卷」独立成一步是有意的：两阶段生成把<b>解析</b>挪到发卷之后的后台去写，
+  这一步点亮就意味着<b>可以开始做题了</b>，而不是「全部生成完了」。
+  最后一行小字说清后台还在写解析——不说的话，用户交卷时看到「解析补生成中」会以为出了故障。
+  进度条是节拍指示，不承诺精确百分比。
 </p>
 
 <div class="full">
@@ -714,19 +999,27 @@ scrutiny</div>
   <div class="fbody" style="padding:44px 22px 40px">
     <div class="steps">
       <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-        <span>拆分词组，12 个词分成 2 篇</span></div>
+        <span>拆词<span class="note">词组算一个词，虚词剔掉；12 个词分成 2 篇</span></span></div>
       <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-        <span>撰写文章与题目<span class="note">2 篇短文 · 9 道阅读题 · 4 道语法填空</span></span></div>
+        <span>撰写文章与题目<span class="note">2 篇短文 · 9 道阅读题 · 4 道语法填空（这一步只出题和答案，讲解另算）</span></span></div>
       <div class="step doing"><span class="mk">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
         </span>
-        <span>遮词自检<span class="note">遮住目标词把题重做一遍，仍然答得对的题说明不靠这个词也能蒙对，会被判为无效</span></span></div>
-      <div class="step"><span class="mk">○</span><span>重出未通过自检的题</span></div>
+        <span>校验：明答 + 遮词<span class="note">两项同时跑。<b>明答校验</b>——带原文正常把卷子重做一遍，答案对不上的题作废；<b>遮词自检</b>——遮住目标词再做一遍，仍然答得对的题说明不靠这个词也能蒙对，同样作废。</span></span></div>
+      <div class="step"><span class="mk">○</span><span>重出没通过校验的题<span class="note">通常 0~2 道，没有就跳过</span></span></div>
+      <div class="step"><span class="mk">○</span><span>发卷<span class="note">这一步亮起就可以开始做题；讲解会在你做题时于后台补齐</span></span></div>
     </div>
-    <div class="progress"><i style="width:62%"></i></div>
+    <div class="progress"><i style="width:52%"></i></div>
     <div class="centernote">约还需 40 秒 · 可以切走做别的，出好了留在这里</div>
   </div>
 </div>
+<p class="cap">
+  <b>为什么合并成一个「校验」步而不是列两步</b>：它们并行执行，列成两步会先后点亮得毫无规律，看着像卡住。
+  合成一步、用小字讲清是两件事，既诚实又不制造焦虑。<br>
+  <b>「重出（如有）」写成一步而不是隐藏</b>：跳过时它保持灰色一闪而过；如果藏起来，重出发生时步骤条会突然长出一行，
+  用户会以为出了意外。<br>
+  <b>不在这一屏显示「正在写解析」的进度</b>——解析是发卷之后的后台事，它不该拦住任何人。
+</p>
 
 <h3 class="sub">状态 <span class="tagx">某一组生成失败</span></h3>
 <p class="subwhy">
@@ -738,10 +1031,11 @@ scrutiny</div>
   <div class="fhead"><span class="ttl">出卷中断</span><span class="sub">12 个词 · CET-6</span></div>
   <div class="fbody" style="padding:36px 22px 34px">
     <div class="steps">
-      <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>拆分词组，12 个词分成 2 篇</span></div>
+      <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>拆词<span class="note">12 个词分成 2 篇</span></span></div>
       <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>撰写文章与题目<span class="note">第 1 篇已完成 · 第 2 篇失败</span></span></div>
-      <div class="step"><span class="mk">○</span><span>遮词自检</span></div>
-      <div class="step"><span class="mk">○</span><span>重出未通过自检的题</span></div>
+      <div class="step"><span class="mk">○</span><span>校验：明答 + 遮词</span></div>
+      <div class="step"><span class="mk">○</span><span>重出没通过校验的题</span></div>
+      <div class="step"><span class="mk">○</span><span>发卷</span></div>
     </div>
     <div style="max-width:560px;margin:20px auto 0">
       <div class="banner bad">
@@ -758,10 +1052,20 @@ scrutiny</div>
 </div>
 
 <!-- ══════════════ D ══════════════ -->
-<h2 class="sec" id="quiz"><span class="n">D</span> 做题屏（全屏视图）</h2>
+<h2 class="sec" id="quiz"><span class="n">D</span> 做题屏（全屏，接管词卷页）<span class="tagx" style="font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--accent-text);border:1px solid var(--lavender);border-radius:4px;padding:1px 6px;margin-left:4px">v2 重排</span></h2>
 <p class="why">
-  做题是沉浸任务，占满窗口，不挤在生词面板里。文章与题目按篇分标签页，语法填空自成一页。
-  底部答题栏常驻，显示已答进度。<b>作答态不显示任何正误线索</b>——选项不变色、没有正确答案。
+  <b>v2 改动（方案 §四.7）</b>：v1 把每道题画成一张独立卡片，看着像「一条条待办」而不像一份卷子。
+  v2 照 <code>labs/cijuan/src/ui/QuizView.tsx</code> 的<b>试卷感</b>重排：
+  文章和它的题目<b>共处同一张卷面</b>，题与题之间只用一条细分隔线，题号用 Georgia 衬线并着重色，
+  选项前加单选圆点、限宽 560px 成一栏，标签页改成文件夹式压在卷面上沿。
+</p>
+<p class="why" style="margin-top:-12px">
+  <b>换的是版式，不是视觉</b>：颜色、字体族、圆角、分隔线、按钮全部沿用 v1 建立的 Lantern 体系。
+  原版的黄色马克笔高亮<b>没有搬过来</b>——溯源与选区高亮一律用阅读器的紫色选区色（见 §E）。
+</p>
+<p class="why" style="margin-top:-12px">
+  行为不变：做题是沉浸任务，占满窗口，进来后<b>页内导航让位给「退出」</b>。
+  底部答题栏常驻显示已答进度。<b>作答态不显示任何正误线索</b>——选项不变色、没有正确答案、没有即时判分。
 </p>
 
 <div class="full">
@@ -773,65 +1077,81 @@ scrutiny</div>
     <span class="sub">用时 09:41</span>
   </div>
   <div class="fbody">
-    <div class="tabs">
-      <button class="on">Passage 1 <span class="sb">0/5</span></button>
-      <button>Passage 2 <span class="sb">0/4</span></button>
-      <button>语法填空 <span class="sb">0/4</span></button>
+    <div class="tabs2">
+      <button class="on">Passage 1 <span class="bdg">5 题</span></button>
+      <button>Passage 2 <span class="bdg">4 题</span></button>
+      <button>语法填空 <span class="bdg">4 空</span></button>
     </div>
 
-    <div class="passage">
-      <h3>The Price of Cleaner Air</h3>
-      <p><span class="pno">¶1</span>For much of the past decade, the debate over air quality was framed as a contest between growth and health. That framing is losing its grip. Cities that once treated pollution as the unavoidable cost of prosperity now publish daily readings on public screens, and voters have begun to treat those numbers as a measure of competence. What changed was not the science, which has been settled for years, but the arrival of technologies cheap enough to make cleaner air a matter of policy rather than sacrifice.</p>
-      <p><span class="pno">¶2</span>Several governments have pledged to curb industrial emissions before the decade ends, and to cut them by half within five years. The commitments, however, arrive with an awkward caveat: no two countries measure their progress the same way. A subsidy that looks generous in one budget may be a rounding error in another, and the incentive it creates depends less on its size than on how long firms believe it will last. Manufacturers in particular have learned to wait out programmes that change with every election.</p>
-      <p><span class="pno">¶3</span>The cheapest reductions rarely come from new plants. Analysts who have studied the sector argue that it is more effective to retrofit existing boilers than to phase out an entire generation of them at once. Retrofitting is unglamorous work and produces no ribbon-cutting ceremonies. But it delivers measurable gains within a single budget cycle, and the fuel savings can offset a large share of the upfront cost.</p>
-      <p><span class="pno">¶4</span>None of this removes the need for scrutiny. Where governments have mandated targets without allocating inspectors, reported improvements have outpaced measured ones by a wide margin. The most plausible explanation is not fraud but arithmetic: firms report what the rules ask them to report. Environmental groups have advocated stricter verification for years, and their case has grown harder to dismiss.</p>
+    <div class="paper">
+      <div class="ptitle">The Price of Cleaner Air</div>
+      <div class="pmeta">CET-6 Reading · 约 312 words</div>
+      <div class="ptext">
+        <p><span class="pno">¶1</span>For much of the past decade, the debate over air quality was framed as a contest between growth and health. That framing is losing its grip. Cities that once treated pollution as the unavoidable cost of prosperity now publish daily readings on public screens, and voters have begun to treat those numbers as a measure of competence. What changed was not the science, which has been settled for years, but the arrival of technologies cheap enough to make cleaner air a matter of policy rather than sacrifice.</p>
+        <p><span class="pno">¶2</span>Several governments have pledged to curb industrial emissions before the decade ends, and to cut them by half within five years. The commitments, however, arrive with an awkward caveat: no two countries measure their progress the same way. A subsidy that looks generous in one budget may be a rounding error in another, and the incentive it creates depends less on its size than on how long firms believe it will last. Manufacturers in particular have learned to wait out programmes that change with every election.</p>
+        <p><span class="pno">¶3</span>The cheapest reductions rarely come from new plants. Analysts who have studied the sector argue that it is more effective to retrofit existing boilers than to phase out an entire generation of them at once. Retrofitting is unglamorous work and produces no ribbon-cutting ceremonies. But it delivers measurable gains within a single budget cycle, and the fuel savings can offset a large share of the upfront cost.</p>
+        <p><span class="pno">¶4</span>None of this removes the need for scrutiny. Where governments have mandated targets without allocating inspectors, reported improvements have outpaced measured ones by a wide margin. The most plausible explanation is not fraud but arithmetic: firms report what the rules ask them to report. Environmental groups have advocated stricter verification for years, and their case has grown harder to dismiss.</p>
+      </div>
+
+      <div class="qsec">Questions 1–5 <span class="hintx">根据上面这篇短文作答</span></div>
+
+      <div class="qq first">
+        <div class="stem"><span class="qno">Q1.</span>The word "curb" in paragraph 2 is closest in meaning to ______.</div>
+        <div class="optlist">
+          <div class="optb"><span class="radio"></span><span class="lb">A.</span><span>restrict</span></div>
+          <div class="optb picked"><span class="radio"></span><span class="lb">B.</span><span>boost</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">C.</span><span>monitor</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">D.</span><span>calculate</span></div>
+        </div>
+      </div>
+
+      <div class="qq">
+        <div class="stem"><span class="qno">Q2.</span>According to paragraph 3, the fuel savings from retrofitting ______.</div>
+        <div class="optlist">
+          <div class="optb"><span class="radio"></span><span class="lb">A.</span><span>cancel out much of what the work costs to begin with</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">B.</span><span>are delayed until the following budget cycle</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">C.</span><span>have been overstated by the plants that report them</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">D.</span><span>go entirely to the inspectors who verify them</span></div>
+        </div>
+      </div>
+
+      <div class="qq">
+        <div class="stem"><span class="qno">Q3.</span>Which statement best reflects the author's view of reported improvements?</div>
+        <div class="optlist">
+          <div class="optb"><span class="radio"></span><span class="lb">A.</span><span>They are deliberately falsified by most firms.</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">B.</span><span>They outrun measured ones where nobody is sent to check.</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">C.</span><span>They match measured ones once budgets are adjusted.</span></div>
+          <div class="optb"><span class="radio"></span><span class="lb">D.</span><span>They matter less than the ceremonies that announce them.</span></div>
+        </div>
+      </div>
     </div>
 
-    <div class="q">
-      <div class="qhead">
-        <span class="stem"><span class="qno">Q1.</span>The word "curb" in paragraph 2 is closest in meaning to ______.</span>
-      </div>
-      <div class="opts">
-        <div class="opt"><span class="tick">A</span><span class="text">restrict</span></div>
-        <div class="opt chosen"><span class="tick">B</span><span class="text">boost</span></div>
-        <div class="opt"><span class="tick">C</span><span class="text">monitor</span></div>
-        <div class="opt"><span class="tick">D</span><span class="text">calculate</span></div>
-      </div>
-      <div style="height:8px"></div>
+    <div class="tabs2" style="margin:26px 0 20px">
+      <button>Passage 1 <span class="bdg">5 题</span></button>
+      <button>Passage 2 <span class="bdg">4 题</span></button>
+      <button class="on">语法填空 <span class="bdg">4 空</span></button>
     </div>
 
-    <div class="q">
-      <div class="qhead">
-        <span class="stem"><span class="qno">Q2.</span>According to paragraph 3, the fuel savings from retrofitting ______.</span>
+    <div class="paper">
+      <div class="ptitle" style="font-family:inherit;font-size:17px;letter-spacing:-.2px">语法填空</div>
+      <div class="pmeta">用括号里给出的原形，填入正确形态 · 共 4 空</div>
+      <div class="qq first">
+        <div class="stem plain"><span class="qno">G1.</span>Environmental groups <span class="blank">advocated</span> stricter verification for years. <span class="basword">(advocate)</span></div>
       </div>
-      <div class="opts">
-        <div class="opt"><span class="tick">A</span><span class="text">cancel out much of what the work costs to begin with</span></div>
-        <div class="opt"><span class="tick">B</span><span class="text">are delayed until the following budget cycle</span></div>
-        <div class="opt"><span class="tick">C</span><span class="text">have been overstated by the plants that report them</span></div>
-        <div class="opt"><span class="tick">D</span><span class="text">go entirely to the inspectors who verify them</span></div>
+      <div class="qq">
+        <div class="stem plain"><span class="qno">G2.</span>Where governments have mandated targets without <span class="blank ph focus">填写</span> inspectors, reported improvements have outpaced measured ones. <span class="basword">(allocate)</span></div>
       </div>
-      <div style="height:8px"></div>
-    </div>
-
-    <div class="tabs" style="margin:24px 0 14px">
-      <button>Passage 1 <span class="sb">2/5</span></button>
-      <button>Passage 2 <span class="sb">0/4</span></button>
-      <button class="on">语法填空 <span class="sb">1/4</span></button>
-    </div>
-
-    <div class="q">
-      <div class="qhead">
-        <span class="stem"><span class="qno">G1.</span>Environmental groups <span class="blank">advocated</span> stricter verification for years. <span class="basword">(advocate)</span></span>
+      <div class="qq">
+        <div class="stem plain"><span class="qno">G3.</span>The scheme was quietly <span class="blank ph">填写</span> out after the fuel savings failed to materialise. <span class="basword">(phase)</span></div>
       </div>
-    </div>
-    <div class="q">
-      <div class="qhead">
-        <span class="stem"><span class="qno">G2.</span>Where governments have mandated targets without <span class="blank ph focus">填写</span> inspectors, reported improvements have outpaced measured ones. <span class="basword">(allocate)</span></span>
+      <div class="qq">
+        <div class="stem plain"><span class="qno">G4.</span>Analysts found the explanation entirely <span class="blank ph">填写</span>, given what the rules require firms to report. <span class="basword">(plausible)</span></div>
       </div>
     </div>
     <p class="cap" style="margin-left:2px">
       括号里给的是<b>原形</b>，填的是形态：<span class="serif">have advocated</span>、<span class="serif">allocating</span>。
       一句里出现两个 <span class="serif">____</span> 时共用同一个输入框（词卷既定做法）。
+      语法填空不配文章，所以卷面上没有文章栏，标题降为无衬线——它是一个题区，不是一篇短文。
     </p>
   </div>
   <div class="sheetbar">
@@ -841,6 +1161,16 @@ scrutiny</div>
     <span class="count">已答 7 / 13</span>
   </div>
 </div>
+
+<p class="cap">
+  <b>版式对照 · 搬了什么 / 换了什么</b><br>
+  搬（来自原版 QuizView）：文章与题目同处一张卷面 · 题间细分隔线取代一题一卡 · 题号 Georgia 衬线 + 着重色 ·
+  选项单选圆点、限宽 560px 单栏 · 标签页文件夹式 · 文章限宽 62ch、行高 1.85 · 底部答题栏 sticky。<br>
+  换（Lantern 体系）：紫色着重色而非原版靛蓝 · 圆角 8/12px · 分隔线用 <code>--border</code> / <code>--border-light</code> ·
+  字体 Inter + Georgia · 按钮与药丸沿用 v1 · <b>无黄色马克笔</b>。<br>
+  <b>题号沿用原版的 Q1. / G1. 前缀</b>：评卷屏与追问引用都要跨篇指题（「Q1 那道」），
+  前缀在这两处是必要的，作答屏不另立一套编号。
+</p>
 
 <h3 class="sub">弹层 <span class="tagx">还有题没答时的交卷确认</span></h3>
 <p class="subwhy">全部答完时<b>不弹</b>，直接判分。只有存在未答题才拦一次，并说清未答题按错处理。</p>
@@ -858,12 +1188,17 @@ scrutiny</div>
 </div>
 
 <!-- ══════════════ E ══════════════ -->
-<h2 class="sec" id="grading"><span class="n">E</span> 评卷屏（全屏视图）</h2>
+<h2 class="sec" id="grading"><span class="n">E</span> 评卷屏（全屏，原位判分）<span class="tagx" style="font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--accent-text);border:1px solid var(--lavender);border-radius:4px;padding:1px 6px;margin-left:4px">v2 加状态</span></h2>
 <p class="why">
   交卷后<b>不跳新页</b>：判分和讲解直接长在题目下面，文章还在原地，得分条置顶。
   错题讲解默认展开，对题折叠成一行。讲解按错因分层（题目在问什么 / 逐选项含义与设陷 / 考点词 / 溯源），
   这是 <code>review-redesign.html</code> 定下的结构，字段与 <code>types.ts</code> 一一对应。
   选中卷面上任何文字（文章、题干、讲解、AI 回答都可以）浮出「问 AI」，在右侧抽屉里带引用追问。
+</p>
+<p class="why" style="margin-top:-12px">
+  <b>v2 改动（方案 §四.8 + §二.6）</b>：两阶段生成把讲解挪到发卷之后的后台去写，绝大多数情况下交卷时已经就绪。
+  因此这一屏只多出<b>一种</b>状态——<b>个别题</b>的「解析补生成中」，见下面 Q3 的两张卡片。
+  <b>没有「错题解析批量生成中」这类整屏等待态</b>，v1 里也没有画过，这里明确记一笔以免实现时又长出来。
 </p>
 
 <div class="full">
@@ -888,10 +1223,10 @@ scrutiny</div>
         <span>本卷 12 个考点词里有 <b>7 个</b>在生词本中，复习进度已按这次作答更新。</span>
       </div>
 
-      <div class="tabs">
-        <button class="on">Passage 1 <span class="sb">4/5</span></button>
-        <button>Passage 2 <span class="sb">4/4</span></button>
-        <button>语法填空 <span class="sb">3/4</span></button>
+      <div class="tabs2">
+        <button class="on">Passage 1 <span class="bdg">4/5</span></button>
+        <button>Passage 2 <span class="bdg">4/4</span></button>
+        <button>语法填空 <span class="bdg">3/4</span></button>
       </div>
 
       <div class="passage">
@@ -967,6 +1302,88 @@ scrutiny</div>
         </div>
       </div>
 
+      <!-- v2 新增态 · 之一：解析补生成中（骨架屏） -->
+      <div class="q" style="border-color:var(--lavender)">
+        <div class="qhead">
+          <span class="verdict wrong"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>答错</span>
+          <span class="stem"><span class="qno">Q3.</span>Which statement best reflects the author's view of reported improvements?</span>
+          <span class="wt">考点词 <b>scrutiny</b></span>
+        </div>
+        <div class="opts">
+          <div class="opt right">
+            <span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span class="text">B. They outrun measured ones where nobody is sent to check.</span>
+          </div>
+          <div class="opt picked">
+            <span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            <span class="text">A. They are deliberately falsified by most firms.<span class="yourpick">你的选择</span></span>
+          </div>
+          <div class="opt"><span class="tick">·</span><span class="text">C. They match measured ones once budgets are adjusted.</span></div>
+          <div class="opt"><span class="tick">·</span><span class="text">D. They matter less than the ceremonies that announce them.</span></div>
+        </div>
+        <div class="explain">
+          <div class="pendbar">
+            <span class="spin"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg></span>
+            这道题的讲解还在写，稍等一下就出来
+          </div>
+          <div>
+            <div class="sec-label">题目在问什么</div>
+            <div class="skel"><i class="s2"></i><i class="s3"></i></div>
+          </div>
+          <div>
+            <div class="sec-label">考点词</div>
+            <div class="skel"><i class="s1"></i><i class="s2"></i></div>
+          </div>
+          <div>
+            <div class="sec-label">溯源</div>
+            <div class="skel"><i class="s5"></i><i class="s4"></i></div>
+          </div>
+        </div>
+      </div>
+      <p class="cap" style="margin:-4px 0 16px">
+        <b>状态一 · 解析补生成中</b>：正误、你的选择、正确答案<b>照常显示</b>——判分不依赖解析，是交卷时就算好的。
+        骨架屏只占讲解那一块，骨架条按真实小节（题目在问什么 / 考点词 / 溯源）分组，让人看得出待会儿会出现什么。
+        写完就地替换成正文，<b>不跳动、不重排整页</b>。
+      </p>
+
+      <!-- v2 新增态 · 之二：同一题，点击补生成 -->
+      <div class="q" style="border-color:var(--border)">
+        <div class="qhead">
+          <span class="verdict wrong"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>答错</span>
+          <span class="stem"><span class="qno">Q3.</span>Which statement best reflects the author's view of reported improvements?</span>
+          <span class="wt">考点词 <b>scrutiny</b></span>
+        </div>
+        <div class="opts">
+          <div class="opt right">
+            <span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span class="text">B. They outrun measured ones where nobody is sent to check.</span>
+          </div>
+          <div class="opt picked">
+            <span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            <span class="text">A. They are deliberately falsified by most firms.<span class="yourpick">你的选择</span></span>
+          </div>
+          <div class="opt"><span class="tick">·</span><span class="text">C. They match measured ones once budgets are adjusted.</span></div>
+          <div class="opt"><span class="tick">·</span><span class="text">D. They matter less than the ceremonies that announce them.</span></div>
+        </div>
+        <div class="explain">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:240px;font-size:12.8px;color:var(--text-secondary);line-height:1.7">
+              这道题的讲解没写成。<span style="color:var(--text-muted)">上次生成中断了（比如中途关掉了 app）。</span>
+            </div>
+            <button class="btn secondary sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              生成这题的讲解
+            </button>
+          </div>
+        </div>
+      </div>
+      <p class="cap" style="margin:-4px 0 16px">
+        <b>状态二 · 点击补生成</b>：同一道题，后台那一轮没赶上或中断了。这时<b>不自动重试</b>——
+        自动重试会在用户不知情的时候花钱、也可能反复失败。给一个明确的按钮，点了就切回上面那张骨架屏。
+        <b>措辞只说事实</b>（「没写成」「上次生成中断了」），不写「失败」「错误」这类字眼，也不催人点。
+        这两张卡画的是<b>同一题的两种状态</b>，实现里不会同时出现。
+      </p>
+
       <!-- 语法题 -->
       <div class="q">
         <div class="qhead">
@@ -1038,20 +1455,29 @@ scrutiny</div>
 <p class="cap">
   <b>抽屉行为</b>：默认关闭，选中文字点「问 AI」后从右侧滑出，宽 340px，正文列相应收窄。
   窗口窄于 900px 时改为底部弹层。抽屉<b>不进 Lantern 的聊天历史</b>——它是卷子的附属物，随卷存 <code>ask_threads_json</code>（方案 §二.4）。<br>
-  <b>轻提示的位置</b>：生词本写回提示放在得分条<b>下面</b>而不是里面——得分条是这次做题的结果，写回是它的副作用，两件事不该并排。
+  <b>轻提示的位置</b>：生词本写回提示放在得分条<b>下面</b>而不是里面——得分条是这次做题的结果，写回是它的副作用，两件事不该并排。<br>
+  <b>「用时 14:32」只在交卷当次出现</b>（方案 §四.4）：从往卷打开旧卷进的也是这一屏，那时得分条上没有用时，
+  只剩「11 / 13」。用时不落库，没有历史值可显示。<br>
+  <b>解析补生成不占顶部</b>：得分条和顶部横幅里<b>不加</b>「还有 1 题的讲解在生成」这类全局提示——
+  它是单题局部状态，提到顶上会把一件小事说成一件大事。
 </p>
 
 <!-- ══════════════ F ══════════════ -->
-<h2 class="sec" id="pool"><span class="n">F</span> 错词池屏</h2>
+<h2 class="sec" id="pool"><span class="n">F</span> 错词池（词卷页 ·「错词池」标签）</h2>
 <p class="why">
   错词池管的是「这个词下次什么时候再出现在卷子里」，和生词本的 FSRS 翻卡是<b>两套并行的调度</b>，语义不同、互不干扰。
   这一屏是只读的计划表加一个危险操作，不提供逐条编辑——手工改重现时间会让阶段机失去意义。
+  <b>已出池的词默认折叠</b>（方案 §四.2）：数据永久保留当作学习履历，但表里默认只列在池的词，
+  否则时间一长这张表会被出池记录淹没，看不出「接下来会考什么」。
 </p>
 
 <div class="full">
   <div class="fhead">
     <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回</button>
-    <span class="ttl">错词池</span><span class="sub">6 个词在池中 · 3 个已出池</span>
+    <span class="ttl">词卷</span>
+    <span class="sub">6 个词在池中 · 3 个已出池</span>
+    <span class="spacer"></span>
+    <div class="fnav"><span>出卷</span><span class="on">错词池 <span class="c">6</span></span><span>往卷 <span class="c">12</span></span></div>
   </div>
   <div class="fbody">
     <div class="banner" style="margin-bottom:16px">
@@ -1069,11 +1495,12 @@ scrutiny</div>
         <tr><td class="w">subsidy</td><td class="num">1</td><td>第 2 阶段</td><td class="num">8 月 12 日</td><td class="num">8 月 3 日</td><td><span class="pill on">今日到期</span></td></tr>
         <tr><td class="w">scrutiny</td><td class="num">3</td><td>第 1 阶段</td><td class="num">8 月 13 日</td><td class="num">7 月 18 日</td><td><span class="pill wait">等待重现</span></td></tr>
         <tr><td class="w">retrofit</td><td class="num">1</td><td>第 1 阶段</td><td class="num">8 月 16 日</td><td class="num">8 月 11 日</td><td><span class="pill wait">等待重现</span></td></tr>
-        <tr class="cleared"><td class="w">incentive</td><td class="num">1</td><td>—</td><td class="num">—</td><td class="num">7 月 6 日</td><td><span class="pill good">已出池</span></td></tr>
-        <tr class="cleared"><td class="w">mandate</td><td class="num">2</td><td>—</td><td class="num">—</td><td class="num">6 月 28 日</td><td><span class="pill good">已出池</span></td></tr>
-        <tr class="cleared"><td class="w">offset</td><td class="num">1</td><td>—</td><td class="num">—</td><td class="num">6 月 21 日</td><td><span class="pill good">已出池</span></td></tr>
       </tbody>
     </table>
+    <div class="foldrow" style="border:1px solid var(--border);border-radius:8px;margin-top:12px;justify-content:center">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      展开 3 个已出池的词
+    </div>
     <div style="display:flex;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
       <button class="btn secondary">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -1090,6 +1517,26 @@ scrutiny</div>
       6 个词已复制到剪贴板
     </span> <span style="font-size:11.5px;color:var(--text-muted);margin-left:8px">（复制后的轻提示，1.6 秒后消失）</span></div>
   </div>
+</div>
+<p class="cap">
+  <b>「复制为词表」复制的是在池的 6 个词</b>，不含已出池的——出池的词不需要再考，
+  复制出去多半是要粘回出卷框的。展开已出池后这个按钮的行为不变。
+</p>
+
+<h3 class="sub">状态 <span class="tagx">已出池那一折展开后</span></h3>
+<p class="subwhy">展开后接在表尾，淡显、不重排上面的在池行；再点一次收起。列与在池行完全一致，只是阶段与重现日为空。</p>
+<div class="stage plain">
+  <div class="foldrow" style="border:1px solid var(--border);border-radius:8px;justify-content:center;background:var(--bg-muted)">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+    收起已出池的词
+  </div>
+  <table class="lt" style="margin-top:10px">
+    <tbody>
+      <tr class="cleared"><td class="w">incentive</td><td class="num">1</td><td>—</td><td class="num">—</td><td class="num">7 月 6 日</td><td><span class="pill good">已出池</span></td></tr>
+      <tr class="cleared"><td class="w">mandate</td><td class="num">2</td><td>—</td><td class="num">—</td><td class="num">6 月 28 日</td><td><span class="pill good">已出池</span></td></tr>
+      <tr class="cleared"><td class="w">offset</td><td class="num">1</td><td>—</td><td class="num">—</td><td class="num">6 月 21 日</td><td><span class="pill good">已出池</span></td></tr>
+    </tbody>
+  </table>
 </div>
 
 <h3 class="sub">状态 <span class="tagx">空态</span></h3>
@@ -1115,7 +1562,7 @@ scrutiny</div>
 </div>
 
 <!-- ══════════════ G ══════════════ -->
-<h2 class="sec" id="history"><span class="n">G</span> 历史屏（往卷）</h2>
+<h2 class="sec" id="history"><span class="n">G</span> 往卷（词卷页 ·「往卷」标签）</h2>
 <p class="why">
   一行一卷。打开旧卷进的是<b>评卷态</b>（讲解、溯源、追问记录都在），未交卷的卷子打开进作答态并恢复草稿。
   不显示趋势图、不做连续天数统计——那会把复习变成打卡。
@@ -1124,7 +1571,9 @@ scrutiny</div>
 <div class="full">
   <div class="fhead">
     <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回</button>
-    <span class="ttl">往卷</span><span class="sub">12 份</span>
+    <span class="ttl">词卷</span><span class="sub">12 份</span>
+    <span class="spacer"></span>
+    <div class="fnav"><span>出卷</span><span>错词池 <span class="c">6</span></span><span class="on">往卷 <span class="c">12</span></span></div>
   </div>
   <div class="fbody" style="padding:8px 22px 18px">
     <div class="histrow">
@@ -1161,7 +1610,12 @@ scrutiny</div>
     </div>
   </div>
 </div>
-<p class="cap">日期之间<b>不补空档</b>——中间没出卷的日子不出现在列表里，也不标注「间隔 X 天」。</p>
+<p class="cap">
+  日期之间<b>不补空档</b>——中间没出卷的日子不出现在列表里，也不标注「间隔 X 天」。<br>
+  从这里打开的旧卷进 <a href="#grading" style="color:var(--accent-text)">§E 评卷屏</a>，
+  但得分条上<b>不显示用时</b>（方案 §四.4：用时不落库，只在交卷当次的会话里有）。
+  旧卷里若还有没写成的讲解，照样显示<b>「生成这题的讲解」</b>按钮——补生成不限时间。
+</p>
 
 <h3 class="sub">状态 <span class="tagx">空态</span></h3>
 <div class="stage plain">
@@ -1184,6 +1638,8 @@ scrutiny</div>
       <li>「curb、advocate 进了错词池，2 天后重现」<br><span style="font-size:11.5px;color:var(--text-muted)">说明接下来会发生什么</span></li>
       <li>「本卷 12 个考点词里有 7 个在生词本中，复习进度已按这次作答更新」<br><span style="font-size:11.5px;color:var(--text-muted)">告知副作用，不评价表现</span></li>
       <li>「做完一份卷子后，答错的词会自动进这里排队」<br><span style="font-size:11.5px;color:var(--text-muted)">空态解释机制，不催促</span></li>
+      <li>「这道题的讲解还在写，稍等一下就出来」<br><span style="font-size:11.5px;color:var(--text-muted)">v2 · 陈述状态，给出预期</span></li>
+      <li>「这道题的讲解没写成。上次生成中断了。」<br><span style="font-size:11.5px;color:var(--text-muted)">v2 · 说事实和原因，按钮叫「生成这题的讲解」</span></li>
     </ul>
   </div>
   <div class="card">
@@ -1193,29 +1649,55 @@ scrutiny</div>
       <li>「今天还没出卷」「别断了，已连续 7 天」<br><span style="font-size:11.5px;color:var(--text-muted)">打卡与连续天数，禁止</span></li>
       <li>「这个词你已经错了 3 次了」<br><span style="font-size:11.5px;color:var(--text-muted)">表里可以有次数列，文案里不作评语</span></li>
       <li>「趁热打铁，立刻再来一卷！」<br><span style="font-size:11.5px;color:var(--text-muted)">催促，禁止。按钮就叫「再出一卷」</span></li>
+      <li>「解析生成失败，请重试」「错误：讲解不可用」<br><span style="font-size:11.5px;color:var(--text-muted)">v2 · 报错口吻，禁止。它不是故障，是没赶上</span></li>
+      <li>「还有 1 题的讲解正在生成中…」置顶横幅<br><span style="font-size:11.5px;color:var(--text-muted)">v2 · 单题小事不提到全局，禁止</span></li>
     </ul>
   </div>
 </div>
 
 <p class="cap" style="margin-top:20px">
   <b>i18n</b>：以上全部 UI 文案要进 <code>src/i18n/en.json</code> / <code>zh.json</code>；
-  卷面内容（文章、题干、讲解、翻译、AI 回答）是模型生成的中文/英文内容，不属 UI 文案，不进 i18n（方案 §二.6）。
+  卷面内容（文章、题干、讲解、翻译、AI 回答）是模型生成的中文/英文内容，不属 UI 文案，不进 i18n（方案 §二.7）。
 </p>
 
-<h3 class="sub">画样张时冒出来的问题 <span class="tagx">留给拍板，未自行改方案</span></h3>
+<h3 class="sub">v1 提出的六个疑点 <span class="tagx">已在方案 §四 拍板，v2 照此落实</span></h3>
 <ol style="font-size:13px;color:var(--text-secondary);line-height:1.85;padding-left:22px;max-width:84ch;display:flex;flex-direction:column;gap:7px">
-  <li><b>词的来路有三种，chip 却只有两档。</b><code>WordOrigin</code> 现在是 <span class="serif">'today' | 'recur'</span>，方案 §二.5 要加 <span class="serif">'vocab'</span>。样张按三档画了（实心 / 淡紫 / 虚线），但方案同时说「与重现词同理，卷面不标记来路」——<b>设置屏的预览 chip 要不要区分三档？</b>样张的判断是：设置屏要分（用户在挑词，需要知道哪些是自己粘的、哪些是系统加的），卷面不分。</li>
-  <li><b>「已出池」的词要不要一直留在表里。</b>类型里 <code>cleared</code> 只是标记不是删除，样张把它们淡显留在表底。时间久了这张表会只剩已出池的词。是否需要折叠或只显示最近 N 条，未定。</li>
-  <li><b>交卷确认里那句「未答题的考点词会进错词池」需要确认。</b>词卷原判分把未作答按错处理，错词入池是判分的直接后果；但「没时间做完」和「做了做错」在学习意义上不同。样张照原机制写了，如果不该入池，这是<b>后端交卷事务</b>的行为差异，属方案 §二.3 范围。</li>
-  <li><b>FSRS 写回对未答题同样按 <span class="serif">again</span> 记，与上一条联动。</b>方案 §二.5 只写了「答错 → again」，没有区分未作答。</li>
-  <li><b>做题屏的用时计时器</b>在类型里没有对应字段（<code>QuizResult</code> 只有 <code>submittedAt</code>，词卷原实现的用时只存在于当次会话内，历史卷打开时不显示）。样张的评卷屏画了「用时 14:32」，从往卷打开旧卷时这一项应当隐藏。</li>
-  <li><b>「复制为词表」替代了原来的「导出为词表」</b>——桌面端有剪贴板，措辞改成复制更准。功能没变。</li>
+  <li><b>词的来路分三档标注。</b><code>WordOrigin</code> 加 <span class="serif">'vocab'</span> 一档。
+    <b>出卷设置屏</b>的预览 chip 分三档（实心＝粘贴 / 淡紫＝生词本导入 / 虚线＝错词重现），<b>卷面一律不标</b>——
+    「不标记」的本意是考试中不给提示，与挑词阶段无关。见 <a href="#setup" style="color:var(--accent-text)">§B</a>。</li>
+  <li><b>已出池的词默认折叠。</b>数据永久保留（学习履历），表里默认只列在池的词，出池的收在「展开 3 个已出池的词」后面。
+    见 <a href="#pool" style="color:var(--accent-text)">§F</a>。</li>
+  <li><b>未作答的题照旧按错处理入池</b>（卷子没做完，这些词就该重考，词卷原语义）；
+    <b>但 FSRS 不写回</b>——未作答不构成一次记忆检索事件，写 <span class="serif">again</span> 会错误压低记忆状态。
+    两套调度在此分道。交卷确认弹层的措辞已按此写。</li>
+  <li><b>做题用时不加持久化字段</b>，只在交卷当次会话展示；从往卷打开旧卷时隐藏。
+    见 <a href="#grading" style="color:var(--accent-text)">§E</a> / <a href="#history" style="color:var(--accent-text)">§G</a>。</li>
+  <li><b>「导出为词表」改叫「复制为词表」</b>——桌面端走剪贴板，功能没变。</li>
+  <li><b>解析改两阶段生成</b>（方案 §二.6）：发卷时间约砍半，评卷屏只多一种局部状态。
+    见 <a href="#generating" style="color:var(--accent-text)">§C</a> / <a href="#grading" style="color:var(--accent-text)">§E</a>。</li>
+</ol>
+
+<h3 class="sub">画 v2 时新冒出来的问题 <span class="tagx">留给拍板，未自行改方案</span></h3>
+<ol style="font-size:13px;color:var(--text-secondary);line-height:1.85;padding-left:22px;max-width:84ch;display:flex;flex-direction:column;gap:7px">
+  <li><b>翻卡改独立页面之后，面板里其它翻卡入口怎么办。</b>现在除了这两个按钮，回顾板的堆卡片点开也会进翻卡。
+    样张的假设是<b>它们一律改成打开同一个独立页面</b>，弹层形态整体退休。如果希望回顾板保留弹层（点某一堆只翻那几张，快进快出），
+    那就是两种形态并存——需要你拍板。<span style="color:var(--text-muted)">影响范围：现有复习 UI，不只是词卷。</span></li>
+  <li><b>词卷页的「出卷」是落地标签，没有单独的概览页。</b>样张判断是从入口进来的人多半要出卷，
+    不该多插一层。代价是「上一卷考了多少分」这类回顾信息只能塞在横幅里。若你更想要一张概览首页，这一屏要重画。</li>
+  <li><b>右上角两个按钮上的数字含义不同</b>（翻卡 18＝FSRS 到期，词卷 6＝错词池到期），并排放着容易被读成同一种「待办」。
+    样张没有加解释文字——加了会让标题行变长。可选的缓解：只给词卷那个加数字，翻卡不加；或两个都不加数字。</li>
+  <li><b>解析补生成没有「全部补生成」的批量按钮。</b>一份卷子若有 3 道题都没写成，用户要点 3 次。
+    样张没加批量按钮，因为它会把这件小事重新变成一个整屏动作（正是 §四.8 要废弃的东西）。若实测中断后常常是整卷缺失，这个判断要改。</li>
+  <li><b>做题屏的语法填空区没有文章栏，卷面标题用了无衬线</b>，与阅读篇的衬线大标题不一致。
+    这是有意的（它是题区不是短文），但看上去两块卷面不完全同族，请留意是否接受。</li>
 </ol>
 
 <p class="meta" style="margin-top:44px">
-  样张文件 · <code>docs/impls/cijuan-merge-mockup.html</code> ·
-  注：仓库里既有的样张都直接放在 <code>docs/impls/</code> 下（如 <code>daily-review-entry-mockup.html</code>），本文件按要求放在 <code>mockups/</code> 子目录。<br>
-  方案 · <code>docs/impls/cijuan-merge.md</code> · 词卷源码快照 <code>labs/cijuan/</code>（合并完成后整目录删除）
+  样张文件 · <code>docs/impls/cijuan-merge-mockup.html</code>（v2，就地更新，未另建文件）·
+  与仓库里其它样张同放在 <code>docs/impls/</code> 下。<br>
+  方案 · <code>docs/impls/cijuan-merge.md</code>（本次落实 §四.6 / §四.7 / §四.8 三条评审反馈）·
+  排版参照 <code>labs/cijuan/src/ui/QuizView.tsx</code> 与 <code>labs/cijuan/docs/mockups/review-redesign.html</code> ·
+  词卷源码快照 <code>labs/cijuan/</code>（合并完成后整目录删除）
 </p>
 
 </div>
