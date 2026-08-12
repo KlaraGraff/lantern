@@ -130,7 +130,10 @@ export function clampPassiveVocabLimit(value: number) {
 export function parsePassiveVocabSettings(settings: Record<string, string>): PassiveVocabSettings {
   const stored = settings.passive_vocab_limit;
   return {
-    enabled: settings.passive_vocab_enabled === "true",
+    // On unless it has been switched off. This is a study reader: a reader who
+    // has never opened the settings should still see the help, and the row that
+    // was never written is exactly that reader.
+    enabled: settings.passive_vocab_enabled !== "false",
     style: settings.passive_vocab_style === "margin" ? "margin" : "ruby",
     limit: stored ? clampPassiveVocabLimit(Number(stored)) : PASSIVE_VOCAB_DEFAULT_LIMIT,
   };

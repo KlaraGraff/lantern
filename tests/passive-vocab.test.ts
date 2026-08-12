@@ -135,7 +135,10 @@ function fakeRange(rect: { left: number; top: number; width: number }) {
 }
 
 test("passive vocabulary settings default safely and accept only known choices", () => {
-  assert.deepEqual(parsePassiveVocabSettings({}), { enabled: false, style: "ruby", limit: PASSIVE_VOCAB_DEFAULT_LIMIT });
+  // Nothing stored means nobody has been to the settings screen, and that is
+  // the reader the help is for: the switch reads on until it is turned off.
+  assert.deepEqual(parsePassiveVocabSettings({}), { enabled: true, style: "ruby", limit: PASSIVE_VOCAB_DEFAULT_LIMIT });
+  assert.equal(parsePassiveVocabSettings({ passive_vocab_enabled: "false" }).enabled, false);
   assert.deepEqual(parsePassiveVocabSettings({
     passive_vocab_enabled: "true",
     passive_vocab_style: "margin",
