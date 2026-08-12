@@ -472,6 +472,14 @@
   .prog2{height:2px;border-radius:9999px;background:var(--bg-muted);overflow:hidden;margin:12px 0 0}
   .prog2 i{display:block;height:100%;background:var(--accent);border-radius:9999px}
 
+  /* 疑点清单里的「已决」标记 */
+  .dec{display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.3px;
+    color:var(--success-text);background:var(--success-bg);border:1px solid var(--success-border);
+    border-radius:4px;padding:1px 6px;margin-right:6px;vertical-align:1px;white-space:nowrap}
+  .decided li::marker{color:var(--text-muted)}
+  .decided .ruling{display:block;margin-top:3px;color:var(--text-body)}
+  .decided .ruling b{color:var(--success-text)}
+
   @media (max-width:900px){
     .gradelayout{grid-template-columns:1fr}
     .drawer{border-left:0;border-top:1px solid var(--border)}
@@ -519,6 +527,11 @@
   <div style="font-size:12.3px;color:var(--text-muted);line-height:1.75;margin-top:11px;padding-top:10px;border-top:1px solid var(--border)">
     v1 的既定决议全部保留，未回退：设置屏词 chip 三档来路标注（卷面不标）· 错词池已出池词默认折叠 ·
     做题用时只在交卷当次显示 ·「复制为词表」· 交卷确认弹层 · 各屏空态与失败态。
+  </div>
+  <div style="font-size:12.3px;color:var(--text-muted);line-height:1.75;margin-top:9px;padding-top:9px;border-top:1px solid var(--border)">
+    <b style="color:var(--success-text)">验收后的小修正</b>：词卷入口按钮<b>去掉数字</b>（翻卡保留 18）·
+    语法填空卷标题<b>改回衬线</b>，与阅读卷一致 · 回顾板堆卡入口<b>也改跳翻卡独立页</b> ·
+    <a href="#copy" style="color:var(--accent-text)">§H</a> 末尾六条疑点已全部标注拍板结论（方案 §四.9–14）。
   </div>
 </div>
 
@@ -596,7 +609,7 @@
           </button>
           <button class="btn">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
-            词卷 <span class="cnt">6</span>
+            词卷
           </button>
         </div>
       </div>
@@ -637,13 +650,17 @@
 <p class="cap">
   <b>位置</b>：两个按钮在面板标题行右上角，与既有的导出／导入／视图切换图标<b>同一行</b>，排在它们左侧，
   因为它们是「去做点什么」，图标组是「管理这些数据」。按钮<b>不随内容滚动</b>——标题行本来就是常驻的。<br>
+  <b>只有翻卡带数字</b>（已拍板）：「18」是今天到期要翻的卡数，是一件<b>有明确分量的待办</b>。
+  词卷这边没有对应的「今天该做多少」——错词池有几个词不是任务量，标在按钮上会被读成同一类计数，
+  所以词卷按钮<b>不带任何数字</b>。错词池的词数只在词卷页内的分段导航上出现。<br>
   <b>侧栏不动</b>：不加新的一级入口，「单词」那一行的角标含义不变（FSRS 到期数，与错词池无关）。
-  面板主体（回顾板、词表、生词／查词历史两个标签）<b>一律不改</b>。
+  面板主体（回顾板、词表、生词／查词历史两个标签）<b>一律不改</b>，唯一的例外是回顾板上的堆卡——
+  点它现在跳<a href="#flippage">翻卡独立页</a>，不再开弹层（已拍板，范围新增）。
 </p>
 
 <h3 class="sub">A-2 <span class="tagx">复习面板 · 从没出过卷（词卷侧空态）</span></h3>
 <p class="subwhy">
-  按钮<b>不隐藏、不禁用</b>——它是唯一能发现词卷的地方。只是去掉数字、降为次要样式。
+  按钮<b>不隐藏、不禁用</b>——它是唯一能发现词卷的地方，只是降为次要样式（词卷按钮任何时候都不带数字，见上一屏）。
   第一次进入这个面板时，标题行下方多一条可关掉的一次性说明，解释词卷是什么；关掉后不再出现。
 </p>
 
@@ -819,7 +836,10 @@
 <p class="cap">
   <b>只换容器，不换逻辑</b>：卡片本体仍是现有的 520px 内容宽度，在整页里居中，两侧留白。
   评分档位、间隔天数、合并条目提示、「今天的复习完成了」结束态，全部沿用现有实现，本样张不重画。<br>
-  <b>关掉的是弹层，不是功能</b>：面板内其它触发翻卡的地方（回顾板的堆卡片等）如果保留，点开后一样进这个页面。
+  <b>关掉的是弹层，不是功能</b>：面板内其它触发翻卡的地方（回顾板的堆卡片等）点开后一样进这个页面。<br>
+  <b>回顾板堆卡入口也改跳本页</b>（已拍板 · 范围新增）：点某一堆不再开弹层，而是进这一页、只翻那一堆的卡，
+  页头标题带上堆名（如「翻卡复习 ·《海底两万里》」）。弹层形态整体退休，翻卡只剩这一种形态。
+  这条随<b>实现步骤 4</b> 一起落地。
 </p>
 
 <!-- ══════════════ B ══════════════ -->
@@ -1133,7 +1153,7 @@ scrutiny</div>
     </div>
 
     <div class="paper">
-      <div class="ptitle" style="font-family:inherit;font-size:17px;letter-spacing:-.2px">语法填空</div>
+      <div class="ptitle">语法填空</div>
       <div class="pmeta">用括号里给出的原形，填入正确形态 · 共 4 空</div>
       <div class="qq first">
         <div class="stem plain"><span class="qno">G1.</span>Environmental groups <span class="blank">advocated</span> stricter verification for years. <span class="basword">(advocate)</span></div>
@@ -1151,7 +1171,8 @@ scrutiny</div>
     <p class="cap" style="margin-left:2px">
       括号里给的是<b>原形</b>，填的是形态：<span class="serif">have advocated</span>、<span class="serif">allocating</span>。
       一句里出现两个 <span class="serif">____</span> 时共用同一个输入框（词卷既定做法）。
-      语法填空不配文章，所以卷面上没有文章栏，标题降为无衬线——它是一个题区，不是一篇短文。
+      语法填空不配文章，所以卷面上没有文章栏；但<b>标题与阅读篇一样用衬线</b>（已拍板）——
+      同一份卷子上的两个题区，字体不一致会读成两个不同来源的东西，「有没有文章栏」这个区别已经够明显了。
     </p>
   </div>
   <div class="sheetbar">
@@ -1677,19 +1698,32 @@ scrutiny</div>
     见 <a href="#generating" style="color:var(--accent-text)">§C</a> / <a href="#grading" style="color:var(--accent-text)">§E</a>。</li>
 </ol>
 
-<h3 class="sub">画 v2 时新冒出来的问题 <span class="tagx">留给拍板，未自行改方案</span></h3>
-<ol style="font-size:13px;color:var(--text-secondary);line-height:1.85;padding-left:22px;max-width:84ch;display:flex;flex-direction:column;gap:7px">
+<h3 class="sub">画 v2 时新冒出来的问题 <span class="tagx">六条已全部拍板，记入方案 §四.9–14</span></h3>
+<ol class="decided" style="font-size:13px;color:var(--text-secondary);line-height:1.85;padding-left:22px;max-width:84ch;display:flex;flex-direction:column;gap:10px">
   <li><b>翻卡改独立页面之后，面板里其它翻卡入口怎么办。</b>现在除了这两个按钮，回顾板的堆卡片点开也会进翻卡。
     样张的假设是<b>它们一律改成打开同一个独立页面</b>，弹层形态整体退休。如果希望回顾板保留弹层（点某一堆只翻那几张，快进快出），
-    那就是两种形态并存——需要你拍板。<span style="color:var(--text-muted)">影响范围：现有复习 UI，不只是词卷。</span></li>
+    那就是两种形态并存——需要你拍板。<span style="color:var(--text-muted)">影响范围：现有复习 UI，不只是词卷。</span>
+    <span class="ruling"><span class="dec">已决</span><b>堆卡入口也跳独立页</b>，弹层形态整体退休，翻卡只剩一种形态。
+    见 <a href="#flippage" style="color:var(--accent-text)">§A3</a>（方案 §四.9）。</span></li>
   <li><b>词卷页的「出卷」是落地标签，没有单独的概览页。</b>样张判断是从入口进来的人多半要出卷，
-    不该多插一层。代价是「上一卷考了多少分」这类回顾信息只能塞在横幅里。若你更想要一张概览首页，这一屏要重画。</li>
+    不该多插一层。代价是「上一卷考了多少分」这类回顾信息只能塞在横幅里。若你更想要一张概览首页，这一屏要重画。
+    <span class="ruling"><span class="dec">已决</span><b>维持直落「出卷」</b>，不加概览页；回顾信息继续走横幅。
+    见 <a href="#cijuanpage" style="color:var(--accent-text)">§A2</a>（方案 §四.10）。</span></li>
   <li><b>右上角两个按钮上的数字含义不同</b>（翻卡 18＝FSRS 到期，词卷 6＝错词池到期），并排放着容易被读成同一种「待办」。
-    样张没有加解释文字——加了会让标题行变长。可选的缓解：只给词卷那个加数字，翻卡不加；或两个都不加数字。</li>
+    样张没有加解释文字——加了会让标题行变长。可选的缓解：只给词卷那个加数字，翻卡不加；或两个都不加数字。
+    <span class="ruling"><span class="dec">已决</span><b>词卷按钮去掉数字</b>，翻卡保留「18」——只有翻卡那一侧存在「今天该做多少」。
+    错词池词数改在词卷页内的分段导航上出现。见 <a href="#entry" style="color:var(--accent-text)">§A</a>（方案 §四.11）。</span></li>
   <li><b>解析补生成没有「全部补生成」的批量按钮。</b>一份卷子若有 3 道题都没写成，用户要点 3 次。
-    样张没加批量按钮，因为它会把这件小事重新变成一个整屏动作（正是 §四.8 要废弃的东西）。若实测中断后常常是整卷缺失，这个判断要改。</li>
+    样张没加批量按钮，因为它会把这件小事重新变成一个整屏动作（正是 §四.8 要废弃的东西）。若实测中断后常常是整卷缺失，这个判断要改。
+    <span class="ruling"><span class="dec">已决</span><b>维持仅单题补生成</b>，不加批量按钮；若实测发现中断常是整卷缺失，再单独回来改。
+    见 <a href="#grading" style="color:var(--accent-text)">§E</a>（方案 §四.12）。</span></li>
   <li><b>做题屏的语法填空区没有文章栏，卷面标题用了无衬线</b>，与阅读篇的衬线大标题不一致。
-    这是有意的（它是题区不是短文），但看上去两块卷面不完全同族，请留意是否接受。</li>
+    这是有意的（它是题区不是短文），但看上去两块卷面不完全同族，请留意是否接受。
+    <span class="ruling"><span class="dec">已决</span><b>统一用衬线</b>——同一份卷子上的两个题区不该看着像两个来源，
+    「有没有文章栏」这个区别已经够了。样张已改。见 <a href="#quiz" style="color:var(--accent-text)">§D</a>（方案 §四.13）。</span></li>
+  <li><b>词卷页内部的承载关系是样张自行安排的。</b>出卷／错词池／往卷做成同一页的三个页内标签，
+    做题与评卷则整页接管、把分段导航换成「退出」——方案里没写这一层，需要确认。
+    <span class="ruling"><span class="dec">已决</span><b>照样张实现</b>。见 <a href="#cijuanpage" style="color:var(--accent-text)">§A2</a> 的「承载关系」说明条（方案 §四.14）。</span></li>
 </ol>
 
 <p class="meta" style="margin-top:44px">
