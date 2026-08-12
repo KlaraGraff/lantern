@@ -1,7 +1,7 @@
 import type { ContinuousReadSentence, ContinuousReadSource } from "../../components/continuous-read-aloud";
 import { sentenceRangesInRange } from "../../components/reader-interaction";
 import type { FoliateView } from "./foliate-types";
-import { decideFollow, isReaderRelocation, type SentencePlacement } from "./read-aloud-follow";
+import { decideFollow, isReaderRelocation, type SentenceLocation } from "./read-aloud-follow";
 import { pickReadAloudStart } from "./read-aloud-start";
 
 interface ReadAloudSection {
@@ -70,19 +70,23 @@ export function createFoliateContinuousSource(
   };
 
   /**
-   * Where a sentence sits relative to the page on screen, or `null` when the
-   * question cannot be answered against the live document — a section that is
-   * not loaded, or a visible range measured in a document that has since been
-   * replaced.
+   * Where a sentence sits relative to the page on screen.
+   *
+   * `"other-chapter"` when the renderer has sections on screen but none of them
+   * is this sentence's — the ordinary state of affairs for the first sentence of
+   * the next chapter, and the one case that must not be confused with `null`.
+   * `null` when the question cannot be answered at all: nothing rendered yet, or
+   * a visible range measured in a document that has since been replaced.
    */
-  const placeOnPage = (currentView: FoliateView, sentenceId: string): SentencePlacement | null => {
+  const placeOnPage = (currentView: FoliateView, sentenceId: string): SentenceLocation => {
     try {
       const resolved = currentView.resolveCFI(sentenceId);
-      const loaded = currentView.renderer?.getContents?.()
-        ?.find((content: { index?: number }) => content.index === resolved.index) as
-          { doc?: Document } | undefined;
+      const contents = currentView.renderer?.getContents?.() as
+        { index?: number; doc?: Document }[] | undefined;
+      if (!contents || contents.length === 0) return null;
+      const loaded = contents.find((content) => content.index === resolved.index);
       const doc = loaded?.doc;
-      if (!doc) return null;
+      if (!doc) return "other-chapter";
       const page = currentView.lastLocation?.range as Range | undefined;
       if (!page?.startContainer || page.startContainer.ownerDocument !== doc) return null;
       const target = resolved.anchor(doc);
@@ -237,6 +241,10 @@ export function createFoliateContinuousSource(
       if (decision === "hold") return;
       const revealed = await currentView.goTo(sentence.id, { history: false });
       if (!revealed) throw new Error("CONTINUOUS_REVEAL_FAILED");
+      // The page is now on the voice, so whatever the reader had gone off to
+      // read is behind them either way. Leaving the flag set would make the
+      // very next sentence hold against a page this run just chose.
+      readerTurnedAway = false;
     },
   };
 }

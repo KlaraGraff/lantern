@@ -54,6 +54,14 @@ test("after the reader turns the page by hand, playback stops dragging it back",
   assert.equal(decideFollow(null, true), "hold");
 });
 
+test("the hold ends at the chapter boundary rather than stranding the run there", () => {
+  // A sentence in a section that is not on screen can never be measured as
+  // visible, so holding on one is a hold nothing releases: the voice would read
+  // the whole next chapter to a page still showing this one.
+  assert.equal(decideFollow("other-chapter", true), "turn");
+  assert.equal(decideFollow("other-chapter", false), "turn");
+});
+
 test("following resumes the moment playback catches back up to what they are looking at", () => {
   assert.equal(decideFollow(overlapping, true), "visible");
 });

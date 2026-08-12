@@ -24,6 +24,15 @@ export interface SentencePlacement {
   endVsVisibleStart: number;
 }
 
+/**
+ * Where a sentence is, as far as the page can tell.
+ *
+ * `"other-chapter"` is not a worse `null`: it says the sentence lives in a
+ * section other than the one on screen, which is a fact, where `null` says the
+ * question could not be answered at all.
+ */
+export type SentenceLocation = SentencePlacement | "other-chapter" | null;
+
 export type FollowDecision =
   /** Some of this sentence is on the page already; leave the view alone. */
   | "visible"
@@ -37,21 +46,29 @@ export type FollowDecision =
   | "hold";
 
 /**
- * `placement` is `null` when the sentence cannot be placed against the current
- * page at all — it belongs to a section that is not loaded, or the live document
- * has moved on since the visible range was measured. That is not evidence of
- * visibility, so it counts as off the page.
+ * `location` is `null` when the sentence cannot be placed against the current
+ * page at all — the live document has moved on since the visible range was
+ * measured, or the measurement threw. That is not evidence of visibility, so it
+ * counts as off the page.
  *
  * Overlap is strict at both ends: a sentence that ends exactly where the page
  * begins, or begins exactly where the page ends, has nothing on screen.
+ *
+ * The hold is scoped to the chapter the reader is in, which is why
+ * `"other-chapter"` overrides it. A sentence in a section that is not on screen
+ * can never be found visible — the comparison needs a loaded document to make —
+ * so holding across a chapter boundary is a hold that nothing can ever release:
+ * the voice reads on into a chapter the page will not open, for the rest of the
+ * book. One page turn the reader did not ask for is the smaller harm.
  */
 export function decideFollow(
-  placement: SentencePlacement | null,
+  location: SentenceLocation,
   readerTurnedAway: boolean,
 ): FollowDecision {
-  const visible = placement !== null
-    && placement.startVsVisibleEnd < 0
-    && placement.endVsVisibleStart > 0;
+  if (location === "other-chapter") return "turn";
+  const visible = location !== null
+    && location.startVsVisibleEnd < 0
+    && location.endVsVisibleStart > 0;
   if (visible) return "visible";
   return readerTurnedAway ? "hold" : "turn";
 }
