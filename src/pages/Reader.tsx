@@ -3240,7 +3240,7 @@ export default function Reader() {
                     }`}
                   >
                     <Icon size={20} />
-                    <span className="max-w-full truncate text-[10px] leading-3">{action.label}</span>
+                    <span className="line-clamp-2 max-w-full text-center text-[10px] leading-3">{action.label}</span>
                   </button>
                 );
               })}

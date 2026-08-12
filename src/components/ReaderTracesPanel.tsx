@@ -15,7 +15,8 @@ interface ReaderTracesPanelProps {
 }
 
 /**
- * 痕迹 (traces): everything the reader left in this book, docked in one panel
+ * 划线笔记 / "Highlights & Notes" (internal id: traces): everything the reader
+ * left in this book, docked in one panel
  * with three tabs — 笔记, 生词, 语境. Each tab mounts only its own component,
  * the "one active at a time" behaviour they have always had.
  *

@@ -2,7 +2,8 @@
  * The reader's right-docked panel is one exclusive slot, not several
  * independently-toggled booleans — opening one panel always closes any other
  * by construction, so nothing needs a manual mutual-exclusion effect.
- * "Traces" (痕迹) holds notes/vocab/context as tabs; "ai" is the conversation
+ * "Highlights & Notes" (划线笔记; internal id "traces") holds notes/vocab/
+ * context as tabs; "ai" is the conversation
  * and nothing else. Bookmarks and highlights are not tabs of their own: they
  * are rows in the notes list, told apart by the cell on their left rather than
  * by which tab you had to guess first.
