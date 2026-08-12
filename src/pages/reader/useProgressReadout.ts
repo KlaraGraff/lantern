@@ -128,9 +128,11 @@ export function useProgressReadout({
     if (effectiveProgressReadoutMode === "hidden") return null;
     if (effectiveProgressReadoutMode === "page") {
       if (!pageInfo) return t("reader.bookProgress", { progress });
+      // `pageInfo` counts pages within the current chapter, so the label says
+      // so — `reader.pageOf` (whole-document pages) stays with the PDF footer.
       return pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
-        ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
-        : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total });
+        ? t("reader.chapterPageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
+        : t("reader.chapterPageOf", { current: pageInfo.current, total: pageInfo.total });
     }
     if (effectiveProgressReadoutMode === "chapterTime") {
       if (!pageInfo) return t("reader.progressReadout.calculating");
@@ -139,7 +141,7 @@ export function useProgressReadout({
       const minutes = minutesLeftInChapter(secondsPerPage, pagesLeft);
       return minutes === null
         ? t("reader.progressReadout.calculating")
-        : t("reader.progressReadout.minutesLeft", { minutes });
+        : t("reader.progressReadout.chapterMinutesLeft", { minutes });
     }
     // bookTime — whole-book percentage plus estimated time left.
     const secondsPerPercent = averageSecondsPerPercent(paceWindow);
