@@ -119,6 +119,7 @@ import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-p
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
 import { readerToolbarOverflow } from "./reader/reader-toolbar";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
+import { isCoarsePointer } from "../hooks/useCoarsePointer";
 import {
   fileStatusExplainsFailure,
   toReaderOpenError,
@@ -493,6 +494,10 @@ export default function Reader() {
   // Without this a selected sentence reached the model only if the reader
   // explicitly quoted it; a plain selection fell through to the whole viewport,
   // and the answer could not tell which sentence was being asked about.
+  // What the selection said just before a finger's selection had to be dropped
+  // (see `clearReaderSelection`). The quote survives the highlight so the AI
+  // composer can still offer it.
+  const stashedSelectionRef = useRef<{ text: string; cfi?: string } | undefined>(undefined);
   const getSelectionQuote = useCallback((): { text: string; cfi?: string } | undefined => {
     try {
       const view = viewRef.current;
@@ -506,8 +511,34 @@ export default function Reader() {
     } catch {
       // A torn-down frame simply yields no selection.
     }
-    return undefined;
+    return stashedSelectionRef.current;
   }, []);
+  /**
+   * iOS draws the selection highlight and its two round handles in a system
+   * layer above the page, so nothing rendered by the app can cover them: the
+   * selection menu closes and the highlight stays sitting on top of whatever
+   * opened in its place — the AI panel, most visibly. Dropping the selection is
+   * the only way to take that layer back. A mouse has no such layer and a
+   * lingering highlight there is ordinary, so this is a finger-only measure.
+   */
+  const clearReaderSelection = useCallback(() => {
+    if (!isCoarsePointer()) return;
+    stashedSelectionRef.current = getSelectionQuote();
+    for (const content of viewRef.current?.renderer?.getContents?.() ?? []) {
+      (content?.doc as Document | undefined)?.defaultView?.getSelection()?.removeAllRanges();
+    }
+  }, [getSelectionQuote]);
+  // The selection outlives the menu it opened, so the menu closing is when to
+  // drop it — whether it closed on a tap outside, on an action, or because
+  // something else took the screen. A menu opening means a fresh selection,
+  // which retires the quote stashed from the previous one.
+  const menuWasOpenRef = useRef(false);
+  useEffect(() => {
+    const open = contextMenu !== null;
+    if (open) stashedSelectionRef.current = undefined;
+    else if (menuWasOpenRef.current) clearReaderSelection();
+    menuWasOpenRef.current = open;
+  }, [contextMenu, clearReaderSelection]);
   const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel, !isNarrow);
   const {
     zoom,
