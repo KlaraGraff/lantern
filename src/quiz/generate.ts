@@ -235,7 +235,8 @@ export async function generateQuiz(opts: {
 function stripStage1Answers(rawResponse: string): string {
   const parsed = JSON.parse(extractJson(rawResponse))
   const omitAnswer = (q: Record<string, unknown>) => {
-    const { answer: _answer, ...rest } = q
+    const rest = { ...q }
+    delete rest.answer
     return rest
   }
   return JSON.stringify({
