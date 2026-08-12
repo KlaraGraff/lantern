@@ -38,6 +38,7 @@ import {
   type ReadingMode,
 } from "../ReaderSettings";
 import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../reader-bindings";
+import { useCoarsePointer } from "../../hooks/useCoarsePointer";
 import PassiveVocabSettings from "./PassiveVocabSettings";
 import type { PassiveVocabPreviewState } from "./PassiveVocabPreview";
 import { formatPassiveVocabSummary, parsePassiveVocabSettings } from "../passive-vocab";
@@ -189,6 +190,9 @@ export default function ReadingSettings({
   const [previousPageBinding, setPreviousPageBinding] = useState(DEFAULT_PREVIOUS_PAGE_BINDING);
   const [nextPageBinding, setNextPageBinding] = useState(DEFAULT_NEXT_PAGE_BINDING);
   const [capturingBinding, setCapturingBinding] = useState<BindingDirection | null>(null);
+  // The input device, not the window width: a desktop window dragged narrow
+  // still has the keyboard these two rows are about. See `useCoarsePointer`.
+  const coarsePointer = useCoarsePointer();
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [fontBusy, setFontBusy] = useState(false);
   const [fontError, setFontError] = useState<string | null>(null);
@@ -863,7 +867,22 @@ export default function ReadingSettings({
           ]}
         />
       </div>
-      {/* Previous-page Control */}
+      {/* Previous-page and Next-page Control.
+          Both rows are gone under a finger, and this is a gate rather than the
+          "default, not a gate" treatment `menuShortcutsVisible` gives the menu
+          shortcuts. The difference is that a hidden hint is still reachable —
+          the toggle stays there — while these rows are not merely uninformative
+          on touch but inoperable: `PageTurnBindingButton` records a binding from
+          `keydown` and `mousedown` only, so tapping it opens a capture that no
+          touch can ever close except by tapping it again. The hint said as much
+          in words nobody on a phone can act on ("press a key, or any mouse
+          button other than the left one"), which is how this was found.
+          The trade this accepts: an iPad with a Magic Keyboard reports a coarse
+          pointer, so it loses the ability to *re-bind* here. It keeps the
+          bindings themselves — ←/→ still turn pages, because `usePageTurnInput`
+          reads the stored setting and never asks what the pointer is. */}
+      {!coarsePointer && (
+      <>
       <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.previousPageBinding")}</p>
@@ -910,6 +929,8 @@ export default function ReadingSettings({
           }}
         />
       </div>
+      </>
+      )}
       {/* Progress Display — a multi-select, not three independent toggles:
           the three displays are peers (all can be lit, or none), so the row
           reads better as chips than as a stack of on/off switches. */}
