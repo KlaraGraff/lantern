@@ -916,7 +916,7 @@ fn copy_dir_contents_with_progress(
             if let Some(p) = progress.as_deref() {
                 p.emit("downloading", Some(display_file_name(&real)));
             }
-            crate::icloud::trigger_download_file(&real);
+            trigger_download(&real);
             wait_for_icloud_file(&real)?;
             copy_one_disable_file(&real, &target, progress.as_deref_mut())?;
             continue;
@@ -948,6 +948,34 @@ fn copy_one_disable_file(
     Ok(())
 }
 
+// Test seam for the iCloud download trigger. The materialization test
+// installs a hook here so the "downloaded" file appears in response to
+// the wait loop's own trigger calls — deterministic, instead of a
+// background thread racing the (test-shortened) wait deadline on a
+// loaded CI runner.
+#[cfg(test)]
+thread_local! {
+    static TEST_DOWNLOAD_TRIGGER: std::cell::RefCell<Option<Box<dyn FnMut(&Path)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn trigger_download(path: &Path) {
+    #[cfg(test)]
+    {
+        let hooked = TEST_DOWNLOAD_TRIGGER.with(|hook| match hook.borrow_mut().as_mut() {
+            Some(hook) => {
+                hook(path);
+                true
+            }
+            None => false,
+        });
+        if hooked {
+            return;
+        }
+    }
+    crate::icloud::trigger_download_file(path);
+}
+
 fn wait_for_icloud_file(path: &Path) -> AppResult<()> {
     let started = Instant::now();
     log::info!(
@@ -966,7 +994,7 @@ fn wait_for_icloud_file(path: &Path) -> AppResult<()> {
                 path.display(),
             )));
         }
-        crate::icloud::trigger_download_file(path);
+        trigger_download(path);
         thread::sleep(DISABLE_COPY_PLACEHOLDER_POLL);
     }
     log::info!(
@@ -1118,6 +1146,12 @@ mod tests {
         );
     }
 
+    /// The real file materializes via the download-trigger test seam:
+    /// absent on the first trigger (the one before the wait), written on
+    /// the second (the wait loop's first poll). That forces at least one
+    /// wait-loop iteration with no wall-clock race — the old version
+    /// wrote the file from a sleeping thread, which lost against the
+    /// test-shortened wait deadline on loaded CI runners.
     #[test]
     fn copy_dir_contents_waits_for_icloud_placeholder_materialization() {
         let tmp = TempDir::new().unwrap();
@@ -1127,13 +1161,21 @@ mod tests {
         fs::write(src.join(".evicted.epub.icloud"), b"stub").unwrap();
 
         let real = src.join("evicted.epub");
-        let real_for_thread = real.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(DISABLE_COPY_PLACEHOLDER_POLL + DISABLE_COPY_PLACEHOLDER_POLL);
-            fs::write(real_for_thread, b"downloaded").unwrap();
+        let real_for_hook = real.clone();
+        let mut trigger_calls = 0u32;
+        TEST_DOWNLOAD_TRIGGER.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move |_path| {
+                trigger_calls += 1;
+                if trigger_calls == 2 {
+                    fs::write(&real_for_hook, b"downloaded").unwrap();
+                }
+            }));
         });
 
-        copy_dir_contents(&src, &dst).unwrap();
+        let result = copy_dir_contents(&src, &dst);
+        TEST_DOWNLOAD_TRIGGER.with(|hook| hook.borrow_mut().take());
+
+        result.unwrap();
         assert_eq!(fs::read(dst.join("evicted.epub")).unwrap(), b"downloaded");
         assert!(real.exists(), "copy-back must keep the iCloud source file");
     }
