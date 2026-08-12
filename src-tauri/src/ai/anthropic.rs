@@ -18,12 +18,44 @@ fn anthropic_effort(effort: &str) -> String {
     effort.replace('-', "")
 }
 
+/// Rewrites a plain-string `"content"` field into the array form carrying an
+/// `ephemeral` `cache_control` breakpoint. Anthropic reads a breakpoint as
+/// "cache everything up to and including this block," so each call site
+/// below is choosing where a shared prefix ends, not just marking "this one
+/// message."
+fn mark_cache_control(message: &mut serde_json::Value) {
+    let text = message["content"].as_str().unwrap_or_default().to_string();
+    message["content"] = serde_json::json!([
+        { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
+    ]);
+}
+
 fn request_body(
     model: &str,
     temperature: f64,
     messages: &[ChatMessage],
     max_tokens: Option<u32>,
     effort: Option<&str>,
+    // Explicit per-call cache request (quiz generation's two-phase pipeline —
+    // see docs/impls/cijuan-merge.md §二.6 — and any other multi-turn caller
+    // that wants its earlier turns read from cache): marks the last message
+    // with `cache_control`, and rides along on the system prompt too when
+    // there is one, even if it is below the size-based auto-cache threshold
+    // below. Independent of that threshold — a caller can ask for this on a
+    // short system prompt, and a long system prompt still auto-caches with
+    // this left `false`.
+    //
+    // Two message-level breakpoints, not one, when there's an assistant turn
+    // to put the second one on (see below) — quiz generation's pipeline is
+    // 出题 → 明答校验（续写）→ 解析生成（分叉续写：same conversation, but the
+    // final user message differs from the 明答校验 branch's). Both forked
+    // calls need a breakpoint at the assistant message they share as their
+    // last common turn, or neither branch's cache read reaches past it — a
+    // breakpoint only on each branch's own (different) final message would
+    // cache nothing in common between them. Anthropic allows up to 4
+    // breakpoints per request; this uses at most 3 (system + shared-prefix
+    // assistant turn + final message).
+    cache_last_message: bool,
 ) -> serde_json::Value {
     let stable = messages
         .iter()
@@ -35,9 +67,10 @@ fn request_body(
         .filter(|message| message.role == "system_cache_variable")
         .map(|message| message.content.as_str())
         .collect::<String>();
-    let system = if crate::ai::grounding::chunk::estimate_tokens(&stable)
-        >= MIN_CACHEABLE_STABLE_TOKENS
-    {
+    let cache_system = !stable.is_empty()
+        && (crate::ai::grounding::chunk::estimate_tokens(&stable) >= MIN_CACHEABLE_STABLE_TOKENS
+            || cache_last_message);
+    let system = if cache_system {
         let mut blocks = vec![
             serde_json::json!({ "type": "text", "text": stable, "cache_control": { "type": "ephemeral" } }),
         ];
@@ -48,11 +81,32 @@ fn request_body(
     } else {
         serde_json::json!(format!("{stable}{variable}"))
     };
-    let api_messages: Vec<serde_json::Value> = messages
+    let mut api_messages: Vec<serde_json::Value> = messages
         .iter()
         .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
         .map(|message| serde_json::json!({ "role": message.role, "content": message.content }))
         .collect();
+    if cache_last_message {
+        let len = api_messages.len();
+        if len > 0 {
+            // The last assistant turn *before* the final message is the
+            // shared-prefix breakpoint a forked continuation needs (see the
+            // doc comment on `cache_last_message` above). Searching only
+            // `[..len - 1]` means: if the final message already *is* an
+            // assistant turn, it only gets marked once, by the final-message
+            // branch below, rather than twice.
+            if let Some(index) = api_messages[..len - 1]
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, message)| message["role"] == "assistant")
+                .map(|(index, _)| index)
+            {
+                mark_cache_control(&mut api_messages[index]);
+            }
+            mark_cache_control(&mut api_messages[len - 1]);
+        }
+    }
     let mut body = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens.unwrap_or(4096),
@@ -87,13 +141,21 @@ pub async fn stream_chat<R: Runtime>(
     event_name: &str,
     max_tokens_override: Option<u32>,
     effort: Option<&str>,
+    cache_last_message: bool,
     emitted: Arc<AtomicBool>,
     usage: Arc<Mutex<Option<serde_json::Value>>>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
     let url = crate::ai::compat_endpoint(base_url, "messages");
 
-    let body = request_body(model, temperature, messages, max_tokens_override, effort);
+    let body = request_body(
+        model,
+        temperature,
+        messages,
+        max_tokens_override,
+        effort,
+        cache_last_message,
+    );
 
     let mut request = client
         .post(url)
@@ -244,6 +306,7 @@ mod tests {
             ],
             None,
             None,
+            false,
         );
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(body["system"][1]["text"], " excerpts");
@@ -260,6 +323,7 @@ mod tests {
             ],
             None,
             None,
+            false,
         );
         assert_eq!(body["system"], "stable variable");
     }
@@ -272,6 +336,7 @@ mod tests {
             &[system("token ".repeat(1_100), "system")],
             None,
             None,
+            false,
         );
         assert_eq!(body["system"].as_array().unwrap().len(), 1);
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
@@ -285,6 +350,7 @@ mod tests {
             &[system("stable".into(), "system")],
             None,
             Some("x-high"),
+            false,
         );
         assert_eq!(body["output_config"]["effort"], "xhigh");
         assert!(body["thinking"].is_null());
@@ -300,9 +366,182 @@ mod tests {
             &[system("stable".into(), "system")],
             None,
             Some("none"),
+            false,
         );
         assert_eq!(body["thinking"]["type"], "disabled");
         assert!(body["output_config"].is_null());
+    }
+
+    #[test]
+    fn cache_last_message_marks_the_final_turn_even_without_a_system_prompt() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user".into(),
+                    content: "first turn".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "first reply".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "second turn".into(),
+                },
+            ],
+            None,
+            None,
+            true,
+        );
+        // No system messages at all: there is nothing to cache there, but the
+        // last message still gets marked.
+        assert_eq!(body["system"], "");
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "first turn");
+        // The lone assistant turn sits before the final message, so it gets
+        // its own breakpoint too — the shared-prefix mark a forked
+        // continuation needs (see `cache_last_message`'s doc comment).
+        assert_eq!(messages[1]["content"][0]["text"], "first reply");
+        assert_eq!(
+            messages[1]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert_eq!(messages[2]["content"][0]["text"], "second turn");
+        assert_eq!(
+            messages[2]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+    }
+
+    #[test]
+    fn cache_last_message_also_caches_a_system_prompt_below_the_size_threshold() {
+        // The size-based auto-cache (`cache_control_is_emitted_for_large_stable_prefixes`)
+        // only kicks in past `MIN_CACHEABLE_STABLE_TOKENS`. An explicit cache
+        // request rides along on a short system prompt too, since the caller
+        // (e.g. quiz generation's two-phase pipeline) knows it will be reread
+        // on the very next turn regardless of size.
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                system("short and stable".into(), "system"),
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "phase one output".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "now write the explanations".into(),
+                },
+            ],
+            None,
+            None,
+            true,
+        );
+        assert_eq!(body["system"][0]["text"], "short and stable");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        let messages = body["messages"].as_array().unwrap();
+        // Same shared-prefix marking as above: the assistant turn ("phase
+        // one output") is also the last common turn a forked continuation
+        // (e.g. 明答校验 vs. 解析生成, both continuing from here) would need
+        // a breakpoint on.
+        assert_eq!(messages[0]["content"][0]["text"], "phase one output");
+        assert_eq!(
+            messages[0]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert_eq!(
+            messages[1]["content"][0]["text"],
+            "now write the explanations"
+        );
+        assert_eq!(
+            messages[1]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+    }
+
+    #[test]
+    fn cache_last_message_leaves_earlier_assistant_turns_unmarked() {
+        // Three assistant turns; only the last one (the shared-prefix
+        // breakpoint) and the final message should get `cache_control` — an
+        // earlier assistant turn is not a fork point any caller in this
+        // pipeline needs, and marking it would spend one of Anthropic's 4
+        // breakpoints on nothing.
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user".into(),
+                    content: "turn 1".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "reply 1".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "turn 2".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "reply 2".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "turn 3".into(),
+                },
+            ],
+            None,
+            None,
+            true,
+        );
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "turn 1");
+        assert_eq!(messages[1]["content"], "reply 1");
+        assert_eq!(messages[2]["content"], "turn 2");
+        assert_eq!(messages[3]["content"][0]["text"], "reply 2");
+        assert_eq!(
+            messages[3]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert_eq!(messages[4]["content"][0]["text"], "turn 3");
+        assert_eq!(
+            messages[4]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+    }
+
+    #[test]
+    fn cache_last_message_does_not_double_mark_when_the_final_message_is_itself_assistant() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user".into(),
+                    content: "turn 1".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "reply 1".into(),
+                },
+            ],
+            None,
+            None,
+            true,
+        );
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "turn 1");
+        // Only one breakpoint: the final message, marked once, not twice.
+        assert_eq!(messages[1]["content"][0]["text"], "reply 1");
+        assert_eq!(
+            messages[1]["content"][0]["cache_control"]["type"],
+            "ephemeral"
+        );
+        assert_eq!(messages[1]["content"].as_array().unwrap().len(), 1);
     }
 
     #[test]

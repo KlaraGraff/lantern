@@ -8,6 +8,7 @@ pub struct ChatMessage {
 
 mod book_index;
 mod chat;
+mod complete_text;
 mod custom_action;
 mod explain;
 mod intent;
@@ -29,6 +30,7 @@ mod xray;
 // all of them through `commands::ai::<name>`.
 pub use book_index::*;
 pub use chat::*;
+pub use complete_text::*;
 pub use custom_action::*;
 pub use explain::*;
 pub use learning_card::*;

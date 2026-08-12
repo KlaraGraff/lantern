@@ -950,7 +950,11 @@ fn is_unconfigured(profile: &AiProfileView) -> bool {
 /// rows included, because editing them is the whole point.
 fn profiles(db: &Db, usable_only: bool) -> AppResult<Vec<AiProfile>> {
     let conn = db.reader();
-    let where_clause = if usable_only { " WHERE enabled = 1" } else { "" };
+    let where_clause = if usable_only {
+        " WHERE enabled = 1"
+    } else {
+        ""
+    };
     let mut statement = conn.prepare(&format!(
         "SELECT {PROFILE_COLUMNS} FROM ai_profiles{where_clause} ORDER BY priority ASC, created_at ASC"
     ))?;
@@ -1047,10 +1051,7 @@ fn route_for_request(
     if !routable.is_empty() || cutoff == i64::MAX {
         return Ok((routable, cutoff));
     }
-    Ok((
-        routable_profiles(db, enabled.to_vec(), i64::MAX)?,
-        i64::MAX,
-    ))
+    Ok((routable_profiles(db, enabled.to_vec(), i64::MAX)?, i64::MAX))
 }
 
 /// Why a set of keys could not carry a request, in terms the reader can act on.
@@ -1293,6 +1294,12 @@ async fn stream_once<R: Runtime>(
     event_name: &str,
     max_tokens: Option<u32>,
     effort: Option<&str>,
+    // Anthropic-only: mark the system prompt and the last message with
+    // `cache_control` so a multi-turn caller (quiz generation's two-phase
+    // pipeline, see docs/impls/cijuan-merge.md §二.6) reads its earlier turns
+    // from Anthropic's prompt cache instead of paying for them again. Every
+    // other provider ignores it — DeepSeek and friends cache automatically.
+    cache_last_message: bool,
     emitted: Arc<AtomicBool>,
     usage: Arc<Mutex<Option<serde_json::Value>>>,
     cancel: &mut watch::Receiver<bool>,
@@ -1315,6 +1322,7 @@ async fn stream_once<R: Runtime>(
                 event_name,
                 max_tokens,
                 effort,
+                cache_last_message,
                 emitted,
                 usage,
             )),
@@ -1378,6 +1386,7 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
     max_tokens: Option<u32>,
     effort: Option<&str>,
     persist_clear: bool,
+    cache_last_message: bool,
     emitted: Arc<AtomicBool>,
     usage: Arc<Mutex<Option<serde_json::Value>>>,
     cancel: &mut watch::Receiver<bool>,
@@ -1392,6 +1401,7 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
         event_name,
         max_tokens,
         effort,
+        cache_last_message,
         Arc::clone(&emitted),
         Arc::clone(&usage),
         cancel,
@@ -1417,6 +1427,7 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
         event_name,
         max_tokens,
         None,
+        cache_last_message,
         emitted,
         usage,
         cancel,
@@ -1701,6 +1712,7 @@ pub async fn stream_with_failover<R: Runtime>(
         retry,
         origin,
         feature,
+        false,
         &mut cancel,
     )
     .await;
@@ -1714,6 +1726,11 @@ pub async fn stream_with_failover<R: Runtime>(
 /// frontend. Existing provider adapters emit through `AppHandle`, so a private
 /// per-request listener collects those deltas until the adapters can be moved
 /// to a provider-neutral sink.
+///
+/// Same as `complete_with_failover_cached`, but without the per-call prompt-cache
+/// flag. Most callers don't need to mark the last message for Anthropic
+/// prompt-cache `cache_control`; use `complete_with_failover_cached` directly
+/// if you do.
 #[allow(clippy::too_many_arguments)]
 pub async fn complete_with_failover<R: Runtime>(
     app: &AppHandle<R>,
@@ -1727,6 +1744,43 @@ pub async fn complete_with_failover<R: Runtime>(
     forward_event_name: Option<&str>,
     origin: &str,
     feature: &str,
+) -> AppResult<AiCompletion> {
+    complete_with_failover_cached(
+        app,
+        db,
+        secrets,
+        messages,
+        max_tokens,
+        purpose,
+        retry,
+        request_id,
+        forward_event_name,
+        origin,
+        feature,
+        false,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn complete_with_failover_cached<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    secrets: &Secrets,
+    messages: &[ChatMessage],
+    max_tokens: Option<u32>,
+    purpose: AiRequestPurpose,
+    retry: AiRetryMode,
+    request_id: Option<&str>,
+    forward_event_name: Option<&str>,
+    origin: &str,
+    feature: &str,
+    // Marks the last message (and the stable system prompt, if present) with
+    // Anthropic prompt-cache `cache_control` for this one call. Only the
+    // Anthropic channel honors it — OpenAI-compatible and OAuth channels
+    // auto-cache and silently ignore the flag, by construction (it is never
+    // threaded into their request builders).
+    cache_last_message: bool,
 ) -> AppResult<AiCompletion> {
     let event_name = format!("ai-internal-completion-{}", uuid::Uuid::new_v4());
     let output = Arc::new(Mutex::new(String::new()));
@@ -1778,6 +1832,7 @@ pub async fn complete_with_failover<R: Runtime>(
         retry,
         origin,
         feature,
+        cache_last_message,
         &mut cancel,
     )
     .await;
@@ -1846,6 +1901,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             max_tokens,
             effort,
             true,
+            false,
             Arc::new(AtomicBool::new(false)),
             Arc::clone(&usage),
             cancel,
@@ -1879,6 +1935,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             max_tokens,
             effort,
             true,
+            false,
             Arc::new(AtomicBool::new(false)),
             Arc::clone(&usage),
             cancel,
@@ -1921,6 +1978,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             max_tokens,
             effort,
             true,
+            false,
             Arc::clone(&emitted),
             Arc::clone(&usage),
             cancel,
@@ -2127,6 +2185,7 @@ async fn stream_with_failover_inner<R: Runtime>(
     retry: AiRetryMode,
     origin: &str,
     feature: &str,
+    cache_last_message: bool,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<AiProfileView> {
     let enabled_profiles = profiles(db, true)?;
@@ -2235,6 +2294,7 @@ async fn stream_with_failover_inner<R: Runtime>(
                 max_tokens,
                 effort_for(&profile.view, purpose),
                 true,
+                cache_last_message,
                 Arc::clone(&emitted),
                 Arc::clone(&usage),
                 cancel,
@@ -2904,6 +2964,7 @@ async fn timed_stream_once<R: Runtime>(
         max_tokens,
         profile.view.reasoning_effort.as_deref(),
         persist_effort_clear,
+        false,
         Arc::clone(&emitted),
         usage,
         &mut cancel,
@@ -4995,6 +5056,7 @@ mod tests {
             AiRetryMode::Automatic,
             "user",
             "test",
+            false,
             &mut cancel,
         )
         .await

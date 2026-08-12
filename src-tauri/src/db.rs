@@ -93,57 +93,33 @@ const MIGRATIONS: &[(i64, &str)] = &[
         include_str!("../migrations/035_retire_highlight_notes.sql"),
     ),
     (36, include_str!("../migrations/036_ai_usage.sql")),
-    (
-        37,
-        include_str!("../migrations/037_reading_behavior.sql"),
-    ),
+    (37, include_str!("../migrations/037_reading_behavior.sql")),
     (38, include_str!("../migrations/038_mastery.sql")),
-    (
-        39,
-        include_str!("../migrations/039_mastery_scoring.sql"),
-    ),
-    (
-        40,
-        include_str!("../migrations/040_annotation_indexes.sql"),
-    ),
+    (39, include_str!("../migrations/039_mastery_scoring.sql")),
+    (40, include_str!("../migrations/040_annotation_indexes.sql")),
     (41, include_str!("../migrations/041_book_difficulty.sql")),
-    (
-        42,
-        include_str!("../migrations/042_level_observation.sql"),
-    ),
+    (42, include_str!("../migrations/042_level_observation.sql")),
     (
         43,
         include_str!("../migrations/043_pending_book_reviews.sql"),
     ),
-    (
-        44,
-        include_str!("../migrations/044_vocab_watchlist.sql"),
-    ),
+    (44, include_str!("../migrations/044_vocab_watchlist.sql")),
     (
         45,
         include_str!("../migrations/045_followup_difficulty.sql"),
     ),
-    (
-        46,
-        include_str!("../migrations/046_local_calibration.sql"),
-    ),
+    (46, include_str!("../migrations/046_local_calibration.sql")),
     (
         47,
         include_str!("../migrations/047_review_pile_curation.sql"),
     ),
     (48, include_str!("../migrations/048_explanations.sql")),
-    (
-        49,
-        include_str!("../migrations/049_ai_request_counts.sql"),
-    ),
+    (49, include_str!("../migrations/049_ai_request_counts.sql")),
     (
         50,
         include_str!("../migrations/050_contextual_retrieval.sql"),
     ),
-    (
-        51,
-        include_str!("../migrations/051_fts_context_column.sql"),
-    ),
+    (51, include_str!("../migrations/051_fts_context_column.sql")),
     (
         52,
         include_str!("../migrations/052_epub_source_metadata.sql"),
@@ -165,10 +141,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         57,
         include_str!("../migrations/057_book_difficulty_sections.sql"),
     ),
-    (
-        59,
-        include_str!("../migrations/059_person_aliases.sql"),
-    ),
+    (59, include_str!("../migrations/059_person_aliases.sql")),
     (
         60,
         include_str!("../migrations/060_person_alias_embeddings.sql"),
@@ -195,14 +168,12 @@ const MIGRATIONS: &[(i64, &str)] = &[
         68,
         include_str!("../migrations/068_profile_card_evidence.sql"),
     ),
-    (
-        69,
-        include_str!("../migrations/069_dictionary_glances.sql"),
-    ),
+    (69, include_str!("../migrations/069_dictionary_glances.sql")),
     (
         70,
         include_str!("../migrations/070_repair_word_info_glosses.sql"),
     ),
+    (71, include_str!("../migrations/071_quiz_papers.sql")),
 ];
 
 fn register_sqlite_vec() {

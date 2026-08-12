@@ -734,10 +734,8 @@ pub(crate) fn set_definition(
         // Read inside the transaction that writes, so "is the explanation
         // column empty" is decided by the row the write lands on rather than
         // by a value read before the AI call.
-        let displaced = crate::commands::vocab_regloss::displaced_explanation(
-            &current,
-            explanation.as_deref(),
-        );
+        let displaced =
+            crate::commands::vocab_regloss::displaced_explanation(&current, explanation.as_deref());
         tx.execute(
             "UPDATE vocab_words
              SET definition = ?1,
@@ -883,7 +881,15 @@ pub(crate) fn update_vocab_card_inner(
         ));
     }
     let now = chrono::Utc::now().timestamp_millis();
-    if !set_card(db, sync, id, definition, context_explanation, card_snapshot, now)? {
+    if !set_card(
+        db,
+        sync,
+        id,
+        definition,
+        context_explanation,
+        card_snapshot,
+        now,
+    )? {
         return Err(crate::error::AppError::Other(
             "VOCAB_WORD_NOT_FOUND".to_string(),
         ));
@@ -1417,201 +1423,253 @@ pub(crate) fn record_vocab_review_inner(
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
-        let current = tx
-            .query_row(
-                &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
-                params![id],
-                row_to_vocab,
-            )
-            .map_err(|_| crate::error::AppError::Other("VOCAB_WORD_NOT_FOUND".to_string()))?;
-        // Read off the "before" side of the transition while it is still
-        // true. The UPDATE below overwrites `fsrs_stability` /
-        // `fsrs_difficulty` in place, so after it runs the numbers this
-        // review was scheduled *from* no longer exist anywhere.
-        let stability_before = current.fsrs_stability;
-        let difficulty_before = current.fsrs_difficulty;
-        let scheduled = schedule_review(
-            rating,
-            stability_before,
-            difficulty_before,
-            current.last_reviewed_at,
-            now,
-        )?;
-        let ScheduledReview {
-            mastery_outcome,
-            review_interval_days,
-            next_review_at,
-            stability,
-            difficulty,
-            elapsed_days,
-            state_before,
-        } = scheduled;
-        let review_count = current.review_count.saturating_add(1);
-        // A review may only promote or demote the tier (see `MasteryOutcome`);
-        // `Keep` must leave `mastery`, `mastery_source`, and `mastery_reason`
-        // exactly as they were, including a reading-exposure explanation
-        // this review is not strong enough evidence to overrule. That is two
-        // UPDATE shapes, not one UPDATE that writes the old value back — the
-        // FSRS columns below still change on every review, and writing back
-        // a value that was merely read a moment earlier would clobber a
-        // concurrent writer's change to those three columns with a stale
-        // read of them.
-        let new_mastery: Option<&'static str> = match mastery_outcome {
-            MasteryOutcome::Promote => Some("mastered"),
-            MasteryOutcome::Demote => Some("learning"),
-            MasteryOutcome::Keep => None,
-        };
-        if let Some(mastery) = new_mastery {
-            // An actual promotion or demotion outranks whatever the exposure
-            // scorer had guessed, so the automatic sentence is cleared rather
-            // than left to contradict the tier the reader just earned.
-            tx.execute(
-                "UPDATE vocab_words
+        record_vocab_review_in_tx(tx, events, id, rating, now, &device)
+    })
+}
+
+/// The FSRS review write, factored out of `record_vocab_review_inner` so a
+/// caller that already holds its own `SyncWriter::with_tx` transaction can
+/// apply a review without nesting a second transaction on `db.conn` — that
+/// mutex is not reentrant, so two `with_tx` calls on the same thread would
+/// deadlock. Quiz submission (`commands::quiz`) is the first such caller: one
+/// transaction writes the paper's result, advances the wrong-word pool, *and*
+/// calls this once per graded target word that already lives in the vocab
+/// book.
+pub(crate) fn record_vocab_review_in_tx(
+    tx: &rusqlite::Transaction,
+    events: &mut Vec<EventBody>,
+    id: &str,
+    rating: VocabReviewRating,
+    now: i64,
+    device: &str,
+) -> AppResult<VocabWord> {
+    let current = tx
+        .query_row(
+            &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
+            params![id],
+            row_to_vocab,
+        )
+        .map_err(|_| crate::error::AppError::Other("VOCAB_WORD_NOT_FOUND".to_string()))?;
+    // Read off the "before" side of the transition while it is still
+    // true. The UPDATE below overwrites `fsrs_stability` /
+    // `fsrs_difficulty` in place, so after it runs the numbers this
+    // review was scheduled *from* no longer exist anywhere.
+    let stability_before = current.fsrs_stability;
+    let difficulty_before = current.fsrs_difficulty;
+    let scheduled = schedule_review(
+        rating,
+        stability_before,
+        difficulty_before,
+        current.last_reviewed_at,
+        now,
+    )?;
+    let ScheduledReview {
+        mastery_outcome,
+        review_interval_days,
+        next_review_at,
+        stability,
+        difficulty,
+        elapsed_days,
+        state_before,
+    } = scheduled;
+    let review_count = current.review_count.saturating_add(1);
+    // A review may only promote or demote the tier (see `MasteryOutcome`);
+    // `Keep` must leave `mastery`, `mastery_source`, and `mastery_reason`
+    // exactly as they were, including a reading-exposure explanation
+    // this review is not strong enough evidence to overrule. That is two
+    // UPDATE shapes, not one UPDATE that writes the old value back — the
+    // FSRS columns below still change on every review, and writing back
+    // a value that was merely read a moment earlier would clobber a
+    // concurrent writer's change to those three columns with a stale
+    // read of them.
+    let new_mastery: Option<&'static str> = match mastery_outcome {
+        MasteryOutcome::Promote => Some("mastered"),
+        MasteryOutcome::Demote => Some("learning"),
+        MasteryOutcome::Keep => None,
+    };
+    if let Some(mastery) = new_mastery {
+        // An actual promotion or demotion outranks whatever the exposure
+        // scorer had guessed, so the automatic sentence is cleared rather
+        // than left to contradict the tier the reader just earned.
+        tx.execute(
+            "UPDATE vocab_words
                  SET mastery = ?1, review_count = ?2, next_review_at = ?3,
                      review_interval_days = ?4, last_reviewed_at = ?5, last_review_rating = ?6,
                      fsrs_stability = ?7, fsrs_difficulty = ?8, fsrs_version = 1,
                      mastery_source = 'manual', mastery_reason = NULL,
                      updated_at = ?5, updated_by_device = ?9
                  WHERE id = ?10",
-                params![
-                    mastery,
-                    review_count,
-                    next_review_at,
-                    review_interval_days,
-                    now,
-                    rating.as_str(),
-                    stability,
-                    difficulty,
-                    device,
-                    id,
-                ],
-            )?;
-        } else {
-            // Keep: the tier columns are simply absent from this statement,
-            // not re-written with the value `current` held before the FSRS
-            // columns changed.
-            tx.execute(
-                "UPDATE vocab_words
+            params![
+                mastery,
+                review_count,
+                next_review_at,
+                review_interval_days,
+                now,
+                rating.as_str(),
+                stability,
+                difficulty,
+                device,
+                id,
+            ],
+        )?;
+    } else {
+        // Keep: the tier columns are simply absent from this statement,
+        // not re-written with the value `current` held before the FSRS
+        // columns changed.
+        tx.execute(
+            "UPDATE vocab_words
                  SET review_count = ?1, next_review_at = ?2,
                      review_interval_days = ?3, last_reviewed_at = ?4, last_review_rating = ?5,
                      fsrs_stability = ?6, fsrs_difficulty = ?7, fsrs_version = 1,
                      updated_at = ?4, updated_by_device = ?8
                  WHERE id = ?9",
-                params![
-                    review_count,
-                    next_review_at,
-                    review_interval_days,
-                    now,
-                    rating.as_str(),
-                    stability,
-                    difficulty,
-                    device,
-                    id,
-                ],
-            )?;
-        }
-        let mastery = new_mastery
-            .map(str::to_string)
-            .unwrap_or_else(|| current.mastery.clone());
-        let mastery_source = if new_mastery.is_some() {
-            "manual".to_string()
+            params![
+                review_count,
+                next_review_at,
+                review_interval_days,
+                now,
+                rating.as_str(),
+                stability,
+                difficulty,
+                device,
+                id,
+            ],
+        )?;
+    }
+    let mastery = new_mastery
+        .map(str::to_string)
+        .unwrap_or_else(|| current.mastery.clone());
+    let mastery_source = if new_mastery.is_some() {
+        "manual".to_string()
+    } else {
+        current.mastery_source.clone()
+    };
+    let mastery_reason = if new_mastery.is_some() {
+        None
+    } else {
+        current.mastery_reason.clone()
+    };
+    // The timeline (and the statistics page's counts drawn from it) must
+    // only see a row when the tier actually moved — a Promote/Demote
+    // outcome whose resulting value happens to match what was already
+    // stored (e.g. an already-`mastered` word promoted again) is not a
+    // transition.
+    if new_mastery.is_some() && mastery != current.mastery {
+        let reason = if mastery_outcome == MasteryOutcome::Promote {
+            "review_promotion"
         } else {
-            current.mastery_source.clone()
+            "review_demotion"
         };
-        let mastery_reason = if new_mastery.is_some() {
-            None
-        } else {
-            current.mastery_reason.clone()
-        };
-        // The timeline (and the statistics page's counts drawn from it) must
-        // only see a row when the tier actually moved — a Promote/Demote
-        // outcome whose resulting value happens to match what was already
-        // stored (e.g. an already-`mastered` word promoted again) is not a
-        // transition.
-        if new_mastery.is_some() && mastery != current.mastery {
-            let reason = if mastery_outcome == MasteryOutcome::Promote {
-                "review_promotion"
-            } else {
-                "review_demotion"
-            };
-            record_mastery_event(tx, id, &current.mastery, &mastery, "review", reason, "{}", now)?;
-        }
-        let progress = VocabProgress {
-            mastery,
-            next_review_at: Some(next_review_at),
-            review_count,
-            review_interval_days,
-            last_reviewed_at: Some(now),
-            last_review_rating: Some(rating.as_str().to_string()),
-            fsrs_stability: Some(stability),
-            fsrs_difficulty: Some(difficulty),
-            fsrs_version: 1,
-            mastery_source,
-            mastery_reason,
-        };
-        events.push(EventBody::VocabMasterySet {
-            id: id.to_string(),
-            mastery: progress.mastery.clone(),
-            next_review_at: progress.next_review_at,
-            review_count: progress.review_count,
-            review_interval_days: progress.review_interval_days,
-            last_reviewed_at: progress.last_reviewed_at,
-            last_review_rating: progress.last_review_rating.clone(),
-            fsrs_stability: progress.fsrs_stability,
-            fsrs_difficulty: progress.fsrs_difficulty,
-            fsrs_version: progress.fsrs_version,
-            mastery_source: progress.mastery_source.clone(),
-            mastery_reason: progress.mastery_reason.clone(),
-        });
-        // The review itself, appended rather than overwritten. Deliberately
-        // outside `propagate_progress_to_siblings`: the *schedule* belongs to
-        // the word and is copied to every row spelling it, but the review
-        // happened once, to one card. Logging it per sibling row would make a
-        // word saved from three books look like three reviews and skew any
-        // optimizer trained on this log.
-        let log_id = uuid::Uuid::new_v4().to_string();
-        let review_log = VocabReviewLogPayload {
-            id: log_id,
-            vocab_word_id: id.to_string(),
-            reviewed_at: now,
-            rating: rating.as_str().to_string(),
-            state_before: state_before.map(str::to_string),
-            stability_before,
-            difficulty_before,
-            elapsed_days: Some(elapsed_days),
-            scheduled_days: Some(review_interval_days),
-            fsrs_version: Some(progress.fsrs_version),
-        };
-        tx.execute(
-            "INSERT INTO vocab_review_log
+        record_mastery_event(
+            tx,
+            id,
+            &current.mastery,
+            &mastery,
+            "review",
+            reason,
+            "{}",
+            now,
+        )?;
+    }
+    let progress = VocabProgress {
+        mastery,
+        next_review_at: Some(next_review_at),
+        review_count,
+        review_interval_days,
+        last_reviewed_at: Some(now),
+        last_review_rating: Some(rating.as_str().to_string()),
+        fsrs_stability: Some(stability),
+        fsrs_difficulty: Some(difficulty),
+        fsrs_version: 1,
+        mastery_source,
+        mastery_reason,
+    };
+    events.push(EventBody::VocabMasterySet {
+        id: id.to_string(),
+        mastery: progress.mastery.clone(),
+        next_review_at: progress.next_review_at,
+        review_count: progress.review_count,
+        review_interval_days: progress.review_interval_days,
+        last_reviewed_at: progress.last_reviewed_at,
+        last_review_rating: progress.last_review_rating.clone(),
+        fsrs_stability: progress.fsrs_stability,
+        fsrs_difficulty: progress.fsrs_difficulty,
+        fsrs_version: progress.fsrs_version,
+        mastery_source: progress.mastery_source.clone(),
+        mastery_reason: progress.mastery_reason.clone(),
+    });
+    // The review itself, appended rather than overwritten. Deliberately
+    // outside `propagate_progress_to_siblings`: the *schedule* belongs to
+    // the word and is copied to every row spelling it, but the review
+    // happened once, to one card. Logging it per sibling row would make a
+    // word saved from three books look like three reviews and skew any
+    // optimizer trained on this log.
+    let log_id = uuid::Uuid::new_v4().to_string();
+    let review_log = VocabReviewLogPayload {
+        id: log_id,
+        vocab_word_id: id.to_string(),
+        reviewed_at: now,
+        rating: rating.as_str().to_string(),
+        state_before: state_before.map(str::to_string),
+        stability_before,
+        difficulty_before,
+        elapsed_days: Some(elapsed_days),
+        scheduled_days: Some(review_interval_days),
+        fsrs_version: Some(progress.fsrs_version),
+    };
+    tx.execute(
+        "INSERT INTO vocab_review_log
              (id, vocab_word_id, reviewed_at, rating, state_before, stability_before,
               difficulty_before, elapsed_days, scheduled_days, fsrs_version,
               created_at, updated_by_device)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-            params![
-                review_log.id,
-                review_log.vocab_word_id,
-                review_log.reviewed_at,
-                review_log.rating,
-                review_log.state_before,
-                review_log.stability_before,
-                review_log.difficulty_before,
-                review_log.elapsed_days,
-                review_log.scheduled_days,
-                review_log.fsrs_version,
-                now,
-                device,
-            ],
-        )?;
-        events.push(EventBody::VocabReviewAppend(review_log));
-        propagate_progress_to_siblings(tx, events, id, &current.word, &progress, now, &device)?;
-        tx.query_row(
-            &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
-            params![id],
-            row_to_vocab,
-        )
-        .map_err(Into::into)
-    })
+        params![
+            review_log.id,
+            review_log.vocab_word_id,
+            review_log.reviewed_at,
+            review_log.rating,
+            review_log.state_before,
+            review_log.stability_before,
+            review_log.difficulty_before,
+            review_log.elapsed_days,
+            review_log.scheduled_days,
+            review_log.fsrs_version,
+            now,
+            device,
+        ],
+    )?;
+    events.push(EventBody::VocabReviewAppend(review_log));
+    propagate_progress_to_siblings(tx, events, id, &current.word, &progress, now, device)?;
+    tx.query_row(
+        &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
+        params![id],
+        row_to_vocab,
+    )
+    .map_err(Into::into)
+}
+
+/// The one existing, confirmed vocab-book entry for `word`, if any — the
+/// match quiz submission (`commands::quiz`) needs before it can write an FSRS
+/// review for a target word. Case-insensitive and confirmed-only, same as the
+/// rest of this file's word-identity lookups: a `watchlist` candidate the
+/// reader has not actually added is not "in the vocab book" yet, so a review
+/// answer about it is not evidence FSRS should learn from.
+///
+/// Any one matching row is enough — `record_vocab_review_in_tx` propagates the
+/// resulting schedule to every sibling row spelling the same word via
+/// `propagate_progress_to_siblings`, so the cross-book merge these entries
+/// already get on every other review path applies here too.
+pub(crate) fn find_confirmed_vocab_id_by_word(
+    tx: &rusqlite::Transaction,
+    word: &str,
+) -> AppResult<Option<String>> {
+    tx.query_row(
+        "SELECT id FROM vocab_words WHERE word = ?1 COLLATE NOCASE AND list_status = 'confirmed' LIMIT 1",
+        params![word],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -2360,13 +2418,18 @@ mod tests {
         let (dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-a");
         insert_import_book(&db, "book-b");
-        let a = add_vocab_word_inner("book-a", "Courage", "def a", None, None, None, None, &db, &sync)
-            .unwrap();
-        let b = add_vocab_word_inner("book-b", "courage", "def b", None, None, None, None, &db, &sync)
-            .unwrap();
-        let other =
-            add_vocab_word_inner("book-b", "solitude", "def c", None, None, None, None, &db, &sync)
-                .unwrap();
+        let a = add_vocab_word_inner(
+            "book-a", "Courage", "def a", None, None, None, None, &db, &sync,
+        )
+        .unwrap();
+        let b = add_vocab_word_inner(
+            "book-b", "courage", "def b", None, None, None, None, &db, &sync,
+        )
+        .unwrap();
+        let other = add_vocab_word_inner(
+            "book-b", "solitude", "def c", None, None, None, None, &db, &sync,
+        )
+        .unwrap();
         (dir, db, sync, a.id, b.id, other.id)
     }
 
@@ -2644,9 +2707,18 @@ mod tests {
             ("gamma", "familiar"),
             ("delta", "mastered"),
         ] {
-            let added =
-                add_vocab_word_inner("book-a", word, "a definition", None, None, None, None, &db, &sync)
-                    .unwrap();
+            let added = add_vocab_word_inner(
+                "book-a",
+                word,
+                "a definition",
+                None,
+                None,
+                None,
+                None,
+                &db,
+                &sync,
+            )
+            .unwrap();
             update_vocab_mastery_inner(&added.id, mastery, None, &db, &sync).unwrap();
         }
 
@@ -2818,7 +2890,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.imported, 1);
-        let stored = query_vocab_words_including_watchlist(&db, "book-1").unwrap().pop().unwrap();
+        let stored = query_vocab_words_including_watchlist(&db, "book-1")
+            .unwrap()
+            .pop()
+            .unwrap();
         assert_eq!(stored.word, "serendipity");
         assert_eq!(stored.mastery, "learning");
         assert_eq!(stored.review_count, 4);
@@ -3031,7 +3106,13 @@ mod tests {
     /// Sets a word's tier and provenance directly, the way the reading-
     /// exposure engine or a prior review would have left it, so a review
     /// test can start from a known tier instead of `"new"`.
-    fn seed_mastery(db: &Db, id: &str, mastery: &str, mastery_source: &str, mastery_reason: Option<&str>) {
+    fn seed_mastery(
+        db: &Db,
+        id: &str,
+        mastery: &str,
+        mastery_source: &str,
+        mastery_reason: Option<&str>,
+    ) {
         db.conn
             .lock()
             .unwrap()
@@ -3176,7 +3257,11 @@ mod tests {
     // --- Observation zone (docs/impls/reading-flow-decisions-2026-08-06.md
     // §1 and §5) -------------------------------------------------------
 
-    fn lookup(book_id: &str, word: &str, cfi: &str) -> crate::commands::lookup_history::LookupInput {
+    fn lookup(
+        book_id: &str,
+        word: &str,
+        cfi: &str,
+    ) -> crate::commands::lookup_history::LookupInput {
         crate::commands::lookup_history::LookupInput {
             book_id: book_id.to_string(),
             lookup_text: word.to_string(),
@@ -3296,7 +3381,11 @@ mod tests {
         assert_eq!(saved.id, watchlisted[0].id);
         assert_eq!(saved.list_status, "confirmed");
         let words = query_vocab_words_including_watchlist(&db, "book-watch").unwrap();
-        assert_eq!(words.len(), 1, "must not create a second row for the same word");
+        assert_eq!(
+            words.len(),
+            1,
+            "must not create a second row for the same word"
+        );
         assert_eq!(words[0].list_status, "confirmed");
     }
 
@@ -3439,7 +3528,15 @@ mod tests {
         let (_dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-a");
         let saved = add_vocab_word_inner(
-            "book-a", "lucid", "a definition", None, None, None, None, &db, &sync,
+            "book-a",
+            "lucid",
+            "a definition",
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
         )
         .unwrap();
 
@@ -3654,7 +3751,10 @@ mod tests {
         assert_eq!(definition, "the first summary");
         assert_eq!(explanation.as_deref(), Some("the first paragraph"));
         assert_eq!(snapshot, Some(first_snapshot));
-        assert_eq!(updated_at, before, "a refused write must not move the clock");
+        assert_eq!(
+            updated_at, before,
+            "a refused write must not move the clock"
+        );
         assert_eq!(
             parked_events(&db).len(),
             events_before,
