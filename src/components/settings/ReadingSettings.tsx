@@ -184,6 +184,7 @@ export default function ReadingSettings({
   const [readingMode, setReadingMode] = useState<ReadingMode>("scrolling");
   const [pageLayout, setPageLayout] = useState<"1" | "2">("2");
   const [pageTurnAnimation, setPageTurnAnimation] = useState<PageTurnAnimation>("slide");
+  const [oneHandMode, setOneHandMode] = useState(false);
   const [showChapterProgress, setShowChapterProgress] = useState(true);
   const [showBookProgress, setShowBookProgress] = useState(false);
   const [showPageNumbers, setShowPageNumbers] = useState(false);
@@ -288,6 +289,9 @@ export default function ReadingSettings({
             || values.page_turn_animation === "cover"
           ) {
             setPageTurnAnimation(values.page_turn_animation);
+          }
+          if (values.one_hand_mode !== undefined) {
+            setOneHandMode(values.one_hand_mode === "true");
           }
           break;
         case "progress":
@@ -867,6 +871,27 @@ export default function ReadingSettings({
           ]}
         />
       </div>
+      {/* One-handed mode — phone tap zones only, so the row shows where the
+          binding rows below hide: under a coarse pointer. A mouse reader has
+          no tap zones to redirect, and offering the toggle there would promise
+          a behavior the click never has. */}
+      {coarsePointer && (
+        <div className="flex items-center justify-between min-h-[73px] py-3">
+          <div>
+            <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.oneHandMode")}</p>
+            <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.oneHandModeHint")}</p>
+          </div>
+          <Toggle
+            label={t("settings.layout.oneHandMode")}
+            checked={oneHandMode}
+            onChange={(v) => {
+              setOneHandMode(v);
+              void persist({ one_hand_mode: String(v) });
+              showSavedToast();
+            }}
+          />
+        </div>
+      )}
       {/* Previous-page and Next-page Control.
           Both rows are gone under a finger, and this is a gate rather than the
           "default, not a gate" treatment `menuShortcutsVisible` gives the menu

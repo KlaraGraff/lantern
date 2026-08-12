@@ -26,6 +26,8 @@ import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
 import { clickCountGraceMs } from "./click-grace";
 import { createLongPressTracker, LONG_PRESS } from "../../utils/long-press";
 import { createSwipeTracker } from "./swipe-page-turn";
+import { classifyReaderTap, type TapZone } from "./tap-zones";
+import { isNarrowNow } from "../../hooks/useIsNarrow";
 
 /**
  * How close to the edge a drag has to get before the page turns. Wide enough to
@@ -65,6 +67,21 @@ interface ReaderInteractionsOptions {
   doubleClickQuickLookupRef: MutableRefObject<boolean>;
   tripleClickQuickSelectRef: MutableRefObject<boolean>;
   tripleClickScopeRef: MutableRefObject<TripleClickScope>;
+  /**
+   * Whether the phone's chrome is currently raised. A ref rather than a value
+   * because the listeners below are installed once per chapter document and
+   * outlive every re-render — a captured boolean would be whatever it was when
+   * the chapter loaded.
+   */
+  chromeOpenRef: MutableRefObject<boolean>;
+  /** One-handed mode ("both margins advance") — a ref for the same reason as `chromeOpenRef`. */
+  oneHandModeRef: MutableRefObject<boolean>;
+  /**
+   * What a tap on the page means below the breakpoint: the outer thirds page,
+   * the middle one toggles the chrome. Called with `"menu"` for any tap while
+   * the chrome is up, since the whole page is a dismiss target then.
+   */
+  onTapZone(zone: TapZone): void;
   cancelPendingSelectionMenu(): void;
   cancelPendingWordClick(): void;
   openLearningInteraction(interaction: ReaderInteraction): void;
@@ -127,6 +144,9 @@ export function useReaderInteractions({
   doubleClickQuickLookupRef,
   tripleClickQuickSelectRef,
   tripleClickScopeRef,
+  chromeOpenRef,
+  oneHandModeRef,
+  onTapZone,
   cancelPendingSelectionMenu,
   cancelPendingWordClick,
   openLearningInteraction,
@@ -630,8 +650,7 @@ export function useReaderInteractions({
       cancelPendingWordClick();
       if (Date.now() < forceClickSuppressedUntilRef.current) return;
       if (
-        !supportsSelection
-        || event.button !== 0
+        event.button !== 0
         || event.metaKey
         || event.ctrlKey
         || event.altKey
@@ -640,6 +659,39 @@ export function useReaderInteractions({
       if (isInteractiveReaderTarget(event.target)) return;
       const selection = doc.getSelection?.();
       if (selection && !selection.isCollapsed) return;
+      // Below the breakpoint the page is three tap zones, and a plain tap no
+      // longer opens a word. Placed after everything that already claimed the
+      // click — an annotation, the synthetic click trailing a long press, a
+      // link, a live selection — but *before* the two word-lookup guards below:
+      // a book with no selectable text (fb2/cbz, or mobi on a platform without
+      // conversion) and a scanned PDF have no word to look up, yet the tap
+      // zones are their only way to summon the chrome at all on a phone.
+      //
+      // The width is the chapter document's own: these listeners live inside
+      // foliate's iframe and `clientX` is already in its coordinate system, so
+      // there is no host offset to add (the edge-turn handler below reads the
+      // same number for the same reason).
+      if (isNarrowNow()) {
+        if (chromeOpenRef.current) {
+          // With the chrome up, every tap means "put it away", and it goes away
+          // now rather than after the double-click grace: no second tap could
+          // change the answer, and a visible 240ms lag on a dismiss reads as a
+          // control that did not register the press.
+          onTapZone("menu");
+          return;
+        }
+        const zone = classifyReaderTap(event.clientX, doc.documentElement.clientWidth, oneHandModeRef.current);
+        // The same timer slot the word lookup used, on purpose: the `dblclick`
+        // handler's first line already cancels it unconditionally, so a
+        // double-click to look a word up cancels the page turn it was on its
+        // way to causing. No new mechanism, and no way for the two to disagree.
+        pendingWordClickRef.current = window.setTimeout(() => {
+          pendingWordClickRef.current = null;
+          onTapZone(zone);
+        }, clickCountGraceMs(1, tripleClickQuickSelectRef.current));
+        return;
+      }
+      if (!supportsSelection) return;
       if (showMissingPdfTextIntent()) return;
       const selectionRange = rangeFromSelectionSnapshotAtPoint(
         selectionSnapshot,
@@ -850,6 +902,9 @@ export function useReaderInteractions({
     annotationClickDocumentRef,
     cancelPendingSelectionMenu,
     cancelPendingWordClick,
+    chromeOpenRef,
+    oneHandModeRef,
+    onTapZone,
     doubleClickQuickLookupRef,
     tripleClickQuickSelectRef,
     tripleClickScopeRef,

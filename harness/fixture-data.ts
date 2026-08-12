@@ -3,10 +3,11 @@
  *
  * Chosen to exercise branches rather than to look pretty. Concretely:
  *
- *  - Three books, not one: an EPUB that is `reading` with progress and a CFI
+ *  - Four books, not one: an EPUB that is `reading` with progress and a CFI
  *    (the reader's happy path), a `finished` EPUB (the finished-badge and
- *    review branches), and a PDF that is `unread` (the PDF renderer, a
- *    different code path in `useFoliateView`).
+ *    review branches), a PDF that is `unread` (the PDF renderer, a different
+ *    code path in `useFoliateView`), and a plain-text book (`TextBookReader`,
+ *    which does not go through foliate at all).
  *  - One book is `available: false` so the missing-file banner renders.
  *  - Vocabulary spans every mastery level, including one due for review, so
  *    the sidebar's due-count badge is non-zero and the review piles are not
@@ -14,9 +15,11 @@
  *  - Settings are a real mix of on and off. A settings map where every toggle
  *    is off exercises exactly one side of every conditional in the modal.
  *
- * The two book files are the *real* EPUB and PDF fixtures already committed
- * under `tests/fixtures/reader-compat/`, served by the harness Vite middleware.
- * Nothing here invents a parallel book format.
+ * The EPUB and PDF files are the *real* fixtures already committed under
+ * `tests/fixtures/reader-compat/`, served by the harness Vite middleware.
+ * Nothing here invents a parallel book format; the text book needs no file at
+ * all, because the backend hands its reader a parsed document rather than
+ * bytes.
  */
 import { activeScene } from "./promo";
 
@@ -137,6 +140,55 @@ export const BOOKS: HarnessBook[] = [
     available: false,
     cover_data: null,
   },
+  {
+    // A plain-text book, which is the third renderer and the one nothing here
+    // used to reach: `render_format: "text"` puts `TextBookReader` on screen
+    // instead of foliate, in the host document rather than in an iframe. Its
+    // capabilities differ from the EPUB's in ways the UI shows (no search, no
+    // scrubber, no read-aloud), so a sweep that only ever opened an EPUB was
+    // checking one of three answers.
+    id: "book-text-reading",
+    title: "Letters from a Lighthouse",
+    author: "Nan Rowntree",
+    description: "Six winters of weather logs, written to nobody in particular.",
+    cover_path: null,
+    file_path: "/harness/library/lighthouse.txt",
+    format: "txt",
+    source_format: "txt",
+    source_sha256: "d".repeat(64),
+    render_format: "text",
+    preparation_state: "ready",
+    preparation_error: null,
+    genre: "Nonfiction",
+    pages: 62,
+    status: "reading",
+    progress: 22,
+    current_cfi: "textloc:v2:0:0",
+    created_at: ago(15),
+    updated_at: ago(2),
+    available: true,
+    cover_data: cover("Lighthouse", "#3d5566"),
+  },
+];
+
+/**
+ * The text book's parsed document, in the shape `get_text_book_document`
+ * returns: normalized UTF-16 offsets, one chunk, headings interleaved with
+ * paragraphs so the TOC is non-empty and the contents key in the phone's raised
+ * chrome is not greyed out.
+ *
+ * Built rather than written out so the offsets cannot drift from the text —
+ * a hand-maintained `source_start` that is one character off makes every
+ * selection in the harness land on the wrong word, which is a confusing thing
+ * to debug in a fixture.
+ */
+export const TEXT_BOOK_BLOCKS: Array<{ kind: "heading" | "paragraph"; text: string; depth?: number }> = [
+  { kind: "heading", text: "First Winter", depth: 1 },
+  { kind: "paragraph", text: "The lamp turns all night and I turn with it. Ships pass without knowing anyone is awake up here, which is the point of the arrangement." },
+  { kind: "paragraph", text: "Weather: north-easterly, freshening after midnight. Visibility poor, then briefly excellent, then poor again in the way of this coast." },
+  { kind: "heading", text: "Second Winter", depth: 1 },
+  { kind: "paragraph", text: "A gannet came down the chimney and could not be persuaded that the door was an improvement on the fireplace." },
+  { kind: "paragraph", text: "I have started reading aloud to myself in the evenings. The room is small enough that it answers back a half second later." },
 ];
 
 export const COLLECTIONS = [
@@ -625,6 +677,9 @@ export const SETTINGS: Record<string, string> = {
   // default. Add `?onboarding=1` to the harness URL to sweep it instead —
   // see `resolveSettings()` below.
   onboarding_state: "done",
+  // Same idea for the reader's one-time tap-zone guide: it would intercept
+  // every narrow reader sweep's first tap. `?zoneguide=1` sweeps it instead.
+  reader_zone_guide_shown: "true",
   // Set, so the library's "you never picked a level" hint stays down. The
   // other reason that banner fires (AI unconfigured) is covered by the
   // credential fixture in `invoke-fixtures.ts`.
@@ -660,6 +715,7 @@ export const SETTINGS: Record<string, string> = {
  * URL knobs, so one harness build can sweep more than one starting state
  * without editing a fixture:
  *   `?onboarding=1`  — start with the first-run card showing
+ *   `?zoneguide=1`   — start with the reader's tap-zone guide still owed
  *   `?empty=1`       — start with an empty library (empty-state coverage)
  *   `?lang=zh`       — start in Simplified Chinese
  *   `?shot=<name>`   — a README screenshot scene (see `harness/promo/`)
@@ -676,6 +732,7 @@ export function resolveSettings(): Record<string, string> {
     return settings;
   }
   if (params.get("onboarding") === "1") delete settings.onboarding_state;
+  if (params.get("zoneguide") === "1") delete settings.reader_zone_guide_shown;
   if (params.get("lang")) settings.language = String(params.get("lang"));
   return settings;
 }

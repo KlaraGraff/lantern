@@ -704,6 +704,7 @@ function routes(): string[] {
     `/book/${BOOKS[2].id}`, // the unavailable one: missing-file branch
     `/reader/${BOOKS[0].id}`,
     `/reader/${BOOKS[2].id}`, // PDF, and the file is missing: error branch
+    `/reader/${BOOKS[3].id}`, // plain text: TextBookReader, no foliate at all
   ];
 }
 
@@ -725,10 +726,15 @@ export async function runSmoke(): Promise<SmokeReport> {
       if (!report.visited.includes(route)) report.visited.push(route);
 
       if (route.startsWith("/reader/")) {
-        const verdict = await waitForReader();
-        if (route === `/reader/${BOOKS[0].id}`) {
-          report.readerRendered = verdict.painted;
-          if (!report.notes.includes(verdict.note)) report.notes.push(verdict.note);
+        // The text book renders in the host document — there is no
+        // `foliate-view` for `waitForReader` to find, so asking it would only
+        // spend the whole reader budget before reporting the obvious.
+        if (route !== `/reader/${BOOKS[3].id}`) {
+          const verdict = await waitForReader();
+          if (route === `/reader/${BOOKS[0].id}`) {
+            report.readerRendered = verdict.painted;
+            if (!report.notes.includes(verdict.note)) report.notes.push(verdict.note);
+          }
         }
         await settle(2000);
         harvestFaults(false);

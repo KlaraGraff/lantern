@@ -45,6 +45,18 @@ interface Props {
    * the bar is the only transport, so it stays.
    */
   onCollapsedChange?: (collapsed: boolean) => void;
+  /**
+   * Which edge of the viewport the parent hung this bar on. It decides which
+   * side gets the rule and which way the shadow falls — a bar sitting on the
+   * bottom of the screen with a bottom rule and a downward shadow reads as a
+   * strip that something continues below, and there is nothing below it.
+   *
+   * A prop rather than a media query because the placement is the parent's
+   * decision (top on a wide window, bottom on a phone, where the transport has
+   * to be in thumb reach); a second copy of the breakpoint in here could
+   * disagree with the first.
+   */
+  placement?: "top" | "bottom";
 }
 
 /**
@@ -67,7 +79,7 @@ const BIG_KEY = "grid size-[46px] shrink-0 cursor-pointer place-items-center rou
  * shadow as the only sign that text passes beneath rather than after it. The
  * compact capsule (returned early, in the header) is retained while reading.
  */
-export default function ContinuousReadAloudToolbar({ state, labels, onStart, onPause, onResume, onStop, onPrevious, onNext, onRateChange, onCollapsedChange }: Props) {
+export default function ContinuousReadAloudToolbar({ state, labels, onStart, onPause, onResume, onStop, onPrevious, onNext, onRateChange, onCollapsedChange, placement = "top" }: Props) {
   const active = state.status !== "idle" && state.status !== "finished" && state.status !== "error";
   const playing = state.status === "playing" || state.status === "loading";
   const onSectionKeyDown = (event: React.KeyboardEvent) => {
@@ -106,7 +118,15 @@ export default function ContinuousReadAloudToolbar({ state, labels, onStart, onP
   return <section
     aria-label={labels.reading}
     onKeyDown={onSectionKeyDown}
-    className="flex min-h-[62px] items-center gap-3.5 border-b border-border-light bg-bg-surface px-3.5 py-2 shadow-[0_8px_20px_-14px_rgba(0,0,0,0.45)]"
+    // The rule and the shadow both point away from the page: hung from the top
+    // the bar is an extension of the header and casts down onto the text; sat
+    // on the bottom it is a floor, and the same shadow inverted shows the text
+    // running underneath it rather than stopping at it.
+    className={`flex min-h-[62px] items-center gap-3.5 bg-bg-surface px-3.5 py-2 ${
+      placement === "bottom"
+        ? "border-t border-border-light shadow-[0_-8px_20px_-14px_rgba(0,0,0,0.45)]"
+        : "border-b border-border-light shadow-[0_8px_20px_-14px_rgba(0,0,0,0.45)]"
+    }`}
   >
     <span className={`grid size-7 shrink-0 place-items-center rounded-lg max-[720px]:hidden ${
       state.status === "error"

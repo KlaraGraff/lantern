@@ -41,6 +41,7 @@ export const READING_DEFAULT_SETTING_KEYS = [
   "reading_mode",
   "page_columns",
   "page_turn_animation",
+  "one_hand_mode",
   "show_chapter_progress",
   "show_book_progress",
   "show_page_numbers",
@@ -77,6 +78,10 @@ export function buildReadingDefaultSettings(
     reading_mode: defaults.readingMode,
     page_columns: String(defaults.pageColumns),
     page_turn_animation: defaults.pageTurnAnimation,
+    // App-level like the three at the bottom: not per-book reader state, so no
+    // `createDefaultReaderSettings()` field. Off is the shipped arrangement —
+    // the outer thirds page in opposite directions.
+    one_hand_mode: "false",
     show_chapter_progress: String(defaults.showChapterProgress),
     show_book_progress: String(defaults.showBookProgress),
     show_page_numbers: String(defaults.showPageNumbers),

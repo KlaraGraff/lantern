@@ -16,18 +16,17 @@ import {
   Minus,
   Plus,
   FileWarning,
-  MoreHorizontal,
   Search,
   Type,
   Volume2,
 } from "lucide-react";
 import Button from "../components/ui/Button";
-import BottomSheet from "../components/ui/BottomSheet";
 import Toast from "../components/ui/Toast";
 import AiPanel from "../components/AiPanel";
 import ReaderTracesPanel from "../components/ReaderTracesPanel";
 import ReaderSettings from "../components/ReaderSettings";
 import { openSettings } from "../components/settings-open";
+import { listenForSettingsChanged, notifySettingsChanged } from "../components/settings-events";
 import {
   getThemeStyles,
   getReaderCapabilities,
@@ -40,6 +39,8 @@ import TableOfContents from "../components/TableOfContents";
 import BookSearchPanel from "../components/BookSearchPanel";
 import { parseTocSavedState, type TocSavedState } from "../components/toc-state";
 import TextBookReader from "../components/TextBookReader";
+import ReaderZoneGuide from "../components/ReaderZoneGuide";
+import { shouldShowZoneGuide, ZONE_GUIDE_SHOWN_KEY } from "./reader/zone-guide";
 import { textLocation, type TextBookDocument } from "../components/text-book-location";
 import { citationSearchProbes, type AnchorOutcome, type AnchorTarget } from "./reader/citationNavigation";
 import { anchorQuoteCfi } from "./reader/quoteAnchoring";
@@ -117,7 +118,7 @@ import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
 import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-panel";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
-import { readerToolbarOverflow } from "./reader/reader-toolbar";
+import type { TapZone } from "./reader/tap-zones";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import { isCoarsePointer } from "../hooks/useCoarsePointer";
 import {
@@ -237,7 +238,64 @@ export default function Reader() {
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
+  /**
+   * Whether the phone's chrome is raised over the page.
+   *
+   * Silent by default: a 40pt top strip and a 24pt readout, both in flow and
+   * both a fixed height, and nothing else. Tapping the middle third raises two
+   * floating bars carrying everything the header used to hold. They float
+   * rather than sit in flow because `<main>` is their flex sibling — growing
+   * the header would change the viewport's box, and foliate re-columnizes the
+   * whole chapter on a width or height change. See the two bars' own comment.
+   */
+  const [chromeOpen, setChromeOpen] = useState(false);
+  const chromeOpenRef = useRef(false);
+  // One-handed mode ("both margins advance"). Global, loaded with the rest of
+  // the settings below. Two copies of one fact: the ref feeds the tap-zone
+  // classifier, which lives in listeners installed once per chapter document
+  // and must not re-install on a toggle; the state feeds the one-time zone
+  // guide's render, where reading a ref is not allowed.
+  const oneHandModeRef = useRef(false);
+  const [oneHandMode, setOneHandMode] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    listenForSettingsChanged((values) => {
+      if (disposed) return;
+      // `null` is a deleted row (restore defaults), which means "off".
+      if (values.one_hand_mode !== undefined) {
+        oneHandModeRef.current = values.one_hand_mode === "true";
+        setOneHandMode(values.one_hand_mode === "true");
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+  useEffect(() => {
+    chromeOpenRef.current = chromeOpen;
+  }, [chromeOpen]);
+  // The one-time tap-zone guide's stored flag. Starts as "true" (= already
+  // shown) so nothing flashes before the settings load below reports the real
+  // value; `shouldShowZoneGuide` folds in the live conditions at render.
+  const [zoneGuideShownFlag, setZoneGuideShownFlag] = useState<string | undefined>("true");
+  const dismissZoneGuide = useCallback(() => {
+    setZoneGuideShownFlag("true");
+    void invoke("set_setting", { key: ZONE_GUIDE_SHOWN_KEY, value: "true" })
+      .then(() => notifySettingsChanged({ [ZONE_GUIDE_SHOWN_KEY]: "true" }))
+      .catch(() => {});
+  }, []);
+  // A window dragged past the breakpoint gets the desktop header back, which
+  // already carries every one of these controls — leaving the flag set would
+  // mean the bars reappear the next time it is dragged narrow, over a page the
+  // reader never asked them for.
+  useEffect(() => {
+    if (!isNarrow) setChromeOpen(false);
+  }, [isNarrow]);
   const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
   useEffect(() => {
     setTracesTab("notes");
@@ -291,23 +349,6 @@ export default function Reader() {
   // no `createDocument` for it to walk, so whole-book search would silently
   // find nothing there. Scoped to EPUB only, same boundary as the scrubber.
   const supportsSearch = (book?.render_format || book?.format) === "epub";
-  /**
-   * The ⋯ sheet's contents; empty on a wide header, which has a button for each
-   * of them — so an empty list is also the answer to "should ⋯ render at all".
-   *
-   * Up here, and memoized, on purpose. It is only read down in the JSX, but the
-   * reader takes several early returns (loading, open failure, book not found)
-   * before that point, so a hook beside its one use site would be a conditional
-   * hook. Left unmemoized it allocates a fresh array every render, which the
-   * React Compiler cannot reconcile with the hand-written `useCallback` deps
-   * elsewhere in this component and answers by skipping the whole file.
-   */
-  const overflowActions = useMemo(() => readerToolbarOverflow({
-    narrow: isNarrow,
-    supportsSearch,
-    supportsCfiNavigation,
-    readAloudAvailable: continuousReadAloudAvailable,
-  }), [continuousReadAloudAvailable, isNarrow, supportsCfiNavigation, supportsSearch]);
   const {
     pushJump,
     popJump,
@@ -1036,6 +1077,31 @@ export default function Reader() {
     onPdfZoomFit: handleZoomFit,
   });
 
+  /**
+   * What a tap on the page does below the breakpoint (`tap-zones.ts` decides
+   * which zone it landed in).
+   *
+   * The two paging zones go through `handleSwipePageTurn`, not through
+   * `turnReaderPage` directly, so a tap inherits everything the swipe already
+   * has: the dispatcher's coalescing, "no page turn while an overlay is open",
+   * and the paginated-flow gate — in continuous flow there is no page to turn
+   * and the outer zones simply do nothing, while the middle one still raises
+   * the chrome.
+   *
+   * Paging by tap has a rhythm ceiling the swipe does not: each tap waits out
+   * the double-click grace before it commits (see the narrow branch in
+   * `useReaderInteractions`), so two taps inside that window are a double-tap —
+   * the AI lookup the reader chose over fast tap-paging — not two turns. A
+   * reader in a hurry can still swipe, which commits immediately.
+   */
+  const handleTapZone = useCallback((zone: TapZone) => {
+    if (zone === "menu") {
+      setChromeOpen((open) => !open);
+      return;
+    }
+    handleSwipePageTurn(zone);
+  }, [handleSwipePageTurn]);
+
   const tocChapters = useMemo(() => chapters.map((chapter, i) => ({
     title: chapter.title,
     page: i + 1,
@@ -1049,12 +1115,17 @@ export default function Reader() {
   // briefly stale (last book's) during the load transition. Computed in an
   // effect rather than a memo because it reads `viewRef.current` — a ref
   // read has to happen outside render.
-  // The bar itself still answers to the "current chapter progress" toggle —
-  // turning progress off has to keep turning it off, scrubber or not.
+  // The desktop footer's bar still answers to the "current chapter progress"
+  // toggle — turning progress off has to keep turning it off, scrubber or not.
   const showScrubber = supportsScrubber && readerSettings.showChapterProgress;
   const [scrubberTicks, setScrubberTicks] = useState<ScrubberTick[]>([]);
+  // Keyed to `supportsScrubber`, not to `showScrubber`: the phone's raised
+  // chrome shows the scrubber whether or not the silent strip shows progress,
+  // and a scrubber that came up with no chapter ticks would be a bare track.
+  // Nothing renders these unless a scrubber is on screen, so computing them for
+  // a reader who turned the readout off costs one map over the TOC.
   useEffect(() => {
-    if (!showScrubber || !bookReady) {
+    if (!supportsScrubber || !bookReady) {
       setScrubberTicks([]);
       return;
     }
@@ -1063,7 +1134,7 @@ export default function Reader() {
     } catch {
       setScrubberTicks([]);
     }
-  }, [showScrubber, bookReady, chapters]);
+  }, [supportsScrubber, bookReady, chapters]);
 
   const chapterCounter = useMemo(
     () => chapterReadout(chapters, currentChapterIndex, bodyMatter),
@@ -1342,6 +1413,9 @@ export default function Reader() {
     ]).then(([globalSettings, , perBookSettings]) => {
       if (cancelled) return;
       const g = globalSettings;
+      oneHandModeRef.current = g.one_hand_mode === "true";
+      setOneHandMode(g.one_hand_mode === "true");
+      setZoneGuideShownFlag(g[ZONE_GUIDE_SHOWN_KEY]);
       adoptReadingAssistanceSettings(g);
       loadReaderSettingsSources(g, perBookSettings);
       setTocSavedState(parseTocSavedState(perBookSettings));
@@ -1508,6 +1582,9 @@ export default function Reader() {
     doubleClickQuickLookupRef,
     tripleClickQuickSelectRef,
     tripleClickScopeRef,
+    chromeOpenRef,
+    oneHandModeRef,
+    onTapZone: handleTapZone,
     cancelPendingSelectionMenu,
     cancelPendingWordClick,
     openLearningInteraction,
@@ -2111,8 +2188,196 @@ export default function Reader() {
     setSidePanel("traces");
   };
 
+  /**
+   * The one line the phone's top strip carries: where the reader is.
+   *
+   * The chapter name is the honest answer and the first choice. A book whose
+   * TOC has not resolved yet, or a PDF (which has page numbers and often no
+   * outline at all), falls back to the counter the desktop header's subtitle
+   * shows — the strip is 40pt of screen either way, and an empty one reads as
+   * a bar that failed to load.
+   */
+  const narrowLocationLabel = currentChapterTitle
+    ?? (book.format === "pdf"
+      ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
+      : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : "");
+
+  /**
+   * The read-aloud bar covers the bottom of the page on a phone, and it carries
+   * its own chapter readout — so the silent strip underneath it would be saying
+   * the same thing twice, in a place the reader cannot see anyway.
+   */
+  const readAloudBarVisible = continuousReadAloudAvailable
+    && continuousReadAloud.state.status !== "idle"
+    && !continuousReadAloud.state.collapsed;
+
+  /**
+   * ...and whether it is actually on screen. The raised chrome owns the bottom
+   * of a phone while it is up: both surfaces are z-30 and the chrome, later in
+   * the DOM, paints straight over the transport. Rendering a control nobody can
+   * see or press is worse than not rendering it — the reader taps at buttons
+   * that are not there. The 朗读 key puts the chrome away, which brings the
+   * transport back in the same frame.
+   *
+   * Kept separate from `readAloudBarVisible` on purpose: the silent strip stays
+   * keyed to the state, not to this, so its contents do not flicker back in
+   * underneath a bar that is about to cover them again.
+   */
+  const readAloudBarOnScreen = readAloudBarVisible && !(isNarrow && chromeOpen);
+
+  /**
+   * The progress readout, in the two boxes that carry it.
+   *
+   * `compact` is the phone's 24pt strip, whose height the layout fixed in
+   * advance: the desktop row grows to 44px under `touch:` and that is exactly
+   * what a fixed-height strip must not do. Same state, same handler, same text
+   * in both — only the box differs.
+   */
+  const progressReadout = (compact: boolean) => (
+    supportsScrubber ? (
+      // P1.5's click-cycle readout. The button stays in the DOM even in
+      // "hidden" mode (no visible text) so the same click target can cycle
+      // back to "page" — a deliberate trade-off over letting the affordance
+      // vanish entirely.
+      <button
+        type="button"
+        onClick={() => cycleProgressReadoutMode(effectiveProgressReadoutMode)}
+        title={t("reader.progressReadout.toggleLabel")}
+        aria-label={progressReadoutText ? undefined : t("reader.progressReadout.toggleLabel")}
+        className={compact
+          ? `inline-flex h-6 cursor-pointer items-center justify-center px-4 ${progressReadoutText ? "" : "min-w-11"}`
+          : `cursor-pointer text-left hover:opacity-100 touch:inline-flex touch:min-h-11 touch:items-center ${progressReadoutText ? "" : "min-w-[12px] touch:min-w-11"}`}
+      >
+        {progressReadoutText}
+      </button>
+    ) : (
+      <>
+        {book.format === "pdf" && pageInfo ? (
+          <span>{t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}</span>
+        ) : readerSettings.showChapterProgress ? (
+          <span>{t("reader.chapterProgress", { progress: chapterProgress })}</span>
+        ) : null}
+        {readerSettings.showBookProgress && book.format !== "pdf" && (
+          <span className="border-l border-current/20 pl-2">
+            {t("reader.bookProgress", { progress })}
+          </span>
+        )}
+        {readerSettings.readingMode === "paginated" && readerSettings.showPageNumbers && pageInfo && book.format !== "pdf" && (
+          <span className="border-l border-current/20 pl-2">
+            {pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
+              ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
+              : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}
+          </span>
+        )}
+      </>
+    )
+  );
+
+  /** A PDF's zoom controls, which the phone moves out of the silent strip and into the raised chrome. */
+  const pdfZoomControls = (
+    <div className="flex items-center gap-1">
+      <Button variant="icon" size="sm" onClick={() => handleZoom(-10)}>
+        <Minus size={12} />
+      </Button>
+      <button
+        type="button"
+        onClick={handleZoomFit}
+        title={t("reader.zoom.fitTooltip")}
+        className={`text-[12px] font-medium min-w-[36px] px-1 text-center tabular-nums hover:opacity-100 touch:inline-flex touch:min-h-11 touch:min-w-11 touch:items-center touch:justify-center ${isStandaloneWindow ? "opacity-60" : "text-text-muted"} ${zoom === "fit" ? "" : "cursor-pointer"}`}
+      >
+        {zoom === "fit" ? t("reader.zoom.fit") : `${zoom}%`}
+      </button>
+      <Button variant="icon" size="sm" onClick={() => handleZoom(10)}>
+        <Plus size={12} />
+      </Button>
+    </div>
+  );
+
+  /**
+   * The raised chrome's function row.
+   *
+   * Every key puts the chrome away before it acts. The panel it opens covers
+   * the page (z-50, above these bars at z-30), so leaving them up would only
+   * mean finding them still there on the way back — and the typography sheet
+   * would open with the bars showing through underneath it.
+   *
+   * Unavailable keys grey out rather than disappear: which five controls a book
+   * offers is not something a reader should have to re-learn per format, and a
+   * row that changes length between books is a row nobody builds muscle memory
+   * for.
+   */
+  const chromeActions: Array<{
+    id: string;
+    label: string;
+    icon: typeof List;
+    active: boolean;
+    disabled: boolean;
+    run: () => void;
+  }> = [
+    {
+      id: "contents",
+      label: t("reader.chrome.contents"),
+      icon: List,
+      active: tocOpen,
+      disabled: chapters.length === 0,
+      run: toggleTocPanel,
+    },
+    {
+      id: "search",
+      label: t("reader.chrome.search"),
+      icon: Search,
+      active: searchOpen,
+      disabled: !supportsSearch,
+      run: toggleSearchPanel,
+    },
+    {
+      id: "traces",
+      label: t("reader.chrome.traces"),
+      icon: Layers,
+      active: sidePanel === "traces",
+      disabled: !supportsCfiNavigation,
+      run: toggleTracesPanel,
+    },
+    {
+      id: "readAloud",
+      label: t("reader.chrome.readAloud"),
+      icon: Volume2,
+      active: continuousReadAloud.state.status !== "idle",
+      disabled: !continuousReadAloudAvailable || !bookReady,
+      // Always ends with a transport on screen. Idle starts one (and `start()`
+      // publishes `collapsed: false` itself); anything else is already running,
+      // so the only thing between the reader and the controls is the collapse a
+      // wide window let them make, and the chrome that this key closes.
+      run: () => {
+        if (continuousReadAloud.state.status === "idle") void continuousReadAloud.start();
+        else continuousReadAloud.setCollapsed(false);
+      },
+    },
+    {
+      id: "typography",
+      label: t("reader.chrome.typography"),
+      icon: Type,
+      active: settingsOpen,
+      disabled: false,
+      run: () => setSettingsOpen(true),
+    },
+  ];
+
+  /**
+   * The raised bars have to be opaque — they sit over the page, not beside it.
+   * A standalone window paints its own theme rather than the app surface, the
+   * same way its header and footer do.
+   */
+  const chromeSurfaceStyle = isStandaloneWindow ? {
+    backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
+    color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
+  } : undefined;
+
+  // `relative` on the shell is the containing block for the raised chrome. The
+  // two bars are absolute children of this box rather than flex siblings of
+  // <main>, so opening and closing them costs no reflow inside the chapter.
   return (
-    <div className="flex flex-col h-screen bg-bg-page" style={getReaderThemeVars(readerSettings.theme, readerSettings.customTheme) as React.CSSProperties}>
+    <div className="relative flex flex-col h-screen bg-bg-page" style={getReaderThemeVars(readerSettings.theme, readerSettings.customTheme) as React.CSSProperties}>
       {/* Invisible overlay to close popovers when clicking anywhere */}
       {settingsOpen && (
         <div
@@ -2121,8 +2386,16 @@ export default function Reader() {
         />
       )}
       {/* Header */}
+      {/* Below the breakpoint this is the silent strip: 40pt, three controls,
+          and a height the layout can count on. Its height is load-bearing —
+          <main> is its flex sibling, so anything that changes it changes the
+          viewport's box and makes foliate re-columnize the whole chapter. That
+          is why the rest of the toolbar moved into a floating bar rather than
+          into a taller header. */}
       <header
-        className={`flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+        className={isNarrow
+          ? `flex shrink-0 relative select-none ${TOP_INSET} ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`
+          : `flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
         style={isStandaloneWindow ? {
           backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
           color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
@@ -2133,6 +2406,46 @@ export default function Reader() {
           <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar-slim" />
         )}
 
+        {isNarrow ? (
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-1 px-1">
+            {/* A standalone reader window has no library to go back to — routing
+                it to "/" would replace the book with the shelf inside a window
+                that exists to hold one book. The desktop header solves this by
+                swapping the back button for the mark; the strip does the same,
+                which also keeps the title centred between two equal boxes. */}
+            {isStandaloneWindow ? (
+              <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent">
+                <BookOpen size={18} className="text-white" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                aria-label={t("reader.returnToLibrary")}
+                className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-lg text-text-muted"
+              >
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            {/* Centred by giving the two buttons equal, fixed widths rather than
+                by absolute positioning: a long chapter name then truncates
+                against the buttons instead of running underneath them. */}
+            <span className="min-w-0 flex-1 truncate text-center text-[12px] leading-4 text-text-muted">
+              {narrowLocationLabel}
+            </span>
+            <button
+              type="button"
+              onClick={toggleAiPanel}
+              aria-label={t("reader.aiAssistant")}
+              className={`grid size-10 shrink-0 cursor-pointer place-items-center rounded-lg ${
+                sidePanel === "ai" ? "text-accent-text" : "text-text-muted"
+              }`}
+            >
+              <Sparkles size={18} />
+            </button>
+          </div>
+        ) : (
+          <>
         {/* Left section */}
         <div className="flex min-w-0 items-center gap-2 md:min-w-[auto] md:gap-3">
           {isStandaloneWindow ? (
@@ -2167,13 +2480,7 @@ export default function Reader() {
               >
                 <List size={16} />
               </Button>
-              {/* Removed from the tree under narrow, not hidden with a class:
-                  `Button` bakes `inline-flex` into its own base string, and
-                  `hidden` cannot beat it — same specificity, and Tailwind emits
-                  `.hidden` first, so the later `.inline-flex` wins and the
-                  button stays on screen. The folded-into-⋯ decision has to be
-                  made in JS here, the way `overflowActions` already makes it. */}
-              {supportsSearch && !isNarrow && (
+              {supportsSearch && (
                 <Button
                   variant="icon"
                   size="md"
@@ -2247,13 +2554,7 @@ export default function Reader() {
               >
                 <List size={16} />
               </Button>
-              {/* Removed from the tree under narrow, not hidden with a class:
-                  `Button` bakes `inline-flex` into its own base string, and
-                  `hidden` cannot beat it — same specificity, and Tailwind emits
-                  `.hidden` first, so the later `.inline-flex` wins and the
-                  button stays on screen. The folded-into-⋯ decision has to be
-                  made in JS here, the way `overflowActions` already makes it. */}
-              {supportsSearch && !isNarrow && (
+              {supportsSearch && (
                 <Button
                   variant="icon"
                   size="md"
@@ -2271,10 +2572,10 @@ export default function Reader() {
           )}
 
           {/* Read-aloud keeps its whole cluster or nothing: the collapsed
-              transport is five controls in a row, which is the entire narrow
-              header on its own. Below the breakpoint it lives in the ⋯ sheet,
-              and once playing it has the floating bar over the page. */}
-          <div className="hidden md:contents">
+              transport is five controls in a row, which is the entire phone
+              strip on its own. Below the breakpoint it lives in the raised
+              chrome's function row, and once playing it has the floating bar
+              over the page. */}
           {continuousReadAloudAvailable && (
             continuousReadAloud.state.collapsed && continuousReadAloud.state.status !== "idle" ? (
               <ContinuousReadAloudToolbar
@@ -2307,14 +2608,13 @@ export default function Reader() {
               </Button>
             )
           )}
-          </div>
 
           <button
-            // Below the breakpoint this button is gone and the ⋯ button carries
-            // the ref instead — `ReaderSettings` measures its popover against
-            // whatever this points at, and a `display:none` element measures
-            // zero and would drop the panel in the corner of the screen.
-            ref={isNarrow ? undefined : settingsAnchorRef}
+            // `ReaderSettings` measures its popover against this button. Below
+            // the breakpoint neither exists: the header is the phone strip, and
+            // the settings render as a full-screen sheet that has nothing to
+            // anchor to and skips the measurement entirely.
+            ref={settingsAnchorRef}
             onClick={() => {
               setSettingsOpen((open) => !open);
               setTocOpen(false);
@@ -2329,29 +2629,8 @@ export default function Reader() {
             <span className="text-[16px] font-semibold leading-6">A</span>
             <span className="text-[12px] font-semibold leading-4">A</span>
           </button>
-          <ReaderSettings
-            open={settingsOpen}
-            onClose={closeReaderSettings}
-            anchorRef={settingsAnchorRef}
-            measureTextRect={measureReaderTextRect}
-            settings={readerSettings}
-            globalSettings={globalReaderSettings}
-            onSettingsChange={handleReaderSettingsChange}
-            capabilities={capabilities}
-            passiveVocab={passiveVocab}
-            passiveVocabAvailable={passiveVocabAvailable}
-            onPassiveVocabChange={handlePassiveVocabChange}
-            onOpenPassiveVocabSettings={openPassiveVocabSettings}
-            bookId={bookId}
-            bookOverrides={bookOverrides}
-            onRestoreBookOverrides={restoreBookOverrides}
-            onUndoRestoreBookOverrides={undoRestoreBookOverrides}
-            onPromoteBookOverrides={promoteBookOverrides}
-            onUndoPromoteBookOverrides={undoPromoteBookOverrides}
-            onClearLookupMarks={bookId ? clearLookupMarks : undefined}
-          />
 
-          {supportsCfiNavigation && !isNarrow && (
+          {supportsCfiNavigation && (
             <Button
               variant="icon"
               size="md"
@@ -2376,95 +2655,36 @@ export default function Reader() {
           >
             <Sparkles size={16} />
           </Button>
-
-          {/* Everything the narrow header could not keep. Renders only when
-              `readerToolbarOverflow` has something to put in it, which is only
-              ever below the breakpoint. */}
-          {overflowActions.length > 0 && (
-            <Button
-              ref={settingsAnchorRef}
-              variant="icon"
-              size="md"
-              active={overflowMenuOpen}
-              className="touch:size-11"
-              aria-label={t("reader.moreControls")}
-              aria-expanded={overflowMenuOpen}
-              title={t("reader.moreControls")}
-              onClick={() => {
-                // The typography popover anchors here, so this button is inside
-                // `ReaderSettings`' own "clicked outside" test and cannot close
-                // it that way. Closing it explicitly is what makes a second tap
-                // on ⋯ mean "put that away", not "stack a sheet on top of it".
-                setSettingsOpen(false);
-                setOverflowMenuOpen((open) => !open);
-              }}
-            >
-              <MoreHorizontal size={18} />
-            </Button>
-          )}
         </div>
+          </>
+        )}
+
+        {/* Outside the width branch on purpose. Below the breakpoint the
+            typography controls are a full-screen sheet reached from the raised
+            chrome, so they have to stay mounted even though the toolbar that
+            anchors them on desktop is not rendered. */}
+        <ReaderSettings
+          open={settingsOpen}
+          onClose={closeReaderSettings}
+          anchorRef={settingsAnchorRef}
+          measureTextRect={measureReaderTextRect}
+          settings={readerSettings}
+          globalSettings={globalReaderSettings}
+          onSettingsChange={handleReaderSettingsChange}
+          capabilities={capabilities}
+          passiveVocab={passiveVocab}
+          passiveVocabAvailable={passiveVocabAvailable}
+          onPassiveVocabChange={handlePassiveVocabChange}
+          onOpenPassiveVocabSettings={openPassiveVocabSettings}
+          bookId={bookId}
+          bookOverrides={bookOverrides}
+          onRestoreBookOverrides={restoreBookOverrides}
+          onUndoRestoreBookOverrides={undoRestoreBookOverrides}
+          onPromoteBookOverrides={promoteBookOverrides}
+          onUndoPromoteBookOverrides={undoPromoteBookOverrides}
+          onClearLookupMarks={bookId ? clearLookupMarks : undefined}
+        />
       </header>
-
-      <BottomSheet
-        // Tied to the same condition as the ⋯ button rather than to its own
-        // flag: dragging a desktop window past the breakpoint unmounts ⋯ and
-        // empties `overflowActions`, and a still-open sheet would sit there as
-        // a full-screen modal with a title and no rows.
-        open={overflowMenuOpen && overflowActions.length > 0}
-        onClose={() => setOverflowMenuOpen(false)}
-        title={t("reader.moreControls")}
-      >
-        <div className="px-2 pb-1">
-          {overflowActions.map((action) => {
-            const run = () => {
-              setOverflowMenuOpen(false);
-              if (action === "typography") setSettingsOpen(true);
-              else if (action === "search") toggleSearchPanel();
-              else if (action === "traces") toggleTracesPanel();
-              else if (continuousReadAloud.state.status === "idle") void continuousReadAloud.start();
-              else continuousReadAloud.setCollapsed(false);
-            };
-            const label = action === "typography"
-              ? t("reader.typography")
-              : action === "search"
-                ? t("reader.search.open")
-                : action === "traces"
-                  ? t("reader.traces.title")
-                  // "开始朗读" on a row that is actually going to bring an
-                  // already-playing bar back is a label that lies about what
-                  // the tap does. Say what the player is doing instead.
-                  : continuousReadAloud.state.status === "idle"
-                    ? t("reader.continuousReadAloud.start")
-                    : continuousReadAloud.state.status === "paused"
-                      ? t("reader.continuousReadAloud.paused")
-                      : t("reader.continuousReadAloud.reading");
-            const Icon = action === "typography"
-              ? Type
-              : action === "search"
-                ? Search
-                : action === "traces"
-                  ? Layers
-                  : Volume2;
-            const active = (action === "search" && searchOpen)
-              || (action === "traces" && sidePanel === "traces")
-              || (action === "readAloud" && continuousReadAloud.state.status !== "idle");
-            return (
-              <button
-                key={action}
-                type="button"
-                onClick={run}
-                disabled={action === "readAloud" && !bookReady}
-                className={`flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left disabled:opacity-40 ${
-                  active ? "text-accent-text" : "text-text-primary"
-                }`}
-              >
-                <Icon size={18} className={active ? "" : "text-text-muted"} />
-                <span className="text-[15px]">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </BottomSheet>
 
       {/* Body */}
       {/* `relative` is what the narrow panels position against — see `panelShellClass`. */}
@@ -2534,6 +2754,13 @@ export default function Reader() {
                 doubleClickQuickLookup={doubleClickQuickLookup}
                 markerStyle={markerStyle}
                 onReaderBinding={handleReaderBinding}
+                // The same handler the foliate tap-zone loop calls. Text books
+                // never get that loop — `readerOpenKey()` returns null for them,
+                // and they have no chapter iframe to attach listeners to — so
+                // the phone's three zones have to come in through the component.
+                onTapZone={handleTapZone}
+                chromeOpenRef={chromeOpenRef}
+                oneHandModeRef={oneHandModeRef}
               />
             ) : (
               <div
@@ -2657,7 +2884,16 @@ export default function Reader() {
                 onClick={handleJumpBack}
                 aria-hidden={!jumpHistoryVisible}
                 tabIndex={jumpHistoryVisible ? 0 : -1}
-                className={`absolute bottom-4 left-6 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent-bg text-accent-text shadow-sm cursor-pointer transition-opacity duration-300 motion-reduce:transition-none hover:opacity-80 ${
+                // The pill is z-20 and the read-aloud bar z-30, so on a phone —
+                // where that bar moved to the bottom — the pill would sit
+                // underneath it and the one way back from a footnote jump would
+                // be invisible for as long as the book is being read aloud.
+                // 62px is the bar's min-height; the pill keeps its own 1rem
+                // gutter on top of it. Desktop keeps the bar at the top and is
+                // untouched.
+                className={`absolute ${
+                  isNarrow && readAloudBarOnScreen ? "bottom-[calc(62px+1rem)]" : "bottom-4"
+                } left-6 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent-bg text-accent-text shadow-sm cursor-pointer transition-opacity duration-300 motion-reduce:transition-none hover:opacity-80 ${
                   jumpHistoryVisible ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
               >
@@ -2678,11 +2914,14 @@ export default function Reader() {
                 Click is stopped here so the toolbar keeps behaving as it did
                 outside <main>: bubbling would reach the viewport handler and
                 deselect the reader's selection on every transport press. */}
-            {continuousReadAloudAvailable
-              && continuousReadAloud.state.status !== "idle"
-              && !continuousReadAloud.state.collapsed && (
+            {readAloudBarOnScreen && (
                 <div
-                  className="absolute inset-x-0 top-0 z-30"
+                  // Bottom on a phone: the transport is a thumb control, and at
+                  // the top of the page it sat under the reading hand's reach
+                  // and over the first line of text. It needs no safe-area
+                  // padding down there — the silent strip is a flex sibling
+                  // below <main> and already holds that inset open.
+                  className={`absolute inset-x-0 z-30 ${isNarrow ? "bottom-0" : "top-0"}`}
                   onClick={(event) => event.stopPropagation()}
                 >
                   <ContinuousReadAloudToolbar
@@ -2701,6 +2940,7 @@ export default function Reader() {
                     // transport anywhere on screen. So this bar does not offer
                     // it, rather than offering a way out that leads nowhere.
                     onCollapsedChange={isNarrow ? undefined : continuousReadAloud.setCollapsed}
+                    placement={isNarrow ? "bottom" : "top"}
                   />
                 </div>
               )}
@@ -2715,12 +2955,36 @@ export default function Reader() {
             // bar — and because it is a `shrink-0` sibling of <main>, whatever
             // it fails to reserve is room the text above it keeps and then has
             // clipped. `max()` so desktop is untouched: no inset, no change.
-            className={`px-page pb-[max(0.5rem,var(--spacing-safe-bottom))] pt-0 shrink-0 ${isStandaloneWindow ? "" : "bg-bg-surface"}`}
+            className={`${isNarrow ? "" : "px-page"} pb-[max(0.5rem,var(--spacing-safe-bottom))] pt-0 shrink-0 ${isStandaloneWindow ? "" : "bg-bg-surface"}`}
             style={isStandaloneWindow ? {
               backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
               color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
             } : undefined}
           >
+            {isNarrow ? (
+              // The silent strip: 24pt, one readout, no track. The scrubber and
+              // the function keys live in the raised chrome now, so nothing here
+              // needs a finger-sized target and the strip can stay this thin.
+              //
+              // While the read-aloud bar is up the strip keeps its box and drops
+              // its contents. Emptying the box instead would change <main>'s
+              // height and re-columnize the chapter on every play and stop.
+              <div
+                className={`flex h-6 items-center justify-start gap-2 text-[12px] tabular-nums ${
+                  // The EPUB readout is a button that carries its own px-4 —
+                  // its tap target has to reach the edge of the strip even
+                  // though its text does not. The static spans (PDF, text
+                  // books) are not tappable and would otherwise start at x=0,
+                  // touching the bezel. Padding them here rather than there
+                  // keeps the two readouts from being padded twice.
+                  supportsScrubber
+                    ? ""
+                    : "pl-[max(var(--spacing-page),var(--spacing-safe-left))] pr-[max(var(--spacing-page),var(--spacing-safe-right))]"
+                } ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}
+              >
+                {readAloudBarVisible ? null : progressReadout(true)}
+              </div>
+            ) : (
             <div className="flex flex-col gap-2">
               {showScrubber ? (
                 <ProgressScrubber
@@ -2745,63 +3009,13 @@ export default function Reader() {
                   out over the progress track above them. */}
               <div className="flex items-center justify-between h-8 touch:h-11">
                 <div className={`flex min-w-0 items-center gap-2 text-[12px] tabular-nums ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
-                  {supportsScrubber ? (
-                    // P1.5's click-cycle readout. The button stays in the DOM
-                    // even in "hidden" mode (no visible text) so the same
-                    // click target can cycle back to "page" — a deliberate
-                    // trade-off over letting the affordance vanish entirely.
-                    <button
-                      type="button"
-                      onClick={() => cycleProgressReadoutMode(effectiveProgressReadoutMode)}
-                      title={t("reader.progressReadout.toggleLabel")}
-                      aria-label={progressReadoutText ? undefined : t("reader.progressReadout.toggleLabel")}
-                      className={`cursor-pointer text-left hover:opacity-100 touch:inline-flex touch:min-h-11 touch:items-center ${progressReadoutText ? "" : "min-w-[12px] touch:min-w-11"}`}
-                    >
-                      {progressReadoutText}
-                    </button>
-                  ) : (
-                    <>
-                      {book.format === "pdf" && pageInfo ? (
-                        <span>{t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}</span>
-                      ) : readerSettings.showChapterProgress ? (
-                        <span>{t("reader.chapterProgress", { progress: chapterProgress })}</span>
-                      ) : null}
-                      {readerSettings.showBookProgress && book.format !== "pdf" && (
-                        <span className="border-l border-current/20 pl-2">
-                          {t("reader.bookProgress", { progress })}
-                        </span>
-                      )}
-                      {readerSettings.readingMode === "paginated" && readerSettings.showPageNumbers && pageInfo && book.format !== "pdf" && (
-                        <span className="border-l border-current/20 pl-2">
-                          {pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
-                            ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
-                            : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}
-                        </span>
-                      )}
-                    </>
-                  )}
+                  {progressReadout(false)}
                 </div>
-                {book.format === "pdf" && (
-                  <div className="flex items-center gap-1">
-                    <Button variant="icon" size="sm" onClick={() => handleZoom(-10)}>
-                      <Minus size={12} />
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={handleZoomFit}
-                      title={t("reader.zoom.fitTooltip")}
-                      className={`text-[12px] font-medium min-w-[36px] px-1 text-center tabular-nums hover:opacity-100 touch:inline-flex touch:min-h-11 touch:min-w-11 touch:items-center touch:justify-center ${isStandaloneWindow ? "opacity-60" : "text-text-muted"} ${zoom === "fit" ? "" : "cursor-pointer"}`}
-                    >
-                      {zoom === "fit" ? t("reader.zoom.fit") : `${zoom}%`}
-                    </button>
-                    <Button variant="icon" size="sm" onClick={() => handleZoom(10)}>
-                      <Plus size={12} />
-                    </Button>
-                  </div>
-                )}
+                {book.format === "pdf" && pdfZoomControls}
                 <span className="w-8 touch:w-11" aria-hidden="true" />
               </div>
             </div>
+            )}
           </footer>
         </div>
 
@@ -2921,6 +3135,130 @@ export default function Reader() {
           )}
         </div>
       </div>
+
+      {/* The raised chrome.
+          Absolutely positioned over the shell rather than expanded into the
+          flex column: an in-flow bar would change <main>'s height and make
+          foliate re-columnize the chapter every time the reader tapped the
+          middle of the page.
+          z-30 puts it over the page and under the covering panels (z-50), so a
+          panel opened from the function row simply covers it instead of having
+          to be sequenced against it. Clicks stop here so they do not reach the
+          viewport handler that clears the reader's selection. */}
+      {isNarrow && chromeOpen && (
+        <>
+          <div
+            className={`absolute inset-x-0 top-0 z-30 shadow-popover ${TOP_INSET} ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+            style={chromeSurfaceStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-12 items-center gap-1 px-1">
+              {/* Same swap as the silent strip above: a standalone window has
+                  no library to go back to, and routing it to "/" would strand
+                  the one book it exists to hold. */}
+              {isStandaloneWindow ? (
+                <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-accent">
+                  <BookOpen size={18} className="text-white" />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => navigate("/")}
+                  aria-label={t("reader.returnToLibrary")}
+                  className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-text-muted"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              )}
+              {/* Two lines here, one in the silent strip: the strip has 40pt and
+                  says where you are; the raised bar has room to also say what
+                  you are in, which is the question a reader who just opened the
+                  controls is most likely asking. */}
+              <div className="flex min-w-0 flex-1 flex-col items-center">
+                <span className="w-full truncate text-center text-[14px] font-semibold leading-5 text-text-primary">
+                  {book.title}
+                </span>
+                <span className="w-full truncate text-center text-[12px] leading-4 text-text-muted">
+                  {narrowLocationLabel}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setChromeOpen(false); toggleAiPanel(); }}
+                aria-label={t("reader.aiAssistant")}
+                className={`grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg ${
+                  sidePanel === "ai" ? "text-accent-text" : "text-text-muted"
+                }`}
+              >
+                <Sparkles size={18} />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className={`absolute inset-x-0 bottom-0 z-30 shadow-popover pb-[max(0.5rem,var(--spacing-safe-bottom))] ${isStandaloneWindow ? "" : "bg-bg-surface border-t border-border"}`}
+            style={chromeSurfaceStyle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {/* The scrubber is unconditional here, unlike the desktop footer's
+                copy: `showChapterProgress` decides whether a *silent* strip
+                shows a progress line, and a reader who has deliberately raised
+                the controls is asking to move through the book. */}
+            {supportsScrubber && (
+              <div className="px-page pt-3">
+                <ProgressScrubber
+                  progress={progress}
+                  ticks={scrubberTicks}
+                  isStandaloneWindow={isStandaloneWindow}
+                  onCommit={handleScrubberCommit}
+                />
+              </div>
+            )}
+            {/* Zoom is absolutely placed so the readout stays centred on the
+                bar's midline whether or not the book is a PDF — the readout is
+                the same control as the one in the silent strip, and it should
+                not move when the chrome comes up. */}
+            <div className={`relative flex min-h-11 items-center justify-center gap-2 px-page text-[12px] tabular-nums ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
+              {progressReadout(false)}
+              {book.format === "pdf" && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2">{pdfZoomControls}</div>
+              )}
+            </div>
+            <div className="flex items-stretch gap-1 px-1 pb-1">
+              {chromeActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    disabled={action.disabled}
+                    aria-disabled={action.disabled || undefined}
+                    title={action.label}
+                    onClick={() => { setChromeOpen(false); action.run(); }}
+                    className={`flex min-h-13 flex-1 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg disabled:cursor-default disabled:opacity-35 ${
+                      action.active ? "text-accent-text" : "text-text-muted"
+                    }`}
+                  >
+                    <Icon size={20} />
+                    <span className="max-w-full truncate text-[10px] leading-3">{action.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* The one-time tap-zone guide, over everything including the raised
+          bars (it portals to <body>). */}
+      {shouldShowZoneGuide({
+        narrow: isNarrow,
+        readingMode: readerSettings.readingMode,
+        bookReady,
+        shownFlag: zoneGuideShownFlag,
+      }) && (
+        <ReaderZoneGuide oneHand={oneHandMode} onDismiss={dismissZoneGuide} />
+      )}
 
       {bookId && book && <ReaderExportDialog
         open={exportOpen}

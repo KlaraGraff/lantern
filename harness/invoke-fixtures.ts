@@ -23,6 +23,7 @@ import {
   HIGHLIGHTS,
   NOTES,
   PERSON_ALIAS_GROUPS,
+  TEXT_BOOK_BLOCKS,
   VOCAB,
   emptyLibrary,
   profileVariant,
@@ -356,6 +357,38 @@ export const FIXTURES: Record<string, Fixture> = {
   update_book_status: null,
   update_book_metadata: null,
   update_book_cover: null,
+  /**
+   * The parsed text book. Offsets are computed from the block texts here rather
+   * than written down, so the fixture cannot drift out of agreement with
+   * itself: `source_start` is where the block begins in a document whose blocks
+   * are joined by a blank line, and the single span maps the whole block
+   * one-to-one because none of this text needs normalizing.
+   */
+  get_text_book_document: () => {
+    let cursor = 0;
+    const blocks = TEXT_BOOK_BLOCKS.map((block) => {
+      const source_start = cursor;
+      const source_end = source_start + block.text.length;
+      cursor = source_end + 2; // the "\n\n" that separates two blocks
+      return {
+        kind: block.kind,
+        text: block.text,
+        source_start,
+        source_end,
+        source_spans: [{ rendered_start: 0, source_start, length: block.text.length }],
+        ...(block.depth === undefined ? {} : { depth: block.depth }),
+      };
+    });
+    return {
+      version: 1,
+      source_sha256: "d".repeat(64),
+      coordinate_space: "normalized_utf16",
+      chunks: [{ blocks }],
+      toc: blocks
+        .filter((block) => block.kind === "heading")
+        .map((block) => ({ title: block.text, depth: block.depth ?? 1, source_offset: block.source_start })),
+    };
+  },
 
   /* ---------------------------------------------------------------- *
    * Reader side panels

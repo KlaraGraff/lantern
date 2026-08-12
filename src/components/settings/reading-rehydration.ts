@@ -43,7 +43,7 @@ export const READING_REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
   { id: "wordSpacing", keys: ["word_spacing"] },
   { id: "paragraph", keys: ["text_justification", "paragraph_spacing", "first_line_indent"] },
   { id: "margins", keys: ["margins"] },
-  { id: "pageFlow", keys: ["reading_mode", "page_columns", "page_turn_animation"] },
+  { id: "pageFlow", keys: ["reading_mode", "page_columns", "page_turn_animation", "one_hand_mode"] },
   { id: "progress", keys: ["show_chapter_progress", "show_book_progress", "show_page_numbers"] },
   { id: "bindings", keys: ["previous_page_binding", "next_page_binding"] },
   { id: "autoSave", keys: ["auto_save"] },

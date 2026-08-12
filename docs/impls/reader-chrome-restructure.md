@@ -15,7 +15,8 @@
 - 唤起态两条浮条：顶条＝返回+书名/章节+AI；底条＝scrubber + 读数行 + 功能行
   （目录/搜索/划线笔记/朗读/排版），手机端不再有 ⋯ 菜单。
 - 首次进入分区模式出一次性引导蒙层，之后不再出现。
-- 「单手模式」开关：待用户点头，本批不做（基础设施要留好：分区分类为纯函数，加开关只改一处）。
+- 「单手模式」开关：用户以「其余全部按推荐」点头，本批一并落地——全局设置键
+  `one_hand_mode`（默认关，不参与同步），开启后左右两侧分区都翻下一页，中栏与滑动不变。
 
 ## 侦察结论中约束实现的硬事实
 
@@ -73,7 +74,7 @@
     目录/搜索）。点键先收 chrome 再开对应面板；排版走 `setSettingsOpen(true)`。
   - ⋯ BottomSheet 与 `readerToolbarOverflow` 的窄屏路径删除（M4 由此吸收）。
 - **分区**：新纯函数模块 `src/pages/reader/tap-zones.ts`：
-  `classifyReaderTap(x, width): "previous" | "menu" | "next"`（三等分；单手模式将来只改这里）
+  `classifyReaderTap(x, width, oneHand): "previous" | "menu" | "next"`（三等分；单手开关只改这一处）
   + `tests/tap-zones.test.ts`。
   `useReaderInteractions.ts` click 守卫串之后、窄屏时：chromeOpen → 只收起；否则分类后经
   `pendingWordClickRef` 延迟 240ms 执行（左右 → 新 prop `onTapZoneTurn(direction)` →
@@ -92,7 +93,6 @@
 
 ## 明确不做（本批）
 
-- 单手模式开关（待用户点头；tap-zones.ts 纯函数已为它留好唯一改动点）。
 - TXT/非 scrubber 书的「全书 % ⇄ 空」两档循环——维持现状静态文案，样张里的这句先欠着，
   用户在意再补（一个小时内的活）。
 - M10 边缘返回（书架侧页面）——chrome 落地后单独做。

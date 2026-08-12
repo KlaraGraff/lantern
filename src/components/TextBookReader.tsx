@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -47,6 +47,9 @@ import {
 } from "./text-book-location";
 import { getTextBookParagraphStyle, isCjkText } from "./text-book-typography";
 import { resolveLineSpacing } from "./reader-paragraph-settings";
+import { classifyReaderTapInBox, type TapZone } from "../pages/reader/tap-zones";
+import { clickCountGraceMs } from "../pages/reader/click-grace";
+import { isNarrowNow } from "../hooks/useIsNarrow";
 
 interface TextBookReaderProps {
   bookId: string;
@@ -70,6 +73,17 @@ interface TextBookReaderProps {
   doubleClickQuickLookup?: boolean;
   markerStyle: MarkerStyleConfig;
   onReaderBinding?: (trigger: string, interaction: ReaderInteraction | null) => boolean;
+  /**
+   * The phone's tap zones, wired to the same handler the foliate reader uses so
+   * a text book pages, and raises the chrome, exactly the way an EPUB does.
+   *
+   * Refs rather than values: this component is memoized and re-renders cost a
+   * full re-measure of the page, so the two pieces of state a tap reads must not
+   * be props that change identity. They are only ever read inside a click.
+   */
+  onTapZone?: (zone: TapZone) => void;
+  chromeOpenRef?: MutableRefObject<boolean>;
+  oneHandModeRef?: MutableRefObject<boolean>;
 }
 
 export interface TextBookPageNavigation {
@@ -578,6 +592,9 @@ function TextBookReader({
   doubleClickQuickLookup = true,
   markerStyle,
   onReaderBinding,
+  onTapZone,
+  chromeOpenRef,
+  oneHandModeRef,
 }: TextBookReaderProps) {
   const [document, setDocument] = useState<TextBookDocument | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -1233,6 +1250,40 @@ function TextBookReader({
     if (isInteractiveReaderTarget(event.target) || (event.target as Element | null)?.closest?.("mark")) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;
+    // Below the breakpoint the page is three tap zones and a plain tap no
+    // longer opens a word card — the same trade the foliate reader makes in
+    // `useReaderInteractions`, and for the same reason: a phone has no margins
+    // to click and no keyboard to page with, so the page itself has to carry
+    // paging and "show me the controls".
+    //
+    // Placed after everything that already claimed the click (a link, an
+    // annotation, a live selection) and before the word lookup, which is the
+    // only thing it replaces. Long press and double-click never reach here.
+    if (isNarrowNow() && onTapZone) {
+      if (chromeOpenRef?.current) {
+        // With the chrome up, every tap means "put it away", and it goes away
+        // now rather than after the double-click grace: no second tap could
+        // change the answer, and a visible 240ms lag on a dismiss reads as a
+        // control that did not register the press.
+        onTapZone("menu");
+        return;
+      }
+      const box = containerRef.current?.getBoundingClientRect();
+      const zone = classifyReaderTapInBox(
+        event.clientX,
+        box ?? { left: 0, width: 0 },
+        oneHandModeRef?.current ?? false,
+      );
+      // The same timer slot the word lookup uses, on purpose: `handleTextDouble
+      // Click` cancels it unconditionally on its first line, so a double-click
+      // to look a word up cancels the page turn it was on its way to causing.
+      // No new mechanism, and no way for the two to disagree.
+      wordClickTimerRef.current = window.setTimeout(() => {
+        wordClickTimerRef.current = null;
+        onTapZone(zone);
+      }, clickCountGraceMs(1, false));
+      return;
+    }
     const selectionRange = rangeFromSelectionSnapshotAtPoint(
       doubleClickSelectionRef.current,
       event.clientX,
@@ -1255,8 +1306,10 @@ function TextBookReader({
     wordClickTimerRef.current = window.setTimeout(() => {
       wordClickTimerRef.current = null;
       onInteraction(interaction);
-    }, 240);
-  }, [cancelWordClick, interactionFromRange, onInteraction]);
+    // A single click never loses the gesture to a third press, so the flag is
+    // moot at count 1 — but the number stays wherever the foliate reader's does.
+    }, clickCountGraceMs(1, false));
+  }, [cancelWordClick, chromeOpenRef, interactionFromRange, onInteraction, oneHandModeRef, onTapZone]);
 
   const handleTextDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     cancelWordClick();
