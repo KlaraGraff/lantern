@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词卷并入单词复习板块 · 样张</title>
+<style>
+  :root{
+    --bg-page:#f4f4f5; --bg-surface:#ffffff; --bg-muted:#fafafa; --bg-input:#f3f3f5;
+    --text-primary:#18181b; --text-body:#0a0a0a; --text-secondary:#52525c;
+    --text-muted:#71717b; --text-placeholder:#717182;
+    --border:#e4e4e7; --border-light:#f4f4f5;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --accent-text:#7c3aed;
+    --lavender:#c084fc; --purple:#a855f7;
+    --success:#00c950; --success-text:#00a63e; --success-bg:#f0fdf4; --success-border:#b9f8cf;
+    --danger:#e7000b; --danger-bg:#fef2f2; --danger-border:#ffc9c9;
+    --warning:#b8791c; --warning-bg:#fefce8; --warning-border:#f5e6a8;
+    --link:#155dfc;
+    --overlay:rgba(0,0,0,.5);
+    --user-bubble:rgba(192,132,252,.15);
+    --marker:rgba(124,58,237,.24);
+    --shadow-card:0px 4px 6px -1px rgba(0,0,0,.1), 0px 2px 4px -2px rgba(0,0,0,.1);
+    --shadow-popover:0px 10px 15px 0px rgba(0,0,0,.1), 0px 4px 6px 0px rgba(0,0,0,.1);
+    --shadow-context:0px 20px 25px 0px rgba(0,0,0,.15), 0px 8px 10px 0px rgba(0,0,0,.15);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg-page:#151518; --bg-surface:#18191d; --bg-muted:#1f2023; --bg-input:#25262c;
+      --text-primary:#f4f4f5; --text-body:#e7e7ea; --text-secondary:#c9c9d1;
+      --text-muted:#9a9aa4; --text-placeholder:#85858f;
+      --border:#34343d; --border-light:#2a2b31;
+      --accent:#8b5cf6; --accent-bg:#302647; --accent-text:#a78bfa;
+      --lavender:#c4b5fd; --purple:#a78bfa;
+      --success-text:#4ade80; --success-bg:#122a1c; --success-border:#1d4f31;
+      --danger:#f87171; --danger-bg:#3a1414; --danger-border:#7f1d1d;
+      --warning:#e0a75a; --warning-bg:#2c2513; --warning-border:#5a4a1f;
+      --link:#60a5fa;
+      --overlay:rgba(21,21,24,.72);
+      --user-bubble:rgba(139,92,246,.22);
+      --marker:rgba(167,139,250,.3);
+      --shadow-card:0 4px 12px rgba(0,0,0,.45);
+      --shadow-popover:0 10px 20px rgba(0,0,0,.5);
+      --shadow-context:0 20px 30px rgba(0,0,0,.55);
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg-page);color:var(--text-primary);
+    font:14px/1.65 "Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    letter-spacing:-.15px;-webkit-font-smoothing:antialiased;
+    padding:0 20px 140px;
+  }
+  .serif{font-family:Georgia,"Libre Baskerville","Songti SC",serif;letter-spacing:.1px}
+  .wrap{max-width:1100px;margin:0 auto}
+  b,strong{font-weight:600}
+  code{background:var(--bg-input);border-radius:4px;padding:1px 5px;font-size:11.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0}
+
+  /* ── 样张外层排版 ── */
+  .topbar{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg-page) 88%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--border);margin:0 -20px 0;padding:9px 20px;
+    display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px}
+  .topbar .tb-title{font-weight:600;color:var(--text-primary);margin-right:8px}
+  .topbar a{color:var(--text-secondary);text-decoration:none;border:1px solid var(--border);
+    border-radius:9999px;padding:2.5px 10px;background:var(--bg-surface)}
+  .topbar a:hover{border-color:var(--lavender);color:var(--accent-text)}
+
+  h1{font-size:24px;font-weight:600;letter-spacing:.07px;margin:40px 0 12px}
+  .lede{font-size:14px;color:var(--text-secondary);line-height:1.85;max-width:84ch}
+  .lede + .lede{margin-top:10px}
+  .lede b{color:var(--text-primary)}
+  .meta{margin-top:16px;padding-top:14px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--text-muted);line-height:1.9}
+
+  h2.sec{font-size:18px;font-weight:600;margin:64px 0 6px;display:flex;align-items:baseline;gap:11px;
+    scroll-margin-top:56px}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--text-muted);border:1px solid var(--border);
+    border-radius:9999px;padding:2px 9px;flex:none;letter-spacing:.3px}
+  .why{font-size:13.5px;color:var(--text-secondary);line-height:1.85;margin-bottom:22px;max-width:84ch}
+  .why b{color:var(--text-primary)}
+  h3.sub{font-size:13.5px;font-weight:600;margin:32px 0 4px;display:flex;align-items:center;gap:8px}
+  h3.sub .tagx{font-size:10.5px;font-weight:600;letter-spacing:.3px;color:var(--text-muted);
+    border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+  .subwhy{font-size:12.5px;color:var(--text-muted);line-height:1.8;margin-bottom:12px;max-width:80ch}
+  .cap{font-size:12.3px;color:var(--text-muted);line-height:1.7;margin-top:10px;max-width:80ch}
+  .cap b{color:var(--text-secondary)}
+  .stage{background:var(--bg-page);border:1px solid var(--border);border-radius:14px;padding:20px}
+  .stage.plain{background:var(--bg-surface)}
+  .duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px;align-items:start}
+
+  /* ── Lantern 组件语言 ── */
+  .btn{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:8px;
+    font-size:14px;font-weight:500;letter-spacing:-.15px;border:1px solid transparent;
+    background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .btn.secondary{background:transparent;border-color:var(--border);color:var(--text-secondary)}
+  .btn.ghost{background:transparent;color:var(--text-muted)}
+  .btn.danger{background:transparent;border-color:var(--danger-border);color:var(--danger)}
+  .btn.solid-danger{background:var(--danger);border-color:var(--danger);color:#fff}
+  .btn.sm{height:32px;padding:0 8px;font-size:13px;border-radius:6px;gap:6px}
+  .btn.lg{height:40px;padding:0 16px}
+  .btn[disabled],.btn.disabled{opacity:.5;pointer-events:none}
+  .btn svg{flex:none}
+
+  .card{border:1px solid var(--border);background:var(--bg-surface);border-radius:14px;padding:16px 16px 14px}
+  .card.quiet{border-style:dashed;background:transparent}
+  .panel{border:1px solid var(--border);background:var(--bg-surface);border-radius:12px;overflow:hidden}
+  .fieldlabel{font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;
+    color:var(--text-muted);margin-bottom:9px;display:flex;align-items:baseline;gap:8px}
+  .fieldlabel .hintx{font-size:11.5px;font-weight:400;letter-spacing:-.1px;text-transform:none;color:var(--text-muted)}
+
+  .inputbox{border:1px solid var(--border);background:var(--bg-surface);border-radius:8px;
+    font-size:14px;color:var(--text-primary);padding:9px 12px;width:100%}
+  .inputbox.ph{color:var(--text-placeholder)}
+  .textarea{min-height:98px;line-height:1.7;white-space:pre-wrap}
+
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{border-radius:6px;background:var(--bg-input);color:var(--text-secondary);
+    padding:2.5px 9px;font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:12px;letter-spacing:.1px}
+  .chip.recur{background:transparent;border:1px dashed var(--border);color:var(--text-muted)}
+  .chip.vocab{background:var(--accent-bg);color:var(--accent-text)}
+  .chip.more{background:transparent;color:var(--text-muted);padding-left:2px}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 10px;border-radius:9999px;
+    font-size:12px;font-weight:500;border:1px solid var(--border);color:var(--text-secondary);background:var(--bg-surface)}
+  .pill.on{background:var(--accent-bg);border-color:transparent;color:var(--accent-text);font-weight:600}
+  .pill.good{background:var(--success-bg);border-color:var(--success-border);color:var(--success-text)}
+  .pill.bad{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger)}
+  .pill.wait{background:var(--bg-input);border-color:transparent;color:var(--text-muted)}
+
+  .seg{display:inline-flex;background:var(--bg-input);border-radius:8px;padding:3px;gap:2px}
+  .seg button{border:0;background:transparent;color:var(--text-secondary);font-family:inherit;
+    font-size:13px;font-weight:500;padding:5px 13px;border-radius:6px;cursor:pointer;letter-spacing:-.15px}
+  .seg button.on{background:var(--bg-surface);color:var(--accent-text);font-weight:600;box-shadow:var(--shadow-card)}
+  .seg button[disabled]{opacity:.45}
+
+  .switch{width:44px;height:24px;border-radius:9999px;background:var(--border);position:relative;flex:none;display:inline-block}
+  .switch::after{content:"";position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:9999px;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .switch.on{background:var(--accent)}
+  .switch.on::after{transform:translateX(20px)}
+  .switch.off-disabled{opacity:.45}
+
+  .row73{min-height:73px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:16px;
+    border-bottom:1px solid var(--border)}
+  .row73:last-child{border-bottom:0}
+  .row73 .t{font-size:14px;font-weight:500}
+  .row73 .d{font-size:12.5px;color:var(--text-muted);line-height:1.6;margin-top:3px;max-width:52ch}
+
+  .banner{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);background:var(--bg-muted);
+    border-radius:10px;padding:10px 13px;font-size:12.8px;color:var(--text-secondary);line-height:1.7}
+  .banner .tag{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.3px;border-radius:4px;
+    padding:2px 6px;background:var(--bg-input);color:var(--text-muted);margin-top:2px}
+  .banner.accent{background:var(--accent-bg);border-color:transparent;color:var(--text-primary)}
+  .banner.accent .tag{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent-text)}
+  .banner.bad{background:var(--danger-bg);border-color:var(--danger-border)}
+  .banner.bad .tag{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+  .banner.warn{background:var(--warning-bg);border-color:var(--warning-border)}
+  .banner.warn .tag{color:var(--warning);background:color-mix(in srgb,var(--warning) 15%,transparent)}
+
+  .empty{border:1px dashed var(--border);border-radius:12px;padding:30px 22px;text-align:center;
+    color:var(--text-muted);font-size:13px;line-height:1.85}
+  .empty .eh{font-size:14px;font-weight:600;color:var(--text-secondary);margin-bottom:5px}
+
+  table.lt{width:100%;border-collapse:collapse;font-size:13px}
+  table.lt thead th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;
+    color:var(--text-muted);padding:0 12px 9px 0;border-bottom:1px solid var(--border);white-space:nowrap}
+  table.lt td{padding:11px 12px 11px 0;border-bottom:1px solid var(--border-light);
+    color:var(--text-secondary);vertical-align:middle}
+  table.lt tbody tr:last-child td{border-bottom:0}
+  table.lt td.w{font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:14px;color:var(--text-primary);letter-spacing:.1px}
+  table.lt td.num{font-variant-numeric:tabular-nums}
+  table.lt tr.cleared td{opacity:.55}
+
+  /* ── 应用外壳（入口一节用）── */
+  .app{display:flex;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+    background:var(--bg-surface);box-shadow:var(--shadow-card)}
+  .side{width:206px;flex:none;border-right:1px solid var(--border);background:var(--bg-muted);padding:14px 10px 18px}
+  .brand{display:flex;align-items:center;gap:8px;padding:2px 6px 16px;font-weight:600;font-size:18px;letter-spacing:.5px}
+  .logo{width:22px;height:22px;border-radius:7px;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .grp{margin-top:14px}
+  .grp h4{font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--text-muted);padding:0 8px 7px}
+  .navrow{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:8px;
+    color:var(--text-secondary);font-size:14px;font-weight:500}
+  .navrow .lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .navrow .c{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .navrow.on{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
+  .navrow .badge{height:17px;min-width:17px;border-radius:9999px;background:var(--accent);color:#fff;
+    padding:0 5px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+  .mainpane{flex:1;min-width:0;display:flex;flex-direction:column}
+  .mhead{border-bottom:1px solid var(--border);padding:18px 22px 16px}
+  .mhead h2{font-size:24px;font-weight:600;letter-spacing:.07px}
+  .mhead .sub{font-size:12.5px;color:var(--text-muted);margin-top:5px}
+  .mtools{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
+  .search{border:1px solid var(--border);background:var(--bg-input);border-radius:8px;height:32px;
+    padding:0 11px;font-size:12.5px;color:var(--text-placeholder);max-width:250px;flex:1;
+    display:flex;align-items:center;gap:7px}
+  .mbody{padding:18px 22px 24px;display:flex;flex-direction:column;gap:16px}
+
+  /* 词卷入口卡 */
+  .cj{display:flex;align-items:flex-start;gap:13px;width:100%;text-align:left;
+    border:1px solid var(--border);border-radius:14px;background:var(--bg-surface);padding:15px 16px}
+  .cj:hover{border-color:var(--lavender);box-shadow:0 2px 10px rgba(124,58,237,.09)}
+  .cj.quiet{border-style:dashed;background:transparent}
+  .cj .ic{width:34px;height:34px;flex:none;border-radius:9px;background:var(--accent-bg);color:var(--accent-text);
+    display:flex;align-items:center;justify-content:center}
+  .cj.quiet .ic{background:var(--bg-input);color:var(--text-muted)}
+  .cj .tx{flex:1;min-width:0}
+  .cj .t1{font-size:14.5px;font-weight:600;letter-spacing:-.15px;line-height:1.45;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  .cj .t2{font-size:12.8px;color:var(--text-secondary);line-height:1.6;margin-top:4px}
+  .cj .t3{font-size:12px;color:var(--text-muted);line-height:1.7;margin-top:9px;padding-top:9px;border-top:1px solid var(--border-light)}
+  .cj .act{flex:none;display:flex;align-items:center;gap:9px;align-self:center}
+
+  /* ── 全屏视图外壳 ── */
+  .full{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--bg-surface);
+    box-shadow:var(--shadow-card)}
+  .fhead{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);
+    background:var(--bg-surface)}
+  .fhead .ttl{font-size:15px;font-weight:600;letter-spacing:-.2px}
+  .fhead .sub{font-size:12.5px;color:var(--text-muted)}
+  .fhead .spacer{flex:1}
+  .fbody{padding:20px 22px 22px}
+  .fbody.narrow{max-width:820px;margin:0 auto}
+
+  /* ── 生成中 ── */
+  .steps{display:flex;flex-direction:column;gap:2px;max-width:560px;margin:0 auto}
+  .step{display:flex;gap:11px;align-items:flex-start;padding:11px 0;font-size:13.5px;color:var(--text-muted)}
+  .step .mk{width:20px;height:20px;border-radius:9999px;flex:none;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);font-size:11px;color:var(--text-muted);margin-top:1px}
+  .step.done{color:var(--text-secondary)}
+  .step.done .mk{background:var(--success-bg);border-color:var(--success-border);color:var(--success-text)}
+  .step.doing{color:var(--text-primary);font-weight:500}
+  .step.doing .mk{background:var(--accent-bg);border-color:transparent;color:var(--accent-text)}
+  .step .note{display:block;font-size:12px;font-weight:400;color:var(--text-muted);line-height:1.65;margin-top:3px}
+  .progress{max-width:560px;margin:18px auto 0;height:6px;border-radius:9999px;background:var(--bg-input);overflow:hidden}
+  .progress i{display:block;height:100%;background:var(--accent);border-radius:9999px}
+  .centernote{text-align:center;font-size:12.5px;color:var(--text-muted);margin-top:12px}
+
+  /* ── 试卷通用 ── */
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .tabs button{border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);
+    border-radius:8px;height:32px;padding:0 12px;font-size:13px;font-weight:500;font-family:inherit;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;letter-spacing:-.15px}
+  .tabs button.on{background:var(--accent-bg);border-color:transparent;color:var(--accent-text);font-weight:600}
+  .tabs .sb{font-size:11px;font-variant-numeric:tabular-nums;opacity:.8}
+
+  .passage{border:1px solid var(--border);background:var(--bg-surface);border-radius:12px;padding:18px 22px;margin-bottom:18px}
+  .passage h3{font-size:16px;font-weight:600;margin-bottom:10px;font-family:Georgia,"Libre Baskerville",serif;letter-spacing:.1px}
+  .passage p{font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:15px;line-height:1.85;
+    color:var(--text-body);max-width:68ch;margin-bottom:11px;letter-spacing:.1px}
+  .passage p:last-child{margin-bottom:0}
+  .pno{color:var(--text-muted);font-size:11.5px;margin-right:7px;font-family:"Inter",system-ui,sans-serif;letter-spacing:0}
+  mark{background:var(--marker);color:inherit;border-radius:3px;padding:0 2px}
+  .sel{background:var(--marker);border-radius:3px;padding:0 2px;position:relative;outline:1.5px solid var(--accent)}
+  .askpop{position:absolute;top:-40px;left:20%;background:var(--text-primary);color:var(--bg-surface);
+    font-size:12.5px;font-family:"Inter",system-ui,sans-serif;letter-spacing:-.15px;border-radius:8px;
+    padding:6px 11px;box-shadow:var(--shadow-context);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+  .askpop::after{content:"";position:absolute;bottom:-5px;left:22px;border:5px solid transparent;
+    border-top-color:var(--text-primary);border-bottom:0}
+
+  .q{border:1px solid var(--border);background:var(--bg-surface);border-radius:12px;margin-bottom:14px;overflow:hidden}
+  .qhead{display:flex;align-items:flex-start;gap:10px;padding:14px 18px}
+  .qhead .stem{font-family:Georgia,"Libre Baskerville","Songti SC",serif;font-size:15px;line-height:1.7;
+    color:var(--text-body);flex:1;letter-spacing:.1px}
+  .qhead .qno{font-weight:700;margin-right:5px}
+  .qhead .wt{flex:none;font-size:11.5px;color:var(--text-muted);white-space:nowrap;margin-top:3px;letter-spacing:0}
+  .qhead .wt b{font-family:Georgia,serif;color:var(--text-secondary);font-size:12.5px}
+  .verdict{flex:none;font-size:11px;font-weight:700;letter-spacing:.2px;border-radius:4px;padding:3px 7px;margin-top:3px;
+    display:inline-flex;align-items:center;gap:4px}
+  .verdict.right{background:var(--success-bg);color:var(--success-text)}
+  .verdict.wrong{background:var(--danger-bg);color:var(--danger)}
+
+  .opts{padding:0 18px 6px;display:flex;flex-direction:column;gap:7px}
+  .opt{display:grid;grid-template-columns:20px 1fr;gap:3px 10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px}
+  .opt .tick{font-weight:700;color:var(--text-muted);font-size:13px;line-height:1.6}
+  .opt .text{font-family:Georgia,"Libre Baskerville",serif;font-size:14.5px;color:var(--text-body);letter-spacing:.1px}
+  .opt .meaning{grid-column:2;font-size:12.8px;color:var(--text-muted)}
+  .opt .why{grid-column:2;font-size:12.8px;color:var(--text-secondary);line-height:1.75;margin-top:2px}
+  .opt .why b.hit{color:var(--success-text)}
+  .opt .why b.trap{color:var(--danger)}
+  .opt.right{border-color:var(--success-border);background:var(--success-bg)}
+  .opt.right .tick{color:var(--success-text)}
+  .opt.picked{border-color:var(--danger-border);background:var(--danger-bg)}
+  .opt.picked .tick{color:var(--danger)}
+  .opt.chosen{border-color:var(--accent);background:var(--accent-bg)}
+  .opt.chosen .tick{color:var(--accent-text)}
+  .yourpick{font-size:11px;font-weight:600;color:var(--danger);margin-left:8px;letter-spacing:0}
+
+  .blank{display:inline-block;min-width:130px;border:1px solid var(--border);background:var(--bg-input);
+    border-radius:6px;padding:2px 9px;font-family:Georgia,serif;font-size:14px;color:var(--text-primary);
+    vertical-align:baseline;letter-spacing:.1px}
+  .blank.ph{color:var(--text-placeholder);font-family:"Inter",system-ui,sans-serif;font-size:13px;letter-spacing:-.15px}
+  .blank.focus{border-color:var(--accent);background:var(--bg-surface)}
+  .basword{font-family:Georgia,serif;color:var(--text-muted);font-size:13.5px}
+
+  .explain{border-top:1px solid var(--border);padding:15px 18px 18px;display:flex;flex-direction:column;gap:15px;
+    background:var(--bg-muted)}
+  .sec-label{font-size:11px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px}
+  .zh{font-size:13.5px;color:var(--text-secondary);line-height:1.8}
+  .zh b.k{color:var(--accent-text)}
+  .wordcard{background:var(--accent-bg);border-radius:10px;padding:11px 14px;font-size:13px;
+    color:var(--text-primary);line-height:1.75}
+  .wordcard b.w{font-family:Georgia,serif;font-size:15px;letter-spacing:.1px}
+  .wordcard .ipa{color:var(--text-muted);font-size:12px;margin-left:4px}
+  .source{border-left:3px solid var(--accent);background:var(--bg-surface);border-radius:0 10px 10px 0;
+    padding:11px 15px;max-width:66ch}
+  .source q{font-family:Georgia,"Libre Baskerville",serif;font-size:14.5px;color:var(--text-body);
+    line-height:1.8;display:block;letter-spacing:.1px}
+  .goto{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:12.5px;color:var(--accent-text);
+    font-weight:500;cursor:pointer}
+  .foldrow{padding:11px 18px;font-size:12.5px;color:var(--text-muted);border-top:1px solid var(--border-light);
+    display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg-surface)}
+  .gptag{display:inline-flex;align-items:center;background:var(--accent-bg);color:var(--accent-text);
+    font-size:11.5px;font-weight:600;border-radius:4px;padding:2px 8px;margin-right:6px}
+  .chain{list-style:none;display:flex;flex-direction:column;gap:5px;margin-top:8px}
+  .chain li{padding-left:22px;position:relative;font-size:13.2px;color:var(--text-secondary);line-height:1.75}
+  .chain li::before{content:"→";position:absolute;left:2px;color:var(--text-muted)}
+  .cue{background:var(--marker);border-radius:3px;padding:0 3px;font-family:Georgia,serif;color:var(--text-body)}
+  .badform{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;padding:9px 12px;
+    border:1px dashed var(--border);border-radius:8px;font-size:12.8px;color:var(--text-secondary);line-height:1.7}
+  .badform .f{font-family:Georgia,serif;color:var(--danger);text-decoration:line-through;
+    text-decoration-thickness:1px;font-size:13.5px}
+  .oneline{font-size:12.5px;color:var(--text-muted);line-height:1.75}
+  .oneline b{font-family:Georgia,serif;color:var(--text-secondary);font-size:13.5px}
+
+  /* 得分条 */
+  .scorebar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid var(--border);
+    background:var(--bg-surface);border-radius:12px;box-shadow:var(--shadow-card);padding:12px 18px;margin-bottom:12px}
+  .scorebar .big{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .scorebar .big small{font-size:12.5px;color:var(--text-muted);font-weight:400;margin-left:8px;letter-spacing:-.15px}
+  .scorebar .hintx{font-size:12.8px;color:var(--text-secondary)}
+  .scorebar .hintx b{font-family:Georgia,serif;color:var(--text-primary);font-size:13.5px}
+  .scorebar .spacer{flex:1}
+
+  /* 底部答题栏 */
+  .sheetbar{display:flex;align-items:center;gap:10px;border-top:1px solid var(--border);
+    background:color-mix(in srgb,var(--bg-surface) 94%,transparent);backdrop-filter:blur(8px);
+    padding:12px 22px}
+  .sheetbar .count{font-size:12.8px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .sheetbar .spacer{flex:1}
+
+  /* 追问抽屉 */
+  .gradelayout{display:grid;grid-template-columns:1fr 340px;gap:0}
+  .drawer{border-left:1px solid var(--border);background:var(--bg-surface);padding:16px;
+    display:flex;flex-direction:column;gap:11px;min-width:0}
+  .drawer .dh{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:600}
+  .drawer .dh .x{margin-left:auto;color:var(--text-muted);cursor:pointer}
+  .quotechip{background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;
+    padding:9px 12px;font-size:12.5px;color:var(--text-secondary);line-height:1.7}
+  .quotechip .qt{font-family:Georgia,serif;color:var(--text-primary);font-size:13.5px}
+  .quotechip .from{display:block;font-size:11px;color:var(--text-muted);margin-top:3px}
+  .msg{border-radius:8px;padding:13px;font-size:14px;line-height:1.6;letter-spacing:-.15px;max-width:100%}
+  .msg.user{background:var(--user-bubble);color:var(--text-primary)}
+  .msg.ai{background:var(--bg-surface);border:1px solid var(--border);color:var(--text-body);font-size:13.5px;line-height:1.75}
+  .msg.ai b{color:var(--text-primary)}
+  .msg.ai .cue{font-size:12.8px}
+  .composer{margin-top:auto;display:flex;gap:8px;padding-top:6px}
+  .composer .inputbox{height:36px;padding:0 12px;display:flex;align-items:center;font-size:13px}
+  .drawer .dhint{font-size:11.5px;color:var(--text-muted);line-height:1.7}
+
+  /* 弹层 */
+  .modalstage{position:relative;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+    background:var(--bg-page);min-height:290px;display:flex;align-items:center;justify-content:center;padding:26px}
+  .scrim{position:absolute;inset:0;background:var(--overlay)}
+  .dialog{position:relative;width:100%;max-width:400px;background:var(--bg-surface);border:1px solid var(--border);
+    border-radius:14px;box-shadow:var(--shadow-context);padding:20px}
+  .dialog h4{font-size:15px;font-weight:600;letter-spacing:-.2px;margin-bottom:8px}
+  .dialog p{font-size:13.2px;color:var(--text-secondary);line-height:1.8}
+  .dialog .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+  /* 生词本导入 */
+  .vlist{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg-surface)}
+  .vhead{display:flex;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--border);
+    background:var(--bg-muted);font-size:12.5px;color:var(--text-secondary)}
+  .vhead .spacer{flex:1}
+  .vhead .lk{color:var(--accent-text);font-weight:500;cursor:pointer;font-size:12.5px}
+  .vrow{display:flex;align-items:center;gap:11px;padding:9px 13px;border-bottom:1px solid var(--border-light);font-size:13px}
+  .vrow:last-child{border-bottom:0}
+  .cb{width:16px;height:16px;border-radius:4px;border:1px solid var(--border);flex:none;background:var(--bg-surface);
+    display:inline-flex;align-items:center;justify-content:center;color:#fff}
+  .cb.on{background:var(--accent);border-color:var(--accent)}
+  .vrow .w{font-family:Georgia,serif;font-size:14px;color:var(--text-primary);min-width:104px;letter-spacing:.1px}
+  .vrow .df{color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.8px}
+  .vrow .src{font-size:11.5px;color:var(--text-muted);white-space:nowrap}
+
+  /* 历史行 */
+  .histrow{display:flex;align-items:center;gap:14px;padding:13px 15px;border-bottom:1px solid var(--border-light);font-size:13px}
+  .histrow:last-child{border-bottom:0}
+  .histrow:hover{background:var(--bg-muted)}
+  .histrow .date{font-variant-numeric:tabular-nums;color:var(--text-primary);font-weight:500;min-width:96px}
+  .histrow .words{color:var(--text-muted);font-size:12.5px;min-width:130px}
+  .histrow .spacer{flex:1}
+  .histrow .score{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px}
+
+  .toast{display:inline-flex;align-items:center;gap:8px;background:var(--text-primary);color:var(--bg-surface);
+    border-radius:9999px;padding:8px 15px;font-size:12.8px;box-shadow:var(--shadow-context)}
+
+  @media (max-width:900px){
+    .gradelayout{grid-template-columns:1fr}
+    .drawer{border-left:0;border-top:1px solid var(--border)}
+    .side{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="tb-title">词卷样张</span>
+  <a href="#entry">A 入口</a>
+  <a href="#setup">B 出卷设置</a>
+  <a href="#generating">C 生成中</a>
+  <a href="#quiz">D 做题</a>
+  <a href="#grading">E 评卷</a>
+  <a href="#pool">F 错词池</a>
+  <a href="#history">G 历史</a>
+  <a href="#copy">H 文案约定</a>
+</div>
+
+<div class="wrap">
+
+<h1>词卷并入单词复习板块 · 静态样张</h1>
+
+<p class="lede" style="border-left:4px solid var(--accent);padding-left:14px">
+  <b>这是样张，不是实现。</b>
+  整份文件是一个不可点击的静态 HTML，用来在写代码之前把每一屏的版式、信息层级和状态定下来。
+  对应方案文档：<code>docs/impls/cijuan-merge.md</code>（步骤 1）。
+  视觉令牌取自 <code>src/index.css</code> 的真实主题变量，随系统深浅色切换；
+  所有图标是仿 lucide 线条风格的内联 SVG。
+</p>
+
+<p class="lede">
+  <b>词卷</b>是把「今天背完的词」变成一份 AI 出的卷子：阅读理解考词义在语境里的辨认，语法填空考词形。
+  交卷后原位判分、结构化讲解、答案可溯源回原文，答错的词进错词池按 +2 天 / +7 天两级重现。
+  并入 Lantern 后它住在<b>单词复习板块</b>里，与生词本<b>双向联动</b>（方案 §二.5）：
+  出卷时可从生词本导入到期词，交卷时考点词若在生词本中则按对错写回 FSRS。
+</p>
+
+<p class="meta">
+  内容说明 · 样张里的英文短文与讲解均为示例，按 <code>labs/cijuan/src/types.ts</code> 的字段口径写实。
+  目标词 12 个：<span class="serif">curb, subsidy, incentive, in particular, retrofit, phase out, offset, scrutiny, mandate, allocate, plausible, advocate</span>。<br>
+  信息结构参考 · 评卷屏来自 <code>labs/cijuan/docs/mockups/review-redesign.html</code>，视觉换成 Lantern 语言；
+  其余屏来自 <code>labs/cijuan/src/ui/</code> 五屏的字段，不沿用其样式。<br>
+  语气约定 · 复习相关界面<b>不出现催促、责怪、倒计时、积压天数</b>；错词与到期只陈述机制，不施压。见 <a href="#copy" style="color:var(--accent-text)">§H</a>。
+</p>
+
+<!-- ══════════════ A ══════════════ -->
+<h2 class="sec" id="entry"><span class="n">A</span> 入口：单词复习板块里的词卷区块</h2>
+<p class="why">
+  词卷不占侧栏一级位置，也不做成新页面：它是「单词」筛选下的一张卡，跟着回顾板一起滚。
+  点「出卷」进入<b>全屏</b>做题（方案拍板点 A）。卡片有两种态——
+  <b>有到期错词</b>时说明这一卷会带上哪些词，<b>空态</b>时只说明它是什么、怎么开始。
+</p>
+
+<h3 class="sub">状态 1 <span class="tagx">错词池有到期词</span></h3>
+<p class="subwhy">
+  「6 个词到了重现的时候」是对<b>卷面构成</b>的说明，不是待办提醒——它解释的是「这一卷里会多出哪些词」。
+  重现词混进卷子后<b>不在卷面上标记</b>（词卷既定机制），这里是唯一一次告知。
+</p>
+
+<div class="app">
+  <div class="side">
+    <div class="brand"><span class="logo">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2h8l4 10-8 10L4 12z"/></svg>
+    </span>Lantern</div>
+    <div class="grp">
+      <h4>书库</h4>
+      <div class="navrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span class="lbl">全部书籍</span><span class="c">37</span></div>
+      <div class="navrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span class="lbl">最近阅读</span><span class="c">5</span></div>
+      <div class="navrow on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg><span class="lbl">单词</span><span class="badge">18</span></div>
+      <div class="navrow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg><span class="lbl">高亮</span><span class="c">142</span></div>
+    </div>
+  </div>
+  <div class="mainpane">
+    <div class="mhead">
+      <h2>单词</h2>
+      <div class="sub">18 个词到期复习 · 共 264 个词</div>
+      <div class="mtools">
+        <div class="search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          搜索单词
+        </div>
+        <span class="pill on">全部</span>
+        <span class="pill">到期</span>
+        <span class="pill">已掌握</span>
+      </div>
+    </div>
+    <div class="mbody">
+
+      <!-- 词卷入口卡 -->
+      <div class="cj">
+        <div class="ic">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
+        </div>
+        <div class="tx">
+          <div class="t1">词卷 · 出一份卷子 <span class="pill wait" style="height:20px;font-size:11px;padding:0 8px">阅读 + 语法填空</span></div>
+          <div class="t2">把今天背完的词交给 AI 出成阅读理解和语法填空，做完原位判分、逐题讲解，答案可以溯源回原文。</div>
+          <div class="t3">错词池里有 <b>6 个词</b>到了重现的时候，出卷时会自动混进这一卷（卷面上不标出来）。上一卷 8 月 9 日 · 8 / 10</div>
+        </div>
+        <div class="act">
+          <button class="btn">出卷
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 已有的回顾板，保持不动 -->
+      <div class="card" style="padding:15px 16px 14px">
+        <div style="font-size:15px;font-weight:600;letter-spacing:-.2px;margin-bottom:3px">回顾板</div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">18 个词到期 · 按来由分成 3 堆</div>
+        <div class="duo" style="gap:12px">
+          <div class="card" style="padding:13px 14px">
+            <div style="font-size:14.5px;font-weight:600">《海底两万里》 · 7 词</div>
+            <div class="chips" style="margin-top:9px"><span class="chip">curb</span><span class="chip">subsidy</span><span class="chip">offset</span><span class="chip more">+4</span></div>
+          </div>
+          <div class="card" style="padding:13px 14px">
+            <div style="font-size:14.5px;font-weight:600">《经济学人》选读 · 6 词</div>
+            <div class="chips" style="margin-top:9px"><span class="chip">incentive</span><span class="chip">scrutiny</span><span class="chip more">+4</span></div>
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:11px">（既有组件，本次不改）</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<p class="cap">
+  <b>位置</b>：词卷卡在回顾板<b>上方</b>，两者是并列的两条路——回顾板是翻卡（认不认识），词卷是做题（会不会用）。
+  卡片随内容滚走，不常驻顶栏。<b>侧栏不加新入口</b>，「单词」那一行的角标含义不变（FSRS 到期数，与错词池无关）。
+</p>
+
+<h3 class="sub">状态 2 <span class="tagx">空态 · 从没出过卷</span></h3>
+<p class="subwhy">错词池为空、也没有历史卷。卡片降为虚线，只解释这是什么、第一步做什么，不出现任何数字。</p>
+
+<div class="stage plain">
+  <div class="cj quiet">
+    <div class="ic">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h3"/></svg>
+    </div>
+    <div class="tx">
+      <div class="t1">词卷</div>
+      <div class="t2">粘贴今天背完的词，或从生词本里挑几个，AI 会写一篇带这些词的短文，配上阅读理解和语法填空。做完能看到每个选项为什么对、为什么错。</div>
+    </div>
+    <div class="act"><button class="btn secondary">出第一卷</button></div>
+  </div>
+</div>
+<p class="cap"><b>为什么空态也留着卡</b>：这是唯一能发现词卷的地方。降成虚线是为了不与回顾板抢注意力，但不能藏起来。</p>
+
+<!-- ══════════════ B ══════════════ -->
+<h2 class="sec" id="setup"><span class="n">B</span> 出卷设置屏</h2>
+<p class="why">
+  两列：左边是<b>词从哪来</b>（粘贴 + 从生词本导入），右边是<b>卷子长什么样</b>（难度、题型、自检）。
+  「从生词本导入」是方案 §二.5 双向联动的<b>导入方向</b>——默认展开到期待复习的词（现成命令 <code>list_vocab_due_for_review</code>），可逐个勾选。
+</p>
+
+<div class="full">
+  <div class="fhead">
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回单词</button>
+    <span class="ttl">出卷</span>
+    <span class="spacer"></span>
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>错词池 <span style="color:var(--text-muted)">6</span></button>
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>往卷 12</button>
+  </div>
+  <div class="fbody">
+    <div class="duo" style="gap:26px">
+
+      <!-- 左列 -->
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div>
+          <div class="fieldlabel">今天的词 <span class="hintx">已识别 12 个 · 分成 2 篇阅读</span></div>
+          <div class="inputbox textarea serif" style="padding:12px 14px">curb
+subsidy, incentive
+in particular
+retrofit / phase out
+offset
+scrutiny</div>
+          <div class="chips" style="margin-top:10px">
+            <span class="chip">curb</span><span class="chip">subsidy</span><span class="chip">incentive</span>
+            <span class="chip">in particular</span><span class="chip">retrofit</span><span class="chip">phase out</span>
+            <span class="chip">offset</span><span class="chip">scrutiny</span>
+            <span class="chip vocab">mandate</span><span class="chip vocab">allocate</span>
+            <span class="chip recur">plausible</span><span class="chip recur">advocate</span>
+          </div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:11.5px;color:var(--text-muted)">
+            <span><span class="chip" style="padding:1px 7px;font-size:11px">粘贴</span> 8</span>
+            <span><span class="chip vocab" style="padding:1px 7px;font-size:11px">生词本</span> 2</span>
+            <span><span class="chip recur" style="padding:1px 7px;font-size:11px">错词重现</span> 2</span>
+          </div>
+        </div>
+
+        <div class="banner">
+          <span class="tag">已忽略</span>
+          <span>2 个虚词出不了考点题，已自动忽略：<b class="serif">the、of</b>。词组（<span class="serif">in particular</span>）算一个词，行首序号会自动去掉。</span>
+        </div>
+
+        <div>
+          <div class="fieldlabel">从生词本导入 <span class="hintx">默认列出到期待复习的词</span></div>
+          <div class="vlist">
+            <div class="vhead">
+              <span class="cb on"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <span>到期待复习 18 个 · 已选 2</span>
+              <span class="spacer"></span>
+              <span class="lk">改看全部生词</span>
+            </div>
+            <div class="vrow">
+              <span class="cb on"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <span class="w">mandate</span><span class="df">v. 强制规定；n. 授权、指令</span><span class="src">《经济学人》选读</span>
+            </div>
+            <div class="vrow">
+              <span class="cb on"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <span class="w">allocate</span><span class="df">v. 分配、划拨</span><span class="src">《经济学人》选读</span>
+            </div>
+            <div class="vrow">
+              <span class="cb"></span>
+              <span class="w">reciprocal</span><span class="df">adj. 相互的、对等的</span><span class="src">《海底两万里》</span>
+            </div>
+            <div class="vrow">
+              <span class="cb"></span>
+              <span class="w">imperceptible</span><span class="df">adj. 察觉不到的、极微小的</span><span class="src">《海底两万里》</span>
+            </div>
+            <div class="vrow" style="justify-content:center;color:var(--text-muted);font-size:12.5px;cursor:pointer">
+              展开其余 14 个
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+          </div>
+          <div class="banner accent" style="margin-top:10px">
+            <span class="tag">联动</span>
+            <span>导入的词与粘贴的词在卷面上<b>一视同仁</b>，不做标记。交卷时，凡考点词在生词本里存在，会按对错写回复习进度（答错记 again，答对记 good）；<b>不在生词本的词不写回，也不会自动建条目</b>。</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右列 -->
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div>
+          <div class="fieldlabel">难度与风格</div>
+          <div class="seg">
+            <button>CET-4</button><button class="on">CET-6</button><button>雅思</button><button>考研</button>
+          </div>
+          <div class="cap" style="margin-top:8px">决定文章长度、词汇密度和题目口吻。CET-6：每篇 280–340 词，4~5 道选择题。</div>
+        </div>
+
+        <div>
+          <div class="fieldlabel">出题素材 <span class="hintx">真题相关为二期，位置先占上</span></div>
+          <div class="seg">
+            <button class="on">AI 原创</button><button disabled>真题改编 · 二期</button><button disabled>真题检索 · 二期</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="fieldlabel">题型</div>
+          <div class="panel">
+            <div class="row73">
+              <div><div class="t">阅读理解</div><div class="d">每篇 1 短文 + 4~5 道选择题，考词义在语境里的辨认</div></div>
+              <span class="switch on"></span>
+            </div>
+            <div class="row73">
+              <div><div class="t">语法填空</div><div class="d">给出原形，填正确形态，考语法与词性</div></div>
+              <span class="switch on"></span>
+            </div>
+            <div class="row73">
+              <div><div class="t" style="color:var(--text-muted)">选词填空</div><div class="d">词库挖空短文，四六级选词题型 · 二期</div></div>
+              <span class="switch off-disabled"></span>
+            </div>
+            <div class="row73">
+              <div><div class="t">遮词自检</div><div class="d">出好后遮住目标词把题重做一遍，仍然答得对的题判为无效并重出——保证「不认识这个词就做不出这道题」。会多花约 30 秒。</div></div>
+              <span class="switch on"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:14px;margin-top:24px;padding-top:18px;border-top:1px solid var(--border);flex-wrap:wrap">
+      <button class="btn lg">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"/><path d="m18.4 5.6-2.1 2.1"/><path d="M21 12h-3"/><path d="M5.6 5.6l2.1 2.1"/><path d="M3 12h3"/><path d="M12 12l9 9"/></svg>
+        生成试卷
+      </button>
+      <span style="font-size:12.5px;color:var(--text-muted)">12 个词 · 2 篇阅读 + 4 道语法填空 · 预计 1~2 分钟 · 用量计入 AI 用量统计</span>
+    </div>
+  </div>
+</div>
+
+<h3 class="sub">状态 <span class="tagx">词表为空 · 按钮禁用</span></h3>
+<p class="subwhy">没粘词、也没勾生词本的词时，生成按钮禁用，右侧一句话说明缺什么。不用红字，不用报错口吻。</p>
+
+<div class="stage plain">
+  <div class="fieldlabel">今天的词</div>
+  <div class="inputbox textarea ph" style="padding:12px 14px">粘贴今天背完的单词，一行一个或用逗号分隔
+词组（in particular）算一个词，行首序号会自动去掉</div>
+  <div class="vlist" style="margin-top:16px">
+    <div class="vhead">
+      <span class="cb"></span><span>到期待复习 18 个 · 未选</span><span class="spacer"></span><span class="lk">全选</span>
+    </div>
+    <div class="vrow"><span class="cb"></span><span class="w">mandate</span><span class="df">v. 强制规定；n. 授权、指令</span><span class="src">《经济学人》选读</span></div>
+    <div class="vrow"><span class="cb"></span><span class="w">allocate</span><span class="df">v. 分配、划拨</span><span class="src">《经济学人》选读</span></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+    <button class="btn lg" disabled>生成试卷</button>
+    <span style="font-size:12.5px;color:var(--text-muted)">先粘几个词，或从上面的生词本里勾选</span>
+  </div>
+</div>
+<p class="cap"><b>上限提示</b>（未单画）：超过 40 个词时出现一条 <span class="pill wait" style="height:20px;font-size:11px;padding:0 8px">提示</span> 横幅建议分两卷；超过 60 个词按钮禁用，横幅改为「请删掉一部分，分成两卷」。</p>
+
+<!-- ══════════════ C ══════════════ -->
+<h2 class="sec" id="generating"><span class="n">C</span> 生成中屏</h2>
+<p class="why">
+  四步，逐步点亮。第三步「遮词自检」需要一句解释——它是词卷最反直觉的一步（生成完了还要再跑一遍），
+  不解释用户会以为卡住了。进度条是节拍指示，不承诺精确百分比。
+</p>
+
+<div class="full">
+  <div class="fhead"><span class="ttl">正在出卷</span><span class="sub">12 个词 · CET-6</span><span class="spacer"></span>
+    <button class="btn ghost sm">取消</button></div>
+  <div class="fbody" style="padding:44px 22px 40px">
+    <div class="steps">
+      <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span>拆分词组，12 个词分成 2 篇</span></div>
+      <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span>撰写文章与题目<span class="note">2 篇短文 · 9 道阅读题 · 4 道语法填空</span></span></div>
+      <div class="step doing"><span class="mk">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
+        </span>
+        <span>遮词自检<span class="note">遮住目标词把题重做一遍，仍然答得对的题说明不靠这个词也能蒙对，会被判为无效</span></span></div>
+      <div class="step"><span class="mk">○</span><span>重出未通过自检的题</span></div>
+    </div>
+    <div class="progress"><i style="width:62%"></i></div>
+    <div class="centernote">约还需 40 秒 · 可以切走做别的，出好了留在这里</div>
+  </div>
+</div>
+
+<h3 class="sub">状态 <span class="tagx">某一组生成失败</span></h3>
+<p class="subwhy">
+  按篇分组并发，失败是<b>局部</b>的——已经出好的那一篇保留，只重试失败的那组。
+  错误文案要说清「哪一组、什么词、什么原因」，否则用户只能整卷重来。
+</p>
+
+<div class="full">
+  <div class="fhead"><span class="ttl">出卷中断</span><span class="sub">12 个词 · CET-6</span></div>
+  <div class="fbody" style="padding:36px 22px 34px">
+    <div class="steps">
+      <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>拆分词组，12 个词分成 2 篇</span></div>
+      <div class="step done"><span class="mk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>撰写文章与题目<span class="note">第 1 篇已完成 · 第 2 篇失败</span></span></div>
+      <div class="step"><span class="mk">○</span><span>遮词自检</span></div>
+      <div class="step"><span class="mk">○</span><span>重出未通过自检的题</span></div>
+    </div>
+    <div style="max-width:560px;margin:20px auto 0">
+      <div class="banner bad">
+        <span class="tag">出错</span>
+        <span>第 2 篇（<span class="serif">offset、scrutiny、mandate、allocate、plausible、advocate</span>）没生成出来：模型返回的内容不完整，解析不出题目。第 1 篇已经出好，会保留。</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:16px">
+        <button class="btn secondary">返回修改词表</button>
+        <button class="btn">重试第 2 篇</button>
+      </div>
+      <div class="centernote" style="margin-top:12px">重试仍失败时，可以把这 6 个词删掉，先做第 1 篇。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ D ══════════════ -->
+<h2 class="sec" id="quiz"><span class="n">D</span> 做题屏（全屏视图）</h2>
+<p class="why">
+  做题是沉浸任务，占满窗口，不挤在生词面板里。文章与题目按篇分标签页，语法填空自成一页。
+  底部答题栏常驻，显示已答进度。<b>作答态不显示任何正误线索</b>——选项不变色、没有正确答案。
+</p>
+
+<div class="full">
+  <div class="fhead">
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>退出</button>
+    <span class="ttl">今日词卷</span>
+    <span class="sub">8 月 12 日 · CET-6 · 12 词</span>
+    <span class="spacer"></span>
+    <span class="sub">用时 09:41</span>
+  </div>
+  <div class="fbody">
+    <div class="tabs">
+      <button class="on">Passage 1 <span class="sb">0/5</span></button>
+      <button>Passage 2 <span class="sb">0/4</span></button>
+      <button>语法填空 <span class="sb">0/4</span></button>
+    </div>
+
+    <div class="passage">
+      <h3>The Price of Cleaner Air</h3>
+      <p><span class="pno">¶1</span>For much of the past decade, the debate over air quality was framed as a contest between growth and health. That framing is losing its grip. Cities that once treated pollution as the unavoidable cost of prosperity now publish daily readings on public screens, and voters have begun to treat those numbers as a measure of competence. What changed was not the science, which has been settled for years, but the arrival of technologies cheap enough to make cleaner air a matter of policy rather than sacrifice.</p>
+      <p><span class="pno">¶2</span>Several governments have pledged to curb industrial emissions before the decade ends, and to cut them by half within five years. The commitments, however, arrive with an awkward caveat: no two countries measure their progress the same way. A subsidy that looks generous in one budget may be a rounding error in another, and the incentive it creates depends less on its size than on how long firms believe it will last. Manufacturers in particular have learned to wait out programmes that change with every election.</p>
+      <p><span class="pno">¶3</span>The cheapest reductions rarely come from new plants. Analysts who have studied the sector argue that it is more effective to retrofit existing boilers than to phase out an entire generation of them at once. Retrofitting is unglamorous work and produces no ribbon-cutting ceremonies. But it delivers measurable gains within a single budget cycle, and the fuel savings can offset a large share of the upfront cost.</p>
+      <p><span class="pno">¶4</span>None of this removes the need for scrutiny. Where governments have mandated targets without allocating inspectors, reported improvements have outpaced measured ones by a wide margin. The most plausible explanation is not fraud but arithmetic: firms report what the rules ask them to report. Environmental groups have advocated stricter verification for years, and their case has grown harder to dismiss.</p>
+    </div>
+
+    <div class="q">
+      <div class="qhead">
+        <span class="stem"><span class="qno">Q1.</span>The word "curb" in paragraph 2 is closest in meaning to ______.</span>
+      </div>
+      <div class="opts">
+        <div class="opt"><span class="tick">A</span><span class="text">restrict</span></div>
+        <div class="opt chosen"><span class="tick">B</span><span class="text">boost</span></div>
+        <div class="opt"><span class="tick">C</span><span class="text">monitor</span></div>
+        <div class="opt"><span class="tick">D</span><span class="text">calculate</span></div>
+      </div>
+      <div style="height:8px"></div>
+    </div>
+
+    <div class="q">
+      <div class="qhead">
+        <span class="stem"><span class="qno">Q2.</span>According to paragraph 3, the fuel savings from retrofitting ______.</span>
+      </div>
+      <div class="opts">
+        <div class="opt"><span class="tick">A</span><span class="text">cancel out much of what the work costs to begin with</span></div>
+        <div class="opt"><span class="tick">B</span><span class="text">are delayed until the following budget cycle</span></div>
+        <div class="opt"><span class="tick">C</span><span class="text">have been overstated by the plants that report them</span></div>
+        <div class="opt"><span class="tick">D</span><span class="text">go entirely to the inspectors who verify them</span></div>
+      </div>
+      <div style="height:8px"></div>
+    </div>
+
+    <div class="tabs" style="margin:24px 0 14px">
+      <button>Passage 1 <span class="sb">2/5</span></button>
+      <button>Passage 2 <span class="sb">0/4</span></button>
+      <button class="on">语法填空 <span class="sb">1/4</span></button>
+    </div>
+
+    <div class="q">
+      <div class="qhead">
+        <span class="stem"><span class="qno">G1.</span>Environmental groups <span class="blank">advocated</span> stricter verification for years. <span class="basword">(advocate)</span></span>
+      </div>
+    </div>
+    <div class="q">
+      <div class="qhead">
+        <span class="stem"><span class="qno">G2.</span>Where governments have mandated targets without <span class="blank ph focus">填写</span> inspectors, reported improvements have outpaced measured ones. <span class="basword">(allocate)</span></span>
+      </div>
+    </div>
+    <p class="cap" style="margin-left:2px">
+      括号里给的是<b>原形</b>，填的是形态：<span class="serif">have advocated</span>、<span class="serif">allocating</span>。
+      一句里出现两个 <span class="serif">____</span> 时共用同一个输入框（词卷既定做法）。
+    </p>
+  </div>
+  <div class="sheetbar">
+    <button class="btn">交卷判分</button>
+    <button class="btn secondary">存草稿</button>
+    <span class="spacer"></span>
+    <span class="count">已答 7 / 13</span>
+  </div>
+</div>
+
+<h3 class="sub">弹层 <span class="tagx">还有题没答时的交卷确认</span></h3>
+<p class="subwhy">全部答完时<b>不弹</b>，直接判分。只有存在未答题才拦一次，并说清未答题按错处理。</p>
+
+<div class="modalstage">
+  <div class="scrim"></div>
+  <div class="dialog">
+    <h4>还有题没答</h4>
+    <p>已答 <b>7 / 13</b> 题，未作答的 6 题按答错处理，它们的考点词会进错词池。确定现在交卷吗？</p>
+    <div class="acts">
+      <button class="btn secondary">回去接着做</button>
+      <button class="btn">仍然交卷</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ E ══════════════ -->
+<h2 class="sec" id="grading"><span class="n">E</span> 评卷屏（全屏视图）</h2>
+<p class="why">
+  交卷后<b>不跳新页</b>：判分和讲解直接长在题目下面，文章还在原地，得分条置顶。
+  错题讲解默认展开，对题折叠成一行。讲解按错因分层（题目在问什么 / 逐选项含义与设陷 / 考点词 / 溯源），
+  这是 <code>review-redesign.html</code> 定下的结构，字段与 <code>types.ts</code> 一一对应。
+  选中卷面上任何文字（文章、题干、讲解、AI 回答都可以）浮出「问 AI」，在右侧抽屉里带引用追问。
+</p>
+
+<div class="full">
+  <div class="fhead">
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>退出</button>
+    <span class="ttl">今日词卷 · 已交卷</span>
+    <span class="sub">8 月 12 日 · CET-6 · 12 词</span>
+  </div>
+  <div class="gradelayout">
+    <div class="fbody">
+
+      <div class="scorebar">
+        <span class="big">11 / 13 <small>用时 14:32</small></span>
+        <span class="hintx"><b>curb</b>、<b>advocate</b> 进了错词池，2 天后重现</span>
+        <span class="spacer"></span>
+        <button class="btn secondary sm">错词池</button>
+        <button class="btn secondary sm">再出一卷</button>
+      </div>
+
+      <div class="banner accent" style="margin-bottom:16px">
+        <span class="tag">生词本</span>
+        <span>本卷 12 个考点词里有 <b>7 个</b>在生词本中，复习进度已按这次作答更新。</span>
+      </div>
+
+      <div class="tabs">
+        <button class="on">Passage 1 <span class="sb">4/5</span></button>
+        <button>Passage 2 <span class="sb">4/4</span></button>
+        <button>语法填空 <span class="sb">3/4</span></button>
+      </div>
+
+      <div class="passage">
+        <h3>The Price of Cleaner Air</h3>
+        <p><span class="pno">¶2</span>Several governments have pledged to <span class="sel">curb industrial emissions<span class="askpop"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"/><path d="M19 12h3"/><path d="M12 18v3"/><path d="M2 12h3"/><path d="m16.9 7.1 2.1-2.1"/><path d="m5 19 2.1-2.1"/></svg>问 AI</span></span> before the decade ends, and to cut them by half within five years. The commitments, however, arrive with an awkward caveat: no two countries measure their progress the same way. A subsidy that looks generous in one budget may be a rounding error in another…</p>
+        <p style="margin-top:14px"><span class="pno">¶3</span>…But it delivers measurable gains within a single budget cycle, and the fuel savings can <mark>offset</mark> a large share of the upfront cost.</p>
+        <div class="cap" style="margin-top:10px">从讲解里点「跳到原文」后，对应句子在原文中高亮约 2 秒（<mark>offset</mark> 那句即为跳转后的状态）。</div>
+      </div>
+
+      <!-- 错题：默认展开 -->
+      <div class="q">
+        <div class="qhead">
+          <span class="verdict wrong"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>答错</span>
+          <span class="stem"><span class="qno">Q1.</span>The word "curb" in paragraph 2 is closest in meaning to ______.</span>
+          <span class="wt">考点词 <b>curb</b></span>
+        </div>
+        <div class="opts">
+          <div class="opt right">
+            <span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span class="text">A. restrict</span>
+            <span class="meaning">限制、约束</span>
+            <span class="why"><b class="hit">正确</b>：curb 意为「抑制、控制」，restrict 是它在这句里的同义替换——<span class="serif">curb emissions</span>（控制排放）换成 restrict，语义不变。</span>
+          </div>
+          <div class="opt picked">
+            <span class="tick"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            <span class="text">B. boost<span class="yourpick">你的选择</span></span>
+            <span class="meaning">提升、促进</span>
+            <span class="why"><b class="trap">干扰项</b>：专门针对把 curb 记成「促进」的人。代回原文——政府「促进」排放，与紧跟其后的「五年内减半」直接矛盾。</span>
+          </div>
+          <div class="opt">
+            <span class="tick">·</span><span class="text">C. monitor</span>
+            <span class="meaning">监测、监视</span>
+            <span class="why">貌似合理但不对：下半句给出「五年内减半」的目标，需要一个能改变排放量的动作，「监测」只观察不改变，接不上。</span>
+          </div>
+          <div class="opt">
+            <span class="tick">·</span><span class="text">D. calculate</span>
+            <span class="meaning">计算、核算</span>
+            <span class="why">与语境无关：这一句里没有任何统计核算的线索。</span>
+          </div>
+        </div>
+        <div class="explain">
+          <div>
+            <div class="sec-label">题目在问什么</div>
+            <div class="zh">第 2 段中的 "curb" 一词，含义最接近 ______。</div>
+            <div class="zh" style="margin-top:5px"><b class="k">怎么下手</b>：词义题——只看 curb 所在的那一句和它的下一句，把四个选项逐个代回去读，不要被全文大意带跑。</div>
+          </div>
+          <div>
+            <div class="sec-label">考点词</div>
+            <div class="wordcard"><b class="w">curb</b><span class="ipa">/kɜːb/</span> v. 抑制、控制 —— 文中 <span class="serif">curb emissions</span> 即「控制排放」。它自带「往下压」的意象，常搭配 <span class="serif">inflation / spending / emissions</span> 这类会膨胀的量。名词义「路缘石」与本文无关，别混。</div>
+          </div>
+          <div>
+            <div class="sec-label">溯源 · 第 2 段</div>
+            <div class="source">
+              <q>Several governments have pledged to <mark>curb</mark> industrial emissions before the decade ends, and to cut them by half within five years.</q>
+              <span class="goto">跳到原文 ¶2
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 对题：折叠 -->
+      <div class="q">
+        <div class="qhead">
+          <span class="verdict right"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>答对</span>
+          <span class="stem"><span class="qno">Q2.</span>According to paragraph 3, the fuel savings from retrofitting ______.</span>
+          <span class="wt">考点词 <b>offset</b></span>
+        </div>
+        <div class="foldrow">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          点开看逐选项讲解与溯源
+        </div>
+      </div>
+
+      <!-- 语法题 -->
+      <div class="q">
+        <div class="qhead">
+          <span class="verdict wrong"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>答错</span>
+          <span class="stem"><span class="qno">G1.</span>Environmental groups <b>have advocated</b> stricter verification for years.</span>
+          <span class="wt">考点词 <b>advocate</b></span>
+        </div>
+        <div class="explain">
+          <div>
+            <div class="sec-label">原句与翻译</div>
+            <div class="zh">多年来，环保组织一直主张更严格的核查。</div>
+            <div class="oneline" style="margin-top:7px">你的答案：<b style="color:var(--danger)">advocated</b> · 正确答案：<b style="color:var(--success-text)">have advocated</b></div>
+          </div>
+          <div>
+            <div class="sec-label">判定链</div>
+            <div><span class="gptag">现在完成时</span><span class="gptag">主谓一致</span></div>
+            <ul class="chain">
+              <li>时间状语 <span class="cue">for years</span>（多年来）：动作从过去持续到现在，还没结束 → 用<b>现在完成时</b>。</li>
+              <li>主语 <span class="cue">Environmental groups</span> 是复数 → 助动词用 <b>have</b>，不是 has。</li>
+              <li>合起来：have + 过去分词 → <span class="serif" style="color:var(--success-text);font-weight:600">have advocated</span>。</li>
+            </ul>
+          </div>
+          <div>
+            <div class="sec-label">为什么你的答案不对</div>
+            <div class="badform">
+              <span class="f">advocated</span>
+              <span>一般过去时表示动作已经结束，但 <span class="serif">for years</span> 强调持续到现在——时态线索被丢掉了。</span>
+            </div>
+            <div class="badform" style="margin-top:6px">
+              <span class="f">has advocated</span>
+              <span>时态对了，但主语是复数 groups，助动词该用 have。（这是本题另一种常见错形。）</span>
+            </div>
+          </div>
+          <div class="oneline">考点词 <b>advocate</b> /ˈædvəkeɪt/ v. 主张、倡导。本题不在词义上设障碍，考的是形态。</div>
+        </div>
+      </div>
+
+      <div class="banner" style="margin-top:4px">
+        <span class="tag">判分说明</span>
+        <span>语法填空先本地比对标准答案，拼写变体（如 <span class="serif">have advocated</span> / <span class="serif">'ve advocated</span>）交模型裁决；被判为可接受的变体会在题目下加一行说明。</span>
+      </div>
+    </div>
+
+    <!-- 追问抽屉 -->
+    <div class="drawer">
+      <div class="dh">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"/><path d="M19 12h3"/><path d="M12 18v3"/><path d="M2 12h3"/><path d="m16.9 7.1 2.1-2.1"/><path d="m5 19 2.1-2.1"/></svg>
+        追问
+        <span class="x"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+      </div>
+      <div class="quotechip">
+        <span class="qt">curb industrial emissions</span>
+        <span class="from">引自 Passage 1 · ¶2 —— 追问会自动带上这一段和本题的上下文</span>
+      </div>
+      <div class="msg user">这里为什么不能理解成「给排放画个边界」？那样 monitor 好像也说得通。</div>
+      <div class="msg ai">关键在紧跟其后的 <span class="cue">cut them by half within five years</span>（五年内减半）：这要求政府对排放量施加<b>主动的向下压力</b>。monitor 只是观察记录，不改变排放量，撑不起「减半」这个结果；curb / restrict 才是施压动作。<br><br>「画边界」这个直觉其实已经很接近 restrict 了——边界就是限制。</div>
+      <div class="msg user">那 curb、restrain、restrict 三个怎么分？</div>
+      <div class="msg ai">都表「限制」，落点不同：<br><b>restrict</b> 最中性，限定范围或数量，<span class="serif">restrict access</span>。<br><b>restrain</b> 偏「按住即将失控的东西」，对象常是人或情绪，<span class="serif">restrain oneself</span>。<br><b>curb</b> 自带往下压的意象（源自勒马的缰绳），搭配 <span class="serif">inflation、emissions、spending</span> 这类会膨胀的量最地道。<br><br>本题选 restrict 而不是另两个，是因为选项里只有它，不是因为它最贴切。</div>
+      <div class="dhint">追问记录随这份卷子保存，在往卷里能回看。选中讲解或 AI 回答里的文字可以接着追问。</div>
+      <div class="composer">
+        <span class="inputbox ph">继续追问…</span>
+        <button class="btn" style="padding:0 12px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="cap">
+  <b>抽屉行为</b>：默认关闭，选中文字点「问 AI」后从右侧滑出，宽 340px，正文列相应收窄。
+  窗口窄于 900px 时改为底部弹层。抽屉<b>不进 Lantern 的聊天历史</b>——它是卷子的附属物，随卷存 <code>ask_threads_json</code>（方案 §二.4）。<br>
+  <b>轻提示的位置</b>：生词本写回提示放在得分条<b>下面</b>而不是里面——得分条是这次做题的结果，写回是它的副作用，两件事不该并排。
+</p>
+
+<!-- ══════════════ F ══════════════ -->
+<h2 class="sec" id="pool"><span class="n">F</span> 错词池屏</h2>
+<p class="why">
+  错词池管的是「这个词下次什么时候再出现在卷子里」，和生词本的 FSRS 翻卡是<b>两套并行的调度</b>，语义不同、互不干扰。
+  这一屏是只读的计划表加一个危险操作，不提供逐条编辑——手工改重现时间会让阶段机失去意义。
+</p>
+
+<div class="full">
+  <div class="fhead">
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回</button>
+    <span class="ttl">错词池</span><span class="sub">6 个词在池中 · 3 个已出池</span>
+  </div>
+  <div class="fbody">
+    <div class="banner" style="margin-bottom:16px">
+      <span class="tag">机制</span>
+      <span>答错的词进池，<b>2 天后</b>混进下一卷；重现时答对进入第二阶段，<b>7 天后</b>再考一次；第二阶段再答对就出池。任何时候答错，都回到第一阶段重新计时。重现词在卷面上不做标记。</span>
+    </div>
+    <table class="lt">
+      <thead>
+        <tr><th>单词</th><th>错误次数</th><th>阶段</th><th>下次重现</th><th>首次答错</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="w">curb</td><td class="num">1</td><td>第 1 阶段</td><td class="num">8 月 14 日</td><td class="num">8 月 12 日</td><td><span class="pill wait">等待重现</span></td></tr>
+        <tr><td class="w">advocate</td><td class="num">2</td><td>第 1 阶段</td><td class="num">8 月 14 日</td><td class="num">7 月 30 日</td><td><span class="pill wait">等待重现</span></td></tr>
+        <tr><td class="w">plausible</td><td class="num">1</td><td>第 2 阶段</td><td class="num">8 月 12 日</td><td class="num">8 月 3 日</td><td><span class="pill on">今日到期</span></td></tr>
+        <tr><td class="w">subsidy</td><td class="num">1</td><td>第 2 阶段</td><td class="num">8 月 12 日</td><td class="num">8 月 3 日</td><td><span class="pill on">今日到期</span></td></tr>
+        <tr><td class="w">scrutiny</td><td class="num">3</td><td>第 1 阶段</td><td class="num">8 月 13 日</td><td class="num">7 月 18 日</td><td><span class="pill wait">等待重现</span></td></tr>
+        <tr><td class="w">retrofit</td><td class="num">1</td><td>第 1 阶段</td><td class="num">8 月 16 日</td><td class="num">8 月 11 日</td><td><span class="pill wait">等待重现</span></td></tr>
+        <tr class="cleared"><td class="w">incentive</td><td class="num">1</td><td>—</td><td class="num">—</td><td class="num">7 月 6 日</td><td><span class="pill good">已出池</span></td></tr>
+        <tr class="cleared"><td class="w">mandate</td><td class="num">2</td><td>—</td><td class="num">—</td><td class="num">6 月 28 日</td><td><span class="pill good">已出池</span></td></tr>
+        <tr class="cleared"><td class="w">offset</td><td class="num">1</td><td>—</td><td class="num">—</td><td class="num">6 月 21 日</td><td><span class="pill good">已出池</span></td></tr>
+      </tbody>
+    </table>
+    <div style="display:flex;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        复制为词表
+      </button>
+      <span style="flex:1"></span>
+      <button class="btn danger">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        清空错词池
+      </button>
+    </div>
+    <div style="margin-top:14px"><span class="toast">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      6 个词已复制到剪贴板
+    </span> <span style="font-size:11.5px;color:var(--text-muted);margin-left:8px">（复制后的轻提示，1.6 秒后消失）</span></div>
+  </div>
+</div>
+
+<h3 class="sub">状态 <span class="tagx">空态</span></h3>
+<div class="stage plain">
+  <div class="empty">
+    <div class="eh">错词池是空的</div>
+    做完一份卷子后，答错的词会自动进这里排队，<br>过两天混进下一卷再考一次。
+  </div>
+</div>
+<p class="cap">空态也是<b>好结果</b>的样子（全对，或还没做过卷）。文案不区分这两种情况，也不催人去做卷。</p>
+
+<h3 class="sub">弹层 <span class="tagx">清空确认（危险操作）</span></h3>
+<div class="modalstage">
+  <div class="scrim"></div>
+  <div class="dialog">
+    <h4>清空错词池？</h4>
+    <p>将删除 <b>9 个词</b>和它们的重现计划，包括 3 个已出池的记录。往卷里的错题记录会保留，生词本不受影响。此操作不可恢复。</p>
+    <div class="acts">
+      <button class="btn secondary">取消</button>
+      <button class="btn solid-danger">清空 9 个词</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ G ══════════════ -->
+<h2 class="sec" id="history"><span class="n">G</span> 历史屏（往卷）</h2>
+<p class="why">
+  一行一卷。打开旧卷进的是<b>评卷态</b>（讲解、溯源、追问记录都在），未交卷的卷子打开进作答态并恢复草稿。
+  不显示趋势图、不做连续天数统计——那会把复习变成打卡。
+</p>
+
+<div class="full">
+  <div class="fhead">
+    <button class="btn ghost sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>返回</button>
+    <span class="ttl">往卷</span><span class="sub">12 份</span>
+  </div>
+  <div class="fbody" style="padding:8px 22px 18px">
+    <div class="histrow">
+      <span class="date">8 月 12 日</span>
+      <span class="words">12 词 · CET-6</span>
+      <span class="chips"><span class="chip">curb</span><span class="chip">subsidy</span><span class="chip more">+10</span></span>
+      <span class="spacer"></span>
+      <span class="score">11 / 13</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="m9 18 6-6-6-6"/></svg>
+    </div>
+    <div class="histrow">
+      <span class="date">8 月 11 日</span>
+      <span class="words">9 词 · CET-6</span>
+      <span class="chips"><span class="chip">retrofit</span><span class="chip">offset</span><span class="chip more">+7</span></span>
+      <span class="spacer"></span>
+      <span class="pill wait">未交卷</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="m9 18 6-6-6-6"/></svg>
+    </div>
+    <div class="histrow">
+      <span class="date">8 月 9 日</span>
+      <span class="words">10 词 · 雅思</span>
+      <span class="chips"><span class="chip">plausible</span><span class="chip">scrutiny</span><span class="chip more">+8</span></span>
+      <span class="spacer"></span>
+      <span class="score">8 / 10</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="m9 18 6-6-6-6"/></svg>
+    </div>
+    <div class="histrow">
+      <span class="date">8 月 6 日</span>
+      <span class="words">14 词 · CET-6</span>
+      <span class="chips"><span class="chip">incentive</span><span class="chip">mandate</span><span class="chip more">+12</span></span>
+      <span class="spacer"></span>
+      <span class="score">13 / 15</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><path d="m9 18 6-6-6-6"/></svg>
+    </div>
+  </div>
+</div>
+<p class="cap">日期之间<b>不补空档</b>——中间没出卷的日子不出现在列表里，也不标注「间隔 X 天」。</p>
+
+<h3 class="sub">状态 <span class="tagx">空态</span></h3>
+<div class="stage plain">
+  <div class="empty">
+    <div class="eh">还没有出过卷</div>
+    出的每一份卷子都会留在这里，<br>连同讲解和追问记录，随时能翻回来看。
+    <div style="margin-top:16px"><button class="btn secondary">去出卷</button></div>
+  </div>
+</div>
+
+<!-- ══════════════ H ══════════════ -->
+<h2 class="sec" id="copy"><span class="n">H</span> 文案与语气约定</h2>
+<p class="why">词卷的界面里出现次数最多的两个概念是「答错」和「到期」，两个都很容易写成施压文案。下面是本样张遵守的规则。</p>
+
+<div class="duo">
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;color:var(--success-text);margin-bottom:10px">这样写</div>
+    <ul style="list-style:none;display:flex;flex-direction:column;gap:9px;font-size:13px;color:var(--text-secondary);line-height:1.75">
+      <li>「错词池里有 6 个词到了重现的时候，出卷时会自动混进这一卷」<br><span style="font-size:11.5px;color:var(--text-muted)">陈述卷面构成，说明机制</span></li>
+      <li>「curb、advocate 进了错词池，2 天后重现」<br><span style="font-size:11.5px;color:var(--text-muted)">说明接下来会发生什么</span></li>
+      <li>「本卷 12 个考点词里有 7 个在生词本中，复习进度已按这次作答更新」<br><span style="font-size:11.5px;color:var(--text-muted)">告知副作用，不评价表现</span></li>
+      <li>「做完一份卷子后，答错的词会自动进这里排队」<br><span style="font-size:11.5px;color:var(--text-muted)">空态解释机制，不催促</span></li>
+    </ul>
+  </div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;color:var(--danger);margin-bottom:10px">不这样写</div>
+    <ul style="list-style:none;display:flex;flex-direction:column;gap:9px;font-size:13px;color:var(--text-secondary);line-height:1.75">
+      <li>「6 个词已等待 4 天」「最早一个积压了 12 天」<br><span style="font-size:11.5px;color:var(--text-muted)">积压天数，禁止</span></li>
+      <li>「今天还没出卷」「别断了，已连续 7 天」<br><span style="font-size:11.5px;color:var(--text-muted)">打卡与连续天数，禁止</span></li>
+      <li>「这个词你已经错了 3 次了」<br><span style="font-size:11.5px;color:var(--text-muted)">表里可以有次数列，文案里不作评语</span></li>
+      <li>「趁热打铁，立刻再来一卷！」<br><span style="font-size:11.5px;color:var(--text-muted)">催促，禁止。按钮就叫「再出一卷」</span></li>
+    </ul>
+  </div>
+</div>
+
+<p class="cap" style="margin-top:20px">
+  <b>i18n</b>：以上全部 UI 文案要进 <code>src/i18n/en.json</code> / <code>zh.json</code>；
+  卷面内容（文章、题干、讲解、翻译、AI 回答）是模型生成的中文/英文内容，不属 UI 文案，不进 i18n（方案 §二.6）。
+</p>
+
+<h3 class="sub">画样张时冒出来的问题 <span class="tagx">留给拍板，未自行改方案</span></h3>
+<ol style="font-size:13px;color:var(--text-secondary);line-height:1.85;padding-left:22px;max-width:84ch;display:flex;flex-direction:column;gap:7px">
+  <li><b>词的来路有三种，chip 却只有两档。</b><code>WordOrigin</code> 现在是 <span class="serif">'today' | 'recur'</span>，方案 §二.5 要加 <span class="serif">'vocab'</span>。样张按三档画了（实心 / 淡紫 / 虚线），但方案同时说「与重现词同理，卷面不标记来路」——<b>设置屏的预览 chip 要不要区分三档？</b>样张的判断是：设置屏要分（用户在挑词，需要知道哪些是自己粘的、哪些是系统加的），卷面不分。</li>
+  <li><b>「已出池」的词要不要一直留在表里。</b>类型里 <code>cleared</code> 只是标记不是删除，样张把它们淡显留在表底。时间久了这张表会只剩已出池的词。是否需要折叠或只显示最近 N 条，未定。</li>
+  <li><b>交卷确认里那句「未答题的考点词会进错词池」需要确认。</b>词卷原判分把未作答按错处理，错词入池是判分的直接后果；但「没时间做完」和「做了做错」在学习意义上不同。样张照原机制写了，如果不该入池，这是<b>后端交卷事务</b>的行为差异，属方案 §二.3 范围。</li>
+  <li><b>FSRS 写回对未答题同样按 <span class="serif">again</span> 记，与上一条联动。</b>方案 §二.5 只写了「答错 → again」，没有区分未作答。</li>
+  <li><b>做题屏的用时计时器</b>在类型里没有对应字段（<code>QuizResult</code> 只有 <code>submittedAt</code>，词卷原实现的用时只存在于当次会话内，历史卷打开时不显示）。样张的评卷屏画了「用时 14:32」，从往卷打开旧卷时这一项应当隐藏。</li>
+  <li><b>「复制为词表」替代了原来的「导出为词表」</b>——桌面端有剪贴板，措辞改成复制更准。功能没变。</li>
+</ol>
+
+<p class="meta" style="margin-top:44px">
+  样张文件 · <code>docs/impls/cijuan-merge-mockup.html</code> ·
+  注：仓库里既有的样张都直接放在 <code>docs/impls/</code> 下（如 <code>daily-review-entry-mockup.html</code>），本文件按要求放在 <code>mockups/</code> 子目录。<br>
+  方案 · <code>docs/impls/cijuan-merge.md</code> · 词卷源码快照 <code>labs/cijuan/</code>（合并完成后整目录删除）
+</p>
+
+</div>
+</body>
+</html>
