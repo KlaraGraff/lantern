@@ -34,6 +34,7 @@ import EditMetadataModal from "../components/EditMetadataModal";
 import DeleteBookDialog from "../components/DeleteBookDialog";
 import BottomSheet from "../components/ui/BottomSheet";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import { TOP_INSET } from "../utils/top-inset";
 
 
@@ -100,6 +101,19 @@ export default function BookDetails() {
   // exists for. Delete being a tap further away is a bonus, not the reason.
   const [moreOpen, setMoreOpen] = useState(false);
   const isNarrow = useIsNarrow();
+  // A right-swipe from the left edge is the touch spelling of the back button
+  // just below — same destination, same `navigate("/")`, only reachable
+  // without a thumb stretching to the header. Reader is deliberately left out
+  // (product call: the edge would fight the page-turn swipe there), and the
+  // shelf's own left edge already belongs to the drawer (useDrawerGesture).
+  // Disabled while any overlay is up: the modals are React children of <main>,
+  // so their pointer events bubble (through the React tree, portals included)
+  // into the handlers below — an edge-ish touch inside the edit form must not
+  // drag the page out from under it.
+  const { ref: swipeBackRef, pointerHandlers: swipeBackPointerHandlers } = useEdgeSwipeBack<HTMLElement>({
+    enabled: isNarrow && !editing && !deleting && !moreOpen,
+    onBack: () => navigate("/"),
+  });
 
   const { difficulty, loading, callError, compute, setOverride } = useBookDifficulty(id);
 
@@ -222,187 +236,199 @@ export default function BookDetails() {
   ];
 
   return (
-    <main className="h-screen overflow-y-auto bg-bg-surface text-text-primary">
-      <header className={`sticky top-0 z-20 flex min-h-[72px] items-end justify-between gap-3 border-b border-border bg-bg-surface/95 px-4 pb-2.5 ${TOP_INSET} backdrop-blur md:min-h-[96px] md:gap-5 md:px-7 md:pb-3.5`}>
-        <button
-          type="button"
-          onClick={() => navigate("/")}
-          aria-label={isNarrow ? t("bookDetails.backToLibrary") : undefined}
-          className="flex h-11 shrink-0 items-center gap-1.5 text-[13px] text-text-secondary hover:text-text-primary md:h-auto"
-        >
-          <ArrowLeft size={isNarrow ? 20 : 15} aria-hidden="true" />
-          <span className="hidden md:inline">{t("bookDetails.backToLibrary")}</span>
-        </button>
-        <div className="flex min-w-0 items-center gap-2">
+    <>
+      {/* The strip the drag reveals — always exactly the app's own background,
+          so it carries no scrim logic. `-z-10` is what actually puts it behind
+          `main`: a `fixed` element at auto z-index paints above static in-flow
+          siblings and would swallow every touch on the page. `pointer-events-
+          none` additionally keeps it out of hit testing altogether. */}
+      {isNarrow && <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 bg-bg-page" />}
+      <main
+        ref={swipeBackRef}
+        className={`h-screen overflow-y-auto bg-bg-surface text-text-primary ${isNarrow ? "touch-pan-y" : ""}`}
+        {...(isNarrow ? swipeBackPointerHandlers : null)}
+      >
+        <header className={`sticky top-0 z-20 flex min-h-[72px] items-end justify-between gap-3 border-b border-border bg-bg-surface/95 px-4 pb-2.5 ${TOP_INSET} backdrop-blur md:min-h-[96px] md:gap-5 md:px-7 md:pb-3.5`}>
           <button
             type="button"
-            onClick={() => requestOpen(book)}
-            className="inline-flex h-11 min-w-0 items-center gap-1.5 rounded-lg bg-accent px-4 text-[14px] font-medium text-white md:h-8 md:px-3 md:text-[12px]"
+            onClick={() => navigate("/")}
+            aria-label={isNarrow ? t("bookDetails.backToLibrary") : undefined}
+            className="flex h-11 shrink-0 items-center gap-1.5 text-[13px] text-text-secondary hover:text-text-primary md:h-auto"
           >
-            <BookOpen size={14} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">
-              {book.progress > 0 ? t("bookDetails.continueReading") : t("bookDetails.startReading")}
-            </span>
+            <ArrowLeft size={isNarrow ? 20 : 15} aria-hidden="true" />
+            <span className="hidden md:inline">{t("bookDetails.backToLibrary")}</span>
           </button>
-          {isNarrow ? (
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
-              onClick={() => setMoreOpen(true)}
-              aria-label={t("bookDetails.moreActions")}
-              className="grid size-11 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input"
+              onClick={() => requestOpen(book)}
+              className="inline-flex h-11 min-w-0 items-center gap-1.5 rounded-lg bg-accent px-4 text-[14px] font-medium text-white md:h-8 md:px-3 md:text-[12px]"
             >
-              <MoreHorizontal size={20} aria-hidden="true" />
+              <BookOpen size={14} aria-hidden="true" className="shrink-0" />
+              <span className="truncate">
+                {book.progress > 0 ? t("bookDetails.continueReading") : t("bookDetails.startReading")}
+              </span>
             </button>
-          ) : (
-            <>
+            {isNarrow ? (
               <button
                 type="button"
-                onClick={() => setEditing(true)}
-                className="h-8 rounded-lg border border-border px-3 text-[12px] text-text-secondary hover:bg-bg-input"
+                onClick={() => setMoreOpen(true)}
+                aria-label={t("bookDetails.moreActions")}
+                className="grid size-11 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input"
               >
-                {t("bookMenu.editInfo")}
+                <MoreHorizontal size={20} aria-hidden="true" />
               </button>
-              <button
-                type="button"
-                onClick={() => setDeleting(true)}
-                className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input"
-              >
-                {t("bookMenu.deleteBook")}
-              </button>
-            </>
-          )}
-        </div>
-      </header>
-
-      <BottomSheet
-        open={isNarrow && moreOpen}
-        onClose={() => setMoreOpen(false)}
-        title={t("bookDetails.moreActions")}
-      >
-        <div className="px-2 pb-1">
-          <button
-            type="button"
-            onClick={() => { setMoreOpen(false); setEditing(true); }}
-            className="flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-text-primary"
-          >
-            <Pencil size={18} className="text-text-muted" aria-hidden="true" />
-            <span className="text-[15px]">{t("bookMenu.editInfo")}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMoreOpen(false); setDeleting(true); }}
-            className="flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-danger-text"
-          >
-            <Trash2 size={18} aria-hidden="true" />
-            <span className="text-[15px]">{t("bookMenu.deleteBook")}</span>
-          </button>
-        </div>
-      </BottomSheet>
-
-      <div className="mx-auto w-full max-w-[1000px] px-4 py-5 md:px-7 md:py-6">
-        <section className="grid grid-cols-[96px_1fr] gap-4 border-b border-border pb-5 md:grid-cols-[120px_1fr] md:gap-[22px] md:pb-[22px]">
-          <div className="aspect-[3/4] w-full overflow-hidden rounded-md bg-bg-muted shadow-card md:w-[120px]">
-            {book.cover_data ? (
-              <img src={book.cover_data} alt="" className="size-full object-cover" />
             ) : (
-              <div className="grid size-full place-items-center px-3 text-center text-[10px] leading-[1.35] text-text-muted">
-                {book.title}
-              </div>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="h-8 rounded-lg border border-border px-3 text-[12px] text-text-secondary hover:bg-bg-input"
+                >
+                  {t("bookMenu.editInfo")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleting(true)}
+                  className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input"
+                >
+                  {t("bookMenu.deleteBook")}
+                </button>
+              </>
             )}
           </div>
-          <div className="min-w-0">
-            <h1 className="mb-1.5 font-serif text-[21px] font-semibold leading-[1.25] md:text-[24px]">{book.title}</h1>
-            <p className="text-[13px] text-text-secondary">{book.author}</p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              <span className="rounded-md bg-accent-bg px-2 py-[3px] text-[10.5px] text-accent-text">{statusLabel}</span>
-              <span className="rounded-md border border-border px-2 py-[3px] text-[10.5px] text-text-muted">
-                {(book.source_format ?? book.format).toUpperCase()}
-              </span>
-              <span className="rounded-md border border-border px-2 py-[3px] text-[10.5px] text-text-muted">
-                {t("bookDetails.addedOn", { date: dateOnly.format(new Date(book.created_at)) })}
-              </span>
+        </header>
+
+        <BottomSheet
+          open={isNarrow && moreOpen}
+          onClose={() => setMoreOpen(false)}
+          title={t("bookDetails.moreActions")}
+        >
+          <div className="px-2 pb-1">
+            <button
+              type="button"
+              onClick={() => { setMoreOpen(false); setEditing(true); }}
+              className="flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-text-primary"
+            >
+              <Pencil size={18} className="text-text-muted" aria-hidden="true" />
+              <span className="text-[15px]">{t("bookMenu.editInfo")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMoreOpen(false); setDeleting(true); }}
+              className="flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-danger-text"
+            >
+              <Trash2 size={18} aria-hidden="true" />
+              <span className="text-[15px]">{t("bookMenu.deleteBook")}</span>
+            </button>
+          </div>
+        </BottomSheet>
+
+        <div className="mx-auto w-full max-w-[1000px] px-4 py-5 md:px-7 md:py-6">
+          <section className="grid grid-cols-[96px_1fr] gap-4 border-b border-border pb-5 md:grid-cols-[120px_1fr] md:gap-[22px] md:pb-[22px]">
+            <div className="aspect-[3/4] w-full overflow-hidden rounded-md bg-bg-muted shadow-card md:w-[120px]">
+              {book.cover_data ? (
+                <img src={book.cover_data} alt="" className="size-full object-cover" />
+              ) : (
+                <div className="grid size-full place-items-center px-3 text-center text-[10px] leading-[1.35] text-text-muted">
+                  {book.title}
+                </div>
+              )}
             </div>
-            <div className="mt-4 h-1 w-[min(420px,100%)] overflow-hidden rounded-full bg-bg-input">
-              <div className="h-full rounded-full bg-accent/75" style={{ width: `${Math.min(100, Math.max(0, book.progress))}%` }} />
+            <div className="min-w-0">
+              <h1 className="mb-1.5 font-serif text-[21px] font-semibold leading-[1.25] md:text-[24px]">{book.title}</h1>
+              <p className="text-[13px] text-text-secondary">{book.author}</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <span className="rounded-md bg-accent-bg px-2 py-[3px] text-[10.5px] text-accent-text">{statusLabel}</span>
+                <span className="rounded-md border border-border px-2 py-[3px] text-[10.5px] text-text-muted">
+                  {(book.source_format ?? book.format).toUpperCase()}
+                </span>
+                <span className="rounded-md border border-border px-2 py-[3px] text-[10.5px] text-text-muted">
+                  {t("bookDetails.addedOn", { date: dateOnly.format(new Date(book.created_at)) })}
+                </span>
+              </div>
+              <div className="mt-4 h-1 w-[min(420px,100%)] overflow-hidden rounded-full bg-bg-input">
+                <div className="h-full rounded-full bg-accent/75" style={{ width: `${Math.min(100, Math.max(0, book.progress))}%` }} />
+              </div>
+              <p className="mt-2 text-[11px] text-text-muted">
+                {t("bookDetails.progressLine", { percent: Math.round(book.progress) })}
+              </p>
             </div>
-            <p className="mt-2 text-[11px] text-text-muted">
-              {t("bookDetails.progressLine", { percent: Math.round(book.progress) })}
-            </p>
-          </div>
-        </section>
+          </section>
 
-        {/* Four numbers side by side is a desktop strip: at 390px each column
-            would be ~83px for a 22px serif number and its label. Two rows of
-            two instead — not a horizontal scroller, because a row of figures
-            you have to swipe to finish is a row nobody finishes. The rules
-            follow the shape: vertical between the pair, horizontal under the
-            first row, and the wide layout gets its single strip back. */}
-        <section className="grid grid-cols-2 border-b border-border py-2 md:grid-cols-4 md:py-4">
-          {metrics.map(([value, label], index) => (
-            <div key={label} className={metricCellClass(index)}>
-              <strong className="block font-serif text-[22px] font-medium leading-[1.2]">{value}</strong>
-              <span className="mt-1.5 block text-[10.5px] text-text-muted">{label}</span>
+          {/* Four numbers side by side is a desktop strip: at 390px each column
+              would be ~83px for a 22px serif number and its label. Two rows of
+              two instead — not a horizontal scroller, because a row of figures
+              you have to swipe to finish is a row nobody finishes. The rules
+              follow the shape: vertical between the pair, horizontal under the
+              first row, and the wide layout gets its single strip back. */}
+          <section className="grid grid-cols-2 border-b border-border py-2 md:grid-cols-4 md:py-4">
+            {metrics.map(([value, label], index) => (
+              <div key={label} className={metricCellClass(index)}>
+                <strong className="block font-serif text-[22px] font-medium leading-[1.2]">{value}</strong>
+                <span className="mt-1.5 block text-[10.5px] text-text-muted">{label}</span>
+              </div>
+            ))}
+          </section>
+
+          <CoverageSection
+            bookId={book.id}
+            bookTitle={book.title}
+            onStartReading={() => requestOpen(book)}
+          />
+
+          <section className="mt-6" aria-labelledby="book-difficulty-heading">
+            <div className="mb-3">
+              <h2 id="book-difficulty-heading" className="text-[13.5px] font-semibold">{t("bookDifficulty.heading")}</h2>
+              <p className="mt-1 text-[10.5px] text-text-muted">{t("bookDifficulty.description")}</p>
             </div>
-          ))}
-        </section>
+            {/* 40px of side padding is affordable on a desktop card and is 11%
+                of a phone's width, taken off the one section that has a table in
+                it. The card keeps its inset on wide screens. */}
+            <div className="rounded-[13px] border border-border px-3.5 py-[18px] md:px-5">
+              <DifficultySection
+                difficulty={difficulty}
+                loading={loading}
+                callError={callError}
+                baseline={baseline}
+                overrideOpen={overrideOpen}
+                onToggleOverride={() => setOverrideOpen((open) => !open)}
+                onCompute={() => void compute()}
+                onSetOverride={(value) => void setOverride(value)}
+              />
+            </div>
+          </section>
 
-        <CoverageSection
-          bookId={book.id}
-          bookTitle={book.title}
-          onStartReading={() => requestOpen(book)}
-        />
+          <section className="mt-6" aria-labelledby="book-file-heading">
+            <h2 id="book-file-heading" className="mb-3 text-[13.5px] font-semibold">{t("bookDetails.fileHeading")}</h2>
+            <div className="border-t border-border-light">
+              <FileRow label={t("bookDetails.fileFormat")} hint={t("bookDetails.fileFormatHint")} value={(book.source_format ?? book.format).toUpperCase()} />
+              <FileRow label={t("bookDetails.fileAdded")} value={addedAt} />
+              <FileRow label={t("bookDetails.fileName")} value={fileNameOf(book.file_path)} />
+            </div>
+          </section>
+        </div>
 
-        <section className="mt-6" aria-labelledby="book-difficulty-heading">
-          <div className="mb-3">
-            <h2 id="book-difficulty-heading" className="text-[13.5px] font-semibold">{t("bookDifficulty.heading")}</h2>
-            <p className="mt-1 text-[10.5px] text-text-muted">{t("bookDifficulty.description")}</p>
-          </div>
-          {/* 40px of side padding is affordable on a desktop card and is 11%
-              of a phone's width, taken off the one section that has a table in
-              it. The card keeps its inset on wide screens. */}
-          <div className="rounded-[13px] border border-border px-3.5 py-[18px] md:px-5">
-            <DifficultySection
-              difficulty={difficulty}
-              loading={loading}
-              callError={callError}
-              baseline={baseline}
-              overrideOpen={overrideOpen}
-              onToggleOverride={() => setOverrideOpen((open) => !open)}
-              onCompute={() => void compute()}
-              onSetOverride={(value) => void setOverride(value)}
-            />
-          </div>
-        </section>
+        {editing ? (
+          <EditMetadataModal
+            bookId={book.id}
+            currentTitle={book.title}
+            currentAuthor={book.author}
+            currentCover={book.cover_data}
+            onClose={() => setEditing(false)}
+            onSaved={() => { setEditing(false); loadBook(); }}
+          />
+        ) : null}
 
-        <section className="mt-6" aria-labelledby="book-file-heading">
-          <h2 id="book-file-heading" className="mb-3 text-[13.5px] font-semibold">{t("bookDetails.fileHeading")}</h2>
-          <div className="border-t border-border-light">
-            <FileRow label={t("bookDetails.fileFormat")} hint={t("bookDetails.fileFormatHint")} value={(book.source_format ?? book.format).toUpperCase()} />
-            <FileRow label={t("bookDetails.fileAdded")} value={addedAt} />
-            <FileRow label={t("bookDetails.fileName")} value={fileNameOf(book.file_path)} />
-          </div>
-        </section>
-      </div>
-
-      {editing ? (
-        <EditMetadataModal
-          bookId={book.id}
-          currentTitle={book.title}
-          currentAuthor={book.author}
-          currentCover={book.cover_data}
-          onClose={() => setEditing(false)}
-          onSaved={() => { setEditing(false); loadBook(); }}
-        />
-      ) : null}
-
-      {deleting ? (
-        <DeleteBookDialog
-          title={book.title}
-          onCancel={() => setDeleting(false)}
-          onConfirm={remove}
-        />
-      ) : null}
-    </main>
+        {deleting ? (
+          <DeleteBookDialog
+            title={book.title}
+            onCancel={() => setDeleting(false)}
+            onConfirm={remove}
+          />
+        ) : null}
+      </main>
+    </>
   );
 }
 
