@@ -2416,7 +2416,7 @@
   "bookDetails.metricProgress": "阅读进度",
   "bookDetails.metricFocused": "累计阅读",
   "bookDetails.metricTokens": "全书词次",
-  "bookDetails.metricMarks": "高亮与笔记",
+  "bookDetails.metricMarks": "划线笔记",
   "bookDetails.addedOn": "{{date}} 加入",
   "bookDetails.progressLine": "已读 {{percent}}%",
   "bookDetails.fileHeading": "文件",

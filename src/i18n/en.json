@@ -2416,7 +2416,7 @@
   "bookDetails.metricProgress": "Reading progress",
   "bookDetails.metricFocused": "Time reading",
   "bookDetails.metricTokens": "Running words",
-  "bookDetails.metricMarks": "Highlights and notes",
+  "bookDetails.metricMarks": "Highlights & Notes",
   "bookDetails.addedOn": "Added {{date}}",
   "bookDetails.progressLine": "{{percent}}% read",
   "bookDetails.fileHeading": "File",
