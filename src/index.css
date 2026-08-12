@@ -190,6 +190,25 @@
   --color-mastery-mastered: #2e1065;
 }
 
+/* One page gutter, two viewports.
+ *
+ * 24px is a desktop margin. On a 402px phone the same number takes 48px off
+ * the width — 12% of the screen — and that is the difference between a
+ * three-up book grid whose covers are readable and one whose covers are
+ * thumbnails. 16px is what iOS itself uses for a screen margin.
+ *
+ * Overridden on the variable rather than patched into the components that
+ * happen to look wrong, so every surface already writing `p-page` moves
+ * together: a shelf body at 16px under a header still at 24px is a visibly
+ * crooked left edge, and there are eight such pairs in this app. The query
+ * mirrors Tailwind's `md:` breakpoint — the same one `useIsNarrow` watches —
+ * so the JS and the CSS never disagree about which side of it we are on. */
+@media (width < 48rem) {
+  :root {
+    --spacing-page: 16px;
+  }
+}
+
 .dark {
   --color-band-1: #332c4a;
   --color-band-2: #443a66;

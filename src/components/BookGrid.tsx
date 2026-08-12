@@ -62,9 +62,17 @@ interface BookGridProps {
   loadingMore?: boolean;
   activeCollectionId?: string;
   onBooksChanged?: () => void;
+  /**
+   * Narrow-screen column count, chosen by the segmented control in `Home.tsx`.
+   * `undefined` (always the case on a wide screen) keeps the auto-fill grid
+   * this component has always had. 3 columns leaves little room per card, so
+   * the title/author type shrinks to match — 2 columns keeps the same sizes
+   * the auto-fill grid uses.
+   */
+  columns?: 2 | 3;
 }
 
-export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookGridProps) {
+export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged, columns }: BookGridProps) {
   const { t } = useTranslation();
   const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
@@ -122,9 +130,21 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
     if (!isPendingPreparation(book)) requestOpen(book);
   };
 
+  const gridClass =
+    columns === 2
+      ? "grid grid-cols-2 gap-4"
+      : columns === 3
+        ? "grid grid-cols-3 gap-3"
+        : "grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-6";
+  const titleClass =
+    columns === 3
+      ? "mt-2 text-[12.5px] font-semibold text-text-primary tracking-[-0.15px] truncate"
+      : "mt-3 text-[14px] font-semibold text-text-primary tracking-[-0.15px] truncate";
+  const authorClass = columns === 3 ? "text-[11px] text-text-secondary truncate" : "text-[12px] text-text-secondary truncate";
+
   return (
     <>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-6">
+      <div className={gridClass}>
         {books.map((book, index) => (
           <button
             key={book.id}
@@ -178,10 +198,10 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
                 );
               })()}
             </div>
-            <h3 className="mt-3 text-[14px] font-semibold text-text-primary tracking-[-0.15px] truncate">
+            <h3 className={titleClass}>
               {book.title}
             </h3>
-            <p className="text-[12px] text-text-secondary truncate">{book.author}</p>
+            <p className={authorClass}>{book.author}</p>
           </button>
         ))}
       </div>

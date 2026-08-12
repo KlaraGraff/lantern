@@ -67,7 +67,7 @@ const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
   !yes ? {} : SUPPORTS_INERT ? { inert: true } : { "aria-hidden": true };
 
 /**
- * Grid or list, remembered across visits.
+ * Grid (2 or 3 columns) or list, remembered across visits.
  *
  * On a desktop the reader opens in a window of its own and this page never
  * unmounts, so plain component state looked like it worked. On a phone there
@@ -79,11 +79,19 @@ const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
  * has chosen for their library, and syncing it would have a Mac and a phone
  * overwriting each other's answer to a question they are entitled to answer
  * differently.
+ *
+ * The column count only ever applies on a narrow screen — a wide one always
+ * shows the auto-fill grid regardless of which grid value is stored — but the
+ * choice persists across both, so it's waiting there next time the window (or
+ * the reader) goes narrow again.
  */
 const VIEW_MODE_STORAGE_KEY = "library-view-mode";
 
-function readStoredViewMode(): "grid" | "list" {
-  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "grid";
+type ViewMode = "grid2" | "grid3" | "list";
+
+function readStoredViewMode(): ViewMode {
+  const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+  return stored === "grid2" || stored === "grid3" || stored === "list" ? stored : "grid3";
 }
 
 export default function Home() {
@@ -100,7 +108,7 @@ export default function Home() {
   // click on 单词 (via `handleFilterChange`) always resets this to "all", so
   // the collapsed/review-focused start state never lingers past one visit.
   const [vocabInitialView, setVocabInitialView] = useState<"all" | "review">("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">(readStoredViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(readStoredViewMode);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -125,7 +133,7 @@ export default function Home() {
 
   // Picking anything in the sidebar is navigation, and navigation is done with
   // the drawer. On the desktop there is nothing to close.
-  const changeViewMode = useCallback((mode: "grid" | "list") => {
+  const changeViewMode = useCallback((mode: ViewMode) => {
     setViewMode(mode);
     localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
   }, []);
@@ -557,22 +565,58 @@ export default function Home() {
                 {title}
               </h1>
               <div data-tauri-drag-region className="flex items-center gap-0">
-                <Button
-                  variant="icon"
-                  size="md"
-                  active={viewMode === "grid"}
-                  onClick={() => changeViewMode("grid")}
-                >
-                  <LayoutGrid size={16} />
-                </Button>
-                <Button
-                  variant="icon"
-                  size="md"
-                  active={viewMode === "list"}
-                  onClick={() => changeViewMode("list")}
-                >
-                  <List size={16} />
-                </Button>
+                {isNarrow ? (
+                  // Replaces the two icon buttons below: on a phone the grid's
+                  // column count is a reader choice worth a dedicated control,
+                  // not a second click behind a single "grid" icon. Same
+                  // segmented-control shape as `settings.ai.reasoningEffortScope`.
+                  <div
+                    role="group"
+                    aria-label={t("home.columnsLabel")}
+                    className="flex w-full rounded-md bg-bg-input p-0.5"
+                  >
+                    {(
+                      [
+                        { mode: "grid2", label: t("home.columnsTwo") },
+                        { mode: "grid3", label: t("home.columnsThree") },
+                        { mode: "list", label: t("home.columnsList") },
+                      ] as const
+                    ).map((option) => (
+                      <button
+                        key={option.mode}
+                        type="button"
+                        aria-pressed={viewMode === option.mode}
+                        onClick={() => changeViewMode(option.mode)}
+                        className={`h-9 flex-1 cursor-pointer whitespace-nowrap rounded-sm px-2 text-[13px] font-medium transition-colors ${
+                          viewMode === option.mode
+                            ? "bg-bg-surface text-accent-text shadow-sm"
+                            : "text-text-muted"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      variant="icon"
+                      size="md"
+                      active={viewMode !== "list"}
+                      onClick={() => { if (viewMode === "list") changeViewMode("grid3"); }}
+                    >
+                      <LayoutGrid size={16} />
+                    </Button>
+                    <Button
+                      variant="icon"
+                      size="md"
+                      active={viewMode === "list"}
+                      onClick={() => changeViewMode("list")}
+                    >
+                      <List size={16} />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -608,10 +652,14 @@ export default function Home() {
                   </Button>
                 )}
               </div>
-            ) : viewMode === "grid" ? (
-              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} />
-            ) : (
+            ) : viewMode === "list" ? (
               <BookList books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} />
+            ) : (
+              // The column count only ever narrows the grid on a narrow screen —
+              // a wide window always gets the auto-fill grid, whichever of
+              // grid2/grid3 happens to be stored, because the segmented control
+              // that sets it isn't even on screen there.
+              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : 3) : undefined} />
             )}
           </div>
 
