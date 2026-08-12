@@ -34,7 +34,7 @@ import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Slider from "../ui/Slider";
-import SortableList from "../ui/SortableList";
+import SortableList, { type SortableHandleProps } from "../ui/SortableList";
 import Toggle from "../ui/Toggle";
 
 export interface AiProfile {
@@ -154,6 +154,7 @@ interface AiServiceCardProps {
   onReorderCredentials: (ids: string[]) => Promise<void>;
   onOAuthLogin: () => Promise<void>;
   onOAuthLogout: () => Promise<void>;
+  dragHandle?: SortableHandleProps;
 }
 
 function providerLabel(
@@ -374,6 +375,7 @@ export default function AiServiceCard({
   onReorderCredentials,
   onOAuthLogin,
   onOAuthLogout,
+  dragHandle,
 }: AiServiceCardProps) {
   const { t } = useTranslation();
   const [newLabel, setNewLabel] = useState("");
@@ -524,13 +526,16 @@ export default function AiServiceCard({
     <section className="overflow-hidden rounded-lg border border-border bg-bg-surface transition-[border-color,opacity,box-shadow]">
       <div className="flex min-h-[68px] items-center gap-2 px-2.5 py-2">
         {/* A pointer drag and a finger drag are not the same gesture: under
-            touch the browser claims the pointer for scrolling and the drag
-            never activates, so a handle would be a control that does nothing.
-            Reordering moves to the buttons in the expanded body instead. */}
+            touch the browser claims the press for scrolling unless the element
+            says otherwise, which is exactly what the handle props opt out of.
+            Confining that opt-out to the grip is what keeps the rest of the
+            card scrollable — and the ↑↓ buttons in the expanded body remain
+            the way to reorder without dragging at all. */}
         <span
+          {...dragHandle}
           title={t("settings.ai.reorderHint")}
           aria-label={t("settings.ai.reorderService", { name: profile.label })}
-          className={`flex size-8 shrink-0 items-center justify-center text-text-muted touch:hidden ${profileBusy || expanded ? "opacity-35" : ""}`}
+          className={`flex size-8 shrink-0 cursor-grab items-center justify-center text-text-muted active:cursor-grabbing touch:size-11 ${profileBusy || expanded ? "opacity-35" : ""}`}
         >
           <GripVertical size={15} />
         </span>

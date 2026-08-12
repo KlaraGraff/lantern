@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
 import Button from "../ui/Button";
 import Toggle from "../ui/Toggle";
-import SortableList from "../ui/SortableList";
+import SortableList, { type SortableHandleProps } from "../ui/SortableList";
 import {
   MENU_ACTION_DEFINITIONS,
   MAX_CUSTOM_MENU_ACTIONS,
@@ -102,6 +102,7 @@ export default function SelectionMenuSettings({
     item: SelectionMenuItemConfig,
     index: number,
     draftDefinition?: CustomLearningDefinition,
+    dragHandle?: SortableHandleProps,
   ) => {
     const isDraft = Boolean(draftDefinition);
     const custom = draftDefinition ?? (item.id.startsWith("custom_") && item.name && item.prompt ? {
@@ -122,10 +123,12 @@ export default function SelectionMenuSettings({
     return (
       <div className="border-t border-border-light first:border-t-0">
         <div className="group flex min-h-12 items-center gap-1 py-1">
+          {/* The only part of the row a finger may drag from — see `SortableList`. */}
           <span
+            {...dragHandle}
             title={t("settings.tools.reorder")}
             aria-label={t("settings.tools.reorderMenuAction", { name: label })}
-            className={`flex size-8 shrink-0 items-center justify-center text-text-muted ${item.enabled ? "" : "opacity-50"}`}
+            className={`flex size-8 shrink-0 cursor-grab items-center justify-center text-text-muted active:cursor-grabbing touch:size-11 ${item.enabled ? "" : "opacity-50"}`}
           >
             <GripVertical size={14} />
           </span>
@@ -261,7 +264,7 @@ export default function SelectionMenuSettings({
             if (moved) onTouched?.(moved.id);
           }}
           className="border-y border-border-light"
-          renderItem={(item, index) => renderAction(item, index)}
+          renderItem={(item, index, { handleProps }) => renderAction(item, index, undefined, handleProps)}
         />
       )}
       {newAction && renderAction(newAction.item, value.length, newAction.definition)}

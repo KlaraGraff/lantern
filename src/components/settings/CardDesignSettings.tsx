@@ -205,7 +205,7 @@ export default function CardDesignSettings({
             onChange({ ...value, modules });
             if (moved) onTouched?.(moved.id);
           }}
-          renderItem={(module, index) => {
+          renderItem={(module, index, { handleProps }) => {
             const custom = module.id.startsWith("custom_")
               ? value.customModules[module.id as CustomLearningId]
               : undefined;
@@ -220,6 +220,7 @@ export default function CardDesignSettings({
             return (
               <CardModuleRow
                 key={module.id}
+                dragHandle={handleProps}
                 definition={definition}
                 value={module}
                 index={index}

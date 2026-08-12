@@ -20,9 +20,25 @@ import { CSS } from "@dnd-kit/utilities";
 import { useState, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 
+/**
+ * What a row spreads onto its grip to make that grip — and only that grip —
+ * start a drag. `touchAction: "none"` is the whole reason a finger drag works
+ * at all: without it the browser claims the gesture for scrolling long before
+ * the 8px activation distance is met, so the handle would be a control that
+ * does nothing. Confining that opt-out to the grip is also why the rest of the
+ * row still scrolls the page under a finger.
+ */
+export interface SortableHandleProps {
+  ref: (node: HTMLElement | null) => void;
+  onPointerDown: (event: SyntheticEvent) => void;
+  style: CSSProperties;
+  "data-drag-handle": string;
+}
+
 interface SortableRenderState {
   dragging: boolean;
   overlay: boolean;
+  handleProps: SortableHandleProps;
 }
 
 interface SortableListProps<T> {
@@ -39,6 +55,18 @@ const INTERACTIVE_SELECTOR = "input,textarea,select,a,[contenteditable='true'],[
 function isInteractiveTarget(event: SyntheticEvent) {
   return (event.target as Element | null)?.closest(INTERACTIVE_SELECTOR) !== null;
 }
+
+function isHandleTarget(event: SyntheticEvent) {
+  return (event.target as Element | null)?.closest("[data-drag-handle]") !== null;
+}
+
+/** The props a row spreads onto its grip; `null` where the list is not sortable. */
+const NO_HANDLE: SortableHandleProps = {
+  ref: () => {},
+  onPointerDown: () => {},
+  style: {},
+  "data-drag-handle": "",
+};
 
 function SortableItem<T>({
   item,
@@ -57,6 +85,7 @@ function SortableItem<T>({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -67,6 +96,12 @@ function SortableItem<T>({
     transition,
     zIndex: isDragging ? 1 : undefined,
   };
+  const handleProps: SortableHandleProps = {
+    ref: setActivatorNodeRef,
+    onPointerDown: (event) => listeners?.onPointerDown?.(event),
+    style: { touchAction: "none" },
+    "data-drag-handle": "",
+  };
 
   return (
     <div
@@ -74,7 +109,15 @@ function SortableItem<T>({
       style={style}
       {...attributes}
       onPointerDown={(event) => {
-        if (!isInteractiveTarget(event)) listeners?.onPointerDown?.(event);
+        if (isInteractiveTarget(event)) return;
+        // The grip forwarded it already; forwarding again from the row would
+        // hand dnd-kit the same press twice.
+        if (isHandleTarget(event)) return;
+        // A finger anywhere but the grip belongs to the page: mixing the two
+        // means a list that sometimes reorders when it was asked to scroll.
+        // A mouse keeps whole-row dragging — it has nothing to scroll with.
+        if (event.pointerType === "touch") return;
+        listeners?.onPointerDown?.(event);
       }}
       onKeyDown={(event) => {
         if (!(event.target as Element | null)?.closest("button,input,textarea,select,a,[contenteditable='true'],[data-no-drag]")) {
@@ -86,7 +129,7 @@ function SortableItem<T>({
       {isOver && !isDragging && (
         <span className="pointer-events-none absolute inset-x-0 -top-px z-10 h-0.5 bg-accent" />
       )}
-      {renderItem(item, index, { dragging: isDragging, overlay: false })}
+      {renderItem(item, index, { dragging: isDragging, overlay: false, handleProps })}
     </div>
   );
 }
@@ -155,7 +198,7 @@ export default function SortableList<T>({
         <DragOverlay dropAnimation={{ duration: 160, easing: "ease" }}>
           {activeItem ? (
             <div className="cursor-grabbing overflow-hidden rounded-md bg-bg-surface opacity-95 shadow-context">
-              {renderItem(activeItem, activeIndex, { dragging: true, overlay: true })}
+              {renderItem(activeItem, activeIndex, { dragging: true, overlay: true, handleProps: NO_HANDLE })}
             </div>
           ) : null}
         </DragOverlay>,

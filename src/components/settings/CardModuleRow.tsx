@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Trash2 } f
 import { useTranslation } from "react-i18next";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
+import type { SortableHandleProps } from "../ui/SortableList";
 import type { CardModuleConfig, LearningModuleDefinition, ModuleDensity } from "../learning-card";
 import { ROW_CONTROL_WIDTH_CARD } from "./types";
 
@@ -18,6 +19,7 @@ interface CardModuleRowProps {
   onDelete?: () => void;
   unsaved?: boolean;
   editor?: ReactNode;
+  dragHandle?: SortableHandleProps;
 }
 
 export default function CardModuleRow({
@@ -32,6 +34,7 @@ export default function CardModuleRow({
   onDelete,
   unsaved = false,
   editor,
+  dragHandle,
 }: CardModuleRowProps) {
   const { t } = useTranslation();
   const label = definition.custom ? definition.labelKey : t(definition.labelKey);
@@ -39,10 +42,13 @@ export default function CardModuleRow({
   return (
     <div className="border-t border-border-light first:border-t-0">
       <div className="group flex min-h-12 items-center gap-1 py-1.5">
+        {/* The only part of the row a finger may drag from. Everywhere else the
+            press belongs to the scroller — see `SortableList`. */}
         <span
+          {...dragHandle}
           title={t("settings.tools.reorder")}
           aria-label={t("settings.tools.reorderModule", { name: label })}
-          className={`flex size-8 shrink-0 items-center justify-center text-text-muted ${value.enabled ? "" : "opacity-50"}`}
+          className={`flex size-8 shrink-0 cursor-grab items-center justify-center text-text-muted active:cursor-grabbing touch:size-11 ${value.enabled ? "" : "opacity-50"}`}
         >
           <GripVertical size={14} />
         </span>

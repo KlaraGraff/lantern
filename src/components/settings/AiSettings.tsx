@@ -997,8 +997,9 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           onReorder={applyProfileOrder}
           disabled={(profile) => expandedId === profile.id || saving || busyId != null}
           className="space-y-2"
-          renderItem={(profile, index) => (
+          renderItem={(profile, index, { handleProps }) => (
             <AiServiceCard
+              dragHandle={handleProps}
               profile={profile}
               credentials={credentials[profile.id] ?? []}
               expanded={expandedId === profile.id}
