@@ -642,8 +642,11 @@ export default function MarkerStyleSettings({
     <div className="mx-auto w-full max-w-[620px]">
       {/* Stays put while the controls scroll under it, so a colour never has to
           be chosen from memory. The negative margin reaches into the modal's
-          own padding — without it the page shows through either side. */}
-      <div className="sticky top-0 z-10 -mx-6 bg-white px-6 pb-3 dark:bg-bg-surface">
+          own padding — without it the page shows through either side. The two
+          shells pad differently (16px under `md:`, 24px above it), and reaching
+          further than the shell actually pads makes the panel wider than its
+          scroller, which a phone then scrolls sideways. */}
+      <div className="sticky top-0 z-10 -mx-4 bg-white px-4 pb-3 md:-mx-6 md:px-6 dark:bg-bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5">
           <div role="tablist" aria-label={t("settings.tools.markers.editing")} className="inline-flex rounded-md border border-border bg-bg-input p-0.5">
             {(["manual", "automatic"] as EditTarget[]).map((target) => (

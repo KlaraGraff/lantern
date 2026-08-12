@@ -455,7 +455,11 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto pb-safe-bottom">
+          {/* `overflow-x-hidden` is not decoration: a scroller that only asks
+              for vertical scrolling still computes `overflow-x: auto`, so any
+              panel that misjudges the shell's padding by a few pixels turns
+              the whole settings page into a sideways-scrolling web page. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-safe-bottom">
             {activeSection === null ? (
               <div className="px-4 pt-3.5">
                 {rootGroups.map((group) => (
