@@ -37,6 +37,34 @@ export function classifyReaderTap(x: number, width: number, oneHand = false): Ta
 }
 
 /**
+ * Map a `clientX` from inside foliate's chapter iframe to the host viewport.
+ *
+ * In paginated flow the iframe is not the page: foliate lays the whole section
+ * out in columns and sizes the iframe to all of them (`expand()` in
+ * paginator.js), then pages by scrolling the container around it. A tap's
+ * `clientX` therefore carries the width of every page before this one, and the
+ * document's `clientWidth` is the whole chapter — thirds cut from those numbers
+ * land on the chapter, not on the page under the finger (in a 20-page chapter,
+ * a tap anywhere on the first six pages read as "previous"). The iframe
+ * element's box in the host document already accounts for the scroll, so adding
+ * its `left` recovers the on-screen position; the ratio covers a frame drawn at
+ * a different size than its document, foliate's fixed-layout scaling.
+ *
+ * In scrolled flow the frame sits at the page's left edge at scale 1, so the
+ * mapping is the identity — one formula serves both flows.
+ */
+export function frameClientXToHost(
+  clientX: number,
+  frame: { left: number; width: number },
+  frameDocumentWidth: number,
+): number {
+  const scale = frame.width > 0 && frameDocumentWidth > 0
+    ? frame.width / frameDocumentWidth
+    : 1;
+  return frame.left + clientX * scale;
+}
+
+/**
  * The same split, for a reader that renders in the host document.
  *
  * Text books (txt/md/html) do not go through foliate and have no iframe, so

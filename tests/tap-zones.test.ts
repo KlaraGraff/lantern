@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classifyReaderTap, classifyReaderTapInBox } from "../src/pages/reader/tap-zones.ts";
+import {
+  classifyReaderTap,
+  classifyReaderTapInBox,
+  frameClientXToHost,
+} from "../src/pages/reader/tap-zones.ts";
 
 test("the page splits in three equal columns", () => {
   const width = 390;
@@ -105,4 +109,51 @@ test("an unmeasured page raises the menu rather than paging", () => {
   assert.equal(classifyReaderTap(120, -5), "menu");
   assert.equal(classifyReaderTap(120, Number.NaN), "menu");
   assert.equal(classifyReaderTap(Number.NaN, 390), "menu");
+});
+
+// Paginated flow: foliate's iframe is the whole chapter laid out side by side,
+// scrolled so the current page fills the screen. On page 3 of a 440pt-wide
+// phone the frame's host box starts at -880, so a tap the reader sees at 380
+// arrives as clientX 1260 — the mapping has to give the on-screen 380 back.
+test("a tap inside the paginated chapter frame maps back to the page on screen", () => {
+  const frame = { left: -880, width: 8800 };
+  assert.equal(frameClientXToHost(1260, frame, 8800), 380);
+  const box = { left: 0, width: 440 };
+  assert.equal(classifyReaderTapInBox(frameClientXToHost(1260, frame, 8800), box), "next");
+  assert.equal(classifyReaderTapInBox(frameClientXToHost(950, frame, 8800), box), "previous");
+  assert.equal(classifyReaderTapInBox(frameClientXToHost(1100, frame, 8800), box), "menu");
+});
+
+// The regression this mapping exists for: on the first page of a 20-page
+// chapter the frame sits at 0 and the old math cut thirds from all 8800px, so
+// a tap at 380 — the right zone of the visible page — classified as
+// "previous" and bounced the reader back into the previous section.
+test("a right-zone tap on a long chapter's first page turns forward, not back", () => {
+  const frame = { left: 0, width: 8800 };
+  const box = { left: 0, width: 440 };
+  assert.equal(frameClientXToHost(380, frame, 8800), 380);
+  assert.equal(classifyReaderTapInBox(frameClientXToHost(380, frame, 8800), box), "next");
+  assert.equal(classifyReaderTap(380, 8800), "previous");
+});
+
+// Fixed-layout books draw the frame at a different size than its document —
+// the ratio carries the tap through the scale.
+test("a scaled frame maps its taps through the on-screen size", () => {
+  assert.equal(frameClientXToHost(600, { left: 0, width: 400 }, 800), 300);
+  assert.equal(frameClientXToHost(100, { left: 50, width: 400 }, 800), 100);
+});
+
+// In scrolled flow the frame is the page at scale 1 — the mapping must be the
+// identity so the zones stay exactly where they were before it existed.
+test("the frame mapping is the identity in scrolled flow", () => {
+  const frame = { left: 0, width: 440 };
+  for (const x of [0, 70, 220, 380, 439]) {
+    assert.equal(frameClientXToHost(x, frame, 440), x);
+  }
+});
+
+test("an unmeasured frame leaves the coordinate alone", () => {
+  assert.equal(frameClientXToHost(120, { left: 0, width: 0 }, 800), 120);
+  assert.equal(frameClientXToHost(120, { left: 0, width: 400 }, 0), 120);
+  assert.equal(frameClientXToHost(120, { left: 0, width: 400 }, Number.NaN), 120);
 });

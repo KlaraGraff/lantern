@@ -26,7 +26,7 @@ import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
 import { clickCountGraceMs } from "./click-grace";
 import { createLongPressTracker, LONG_PRESS } from "../../utils/long-press";
 import { createSwipeTracker } from "./swipe-page-turn";
-import { classifyReaderTap, type TapZone } from "./tap-zones";
+import { classifyReaderTapInBox, frameClientXToHost, type TapZone } from "./tap-zones";
 import { isNarrowNow } from "../../hooks/useIsNarrow";
 
 /**
@@ -44,6 +44,14 @@ interface InteractionView {
   getCFI(index: number, range: Range): string;
   next(): Promise<void>;
   prev(): Promise<void>;
+  /**
+   * The view's box in host-viewport coordinates. `foliate-view` is a host
+   * element, so this is the DOM's own — declared here because the tap zones
+   * and the edge-turn drag measure against the box the reader sees, not the
+   * chapter document (which, paginated, is every page of the section side by
+   * side).
+   */
+  getBoundingClientRect(): { left: number; right: number; width: number };
   renderer?: {
     getContents?(): Array<{ doc?: Document }>;
   };
@@ -667,10 +675,12 @@ export function useReaderInteractions({
       // conversion) and a scanned PDF have no word to look up, yet the tap
       // zones are their only way to summon the chrome at all on a phone.
       //
-      // The width is the chapter document's own: these listeners live inside
-      // foliate's iframe and `clientX` is already in its coordinate system, so
-      // there is no host offset to add (the edge-turn handler below reads the
-      // same number for the same reason).
+      // `clientX` is in the iframe's coordinate system, and in paginated flow
+      // that iframe is the whole chapter laid out side by side — not the page
+      // on screen. Map the tap back to host coordinates through the frame's
+      // own box (its rect already carries the page scroll) and cut the thirds
+      // from the view element, the box the reader actually sees — the same box
+      // the zone guide draws its columns over.
       if (isNarrowNow()) {
         if (chromeOpenRef.current) {
           // With the chrome up, every tap means "put it away", and it goes away
@@ -680,7 +690,14 @@ export function useReaderInteractions({
           onTapZone("menu");
           return;
         }
-        const zone = classifyReaderTap(event.clientX, doc.documentElement.clientWidth, oneHandModeRef.current);
+        const frameRect = doc.defaultView?.frameElement?.getBoundingClientRect();
+        const zone = frameRect
+          ? classifyReaderTapInBox(
+            frameClientXToHost(event.clientX, frameRect, doc.documentElement.clientWidth),
+            view.getBoundingClientRect(),
+            oneHandModeRef.current,
+          )
+          : "menu";
         // The same timer slot the word lookup used, on purpose: the `dblclick`
         // handler's first line already cancels it unconditionally, so a
         // double-click to look a word up cancels the page turn it was on its
@@ -878,10 +895,17 @@ export function useReaderInteractions({
       const selection = doc.defaultView?.getSelection();
       if (!selection || selection.isCollapsed) return;
 
-      const width = doc.documentElement.clientWidth;
-      const direction = event.clientX >= width - EDGE_TURN_MARGIN_PX
+      // Same mapping as the tap zones above: in paginated flow the chapter
+      // document's edge is pages away from the finger, so the edges that turn
+      // the page are the visible box's.
+      const frameRect = doc.defaultView?.frameElement?.getBoundingClientRect();
+      if (!frameRect) return;
+      const box = view.getBoundingClientRect();
+      if (!(box.width > 0)) return;
+      const hostX = frameClientXToHost(event.clientX, frameRect, doc.documentElement.clientWidth);
+      const direction = hostX >= box.right - EDGE_TURN_MARGIN_PX
         ? "next"
-        : event.clientX <= EDGE_TURN_MARGIN_PX
+        : hostX <= box.left + EDGE_TURN_MARGIN_PX
           ? "previous"
           : null;
       if (!direction) return;
