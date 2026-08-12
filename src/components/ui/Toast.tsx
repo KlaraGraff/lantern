@@ -25,10 +25,14 @@ const SURFACE =
 
 export default function Toast({ children, icon, className = "", variant = "row" }: ToastProps) {
   return (
+    // 20px below whatever the device keeps for itself up there. On a phone
+    // that is the notch or the Dynamic Island, which sits in front of the page
+    // and would otherwise swallow the top half of the toast; in a window with
+    // no inset the term is zero and this is plain `top-5`.
     <div
       role="status"
       aria-live="polite"
-      className={`fixed top-5 left-1/2 z-[60] -translate-x-1/2 ${className}`}
+      className={`fixed top-[calc(var(--spacing-safe-top)+1.25rem)] left-1/2 z-[60] -translate-x-1/2 ${className}`}
     >
       {variant === "panel" ? (
         <div className={`overflow-hidden ${SURFACE}`}>{children}</div>

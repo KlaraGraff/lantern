@@ -727,7 +727,7 @@ export default function Home() {
       )}
 
       {importError && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[60] max-w-[600px] bg-white dark:bg-bg-surface border border-border rounded-[14px] shadow-popover flex items-start gap-3 pl-4 pr-3 py-3">
+        <div className="fixed top-[calc(var(--spacing-safe-top)+1.25rem)] left-1/2 -translate-x-1/2 z-[60] max-w-[600px] bg-white dark:bg-bg-surface border border-border rounded-[14px] shadow-popover flex items-start gap-3 pl-4 pr-3 py-3">
           <AlertCircle size={16} className="shrink-0 mt-0.5 text-red-500" />
           <div className="flex-1 min-w-0">
             <p className="text-[13px] font-medium text-text-primary tracking-[-0.08px]">
