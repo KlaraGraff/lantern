@@ -1473,7 +1473,6 @@ function TextBookReader({
             visibleLookupOccurrenceMarks,
           );
           const attributes = {
-            key: block.source_start,
             "data-text-source-start": block.source_start,
             "data-text-source-end": block.source_end,
           };
@@ -1485,11 +1484,11 @@ function TextBookReader({
               ? { breakBefore: "column", pageBreakBefore: "always" } as React.CSSProperties
               : undefined;
             return block.depth === 0 ? (
-              <h2 {...attributes} style={headingStyle} className={`mb-8 mt-14 text-[1.35em] font-semibold leading-snug ${className}`}>
+              <h2 key={block.source_start} {...attributes} style={headingStyle} className={`mb-8 mt-14 text-[1.35em] font-semibold leading-snug ${className}`}>
                 {content}
               </h2>
             ) : (
-              <h3 {...attributes} style={headingStyle} className={`mb-6 mt-10 text-[1.15em] font-semibold leading-snug ${className}`}>
+              <h3 key={block.source_start} {...attributes} style={headingStyle} className={`mb-6 mt-10 text-[1.15em] font-semibold leading-snug ${className}`}>
                 {content}
               </h3>
             );
@@ -1506,7 +1505,7 @@ function TextBookReader({
             lineHeight: resolveLineSpacing(settings.lineSpacing, isCjkParagraph),
           };
           return (
-            <p {...attributes} style={paragraphStyle} className={`mb-5 whitespace-pre-wrap ${className}`}>
+            <p key={block.source_start} {...attributes} style={paragraphStyle} className={`mb-5 whitespace-pre-wrap ${className}`}>
               {content}
             </p>
           );
