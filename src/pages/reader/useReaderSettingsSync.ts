@@ -203,32 +203,53 @@ export function resolveReaderSettings(
   // global `settings` table for everything else. The per-book localStorage blob is
   // retired — it could not distinguish "not overridden" from "overridden to the
   // global value", and its full-snapshot writes froze every key it carried.
+  //
+  // The bottom of each fallback chain depends on the key's class:
+  //
+  // - Per-book-overridable keys resolve per-book → global → *canonical default*,
+  //   never `previous`. Their rows get deleted at runtime — 「恢复全局」 drops the
+  //   book row, promotion's undo tombstones the global row — and with `previous`
+  //   as the floor the just-deleted value survived in memory: delete the Georgia
+  //   override with no global `font_family` row underneath and the reader kept
+  //   rendering Georgia until a restart. Panel edits keep `bookOverridesRef` in
+  //   sync synchronously, so for these keys the in-memory state is never
+  //   legitimately ahead of the two sources and `previous` has nothing to offer
+  //   but that leak. (Marker visibility hit the same bug first, between books;
+  //   this is the same fix applied to the whole class.)
+  //
+  // - Global-only keys keep `previous` as their floor. The reader panel writes
+  //   them into state immediately while the global row lands via a debounced
+  //   save, so for ~400ms the state is legitimately ahead of `globalSettings`
+  //   and a default floor would visibly revert the edit mid-flight. Nothing
+  //   ever deletes their global rows mid-session, so the floor cannot pin a
+  //   deleted value the way it did for the overridable keys.
+  const defaults = createDefaultReaderSettings();
   const requestedFont = (perBookSettings[perBookSettingKeys.font] as ReaderSettingsState["font"])
     || (globalSettings.font_family as ReaderSettingsState["font"])
-    || previous.font;
+    || defaults.font;
   return {
     ...previous,
     theme: (perBookSettings[perBookSettingKeys.theme] as ReaderSettingsState["theme"])
       || (globalSettings.reader_theme as ReaderSettingsState["theme"])
-      || previous.theme,
+      || defaults.theme,
     // Global-only: the reader panel edits it straight into the global setting.
     customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme),
     pageColumns: pageColumnsSetting(
       perBookSettings[perBookSettingKeys.pageColumns],
-      pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
+      pageColumnsSetting(globalSettings.page_columns, defaults.pageColumns),
     ),
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
     // 全局专属，理由见 `readerPreferenceSettingKeys` 里这个键的注释。
     cjkFont: globalSettings.cjk_font_family || previous.cjkFont,
     fontSize: numberSetting(perBookSettings[perBookSettingKeys.fontSize])
-      ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : previous.fontSize),
+      ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : defaults.fontSize),
     // Global-only: the reader panel has no per-book control for it.
     narrowFontShrink: booleanSetting(globalSettings.narrow_font_shrink, previous.narrowFontShrink),
     // Reading mode is book-shaped; animation and the following controls remain
     // global behavior that must not vary between books.
     readingMode: readingModeSetting(
       perBookSettings[perBookSettingKeys.readingMode],
-      readingModeSetting(globalSettings.reading_mode, previous.readingMode),
+      readingModeSetting(globalSettings.reading_mode, defaults.readingMode),
     ),
     pageTurnAnimation: pageTurnAnimationSetting(globalSettings.page_turn_animation, previous.pageTurnAnimation),
     showChapterProgress: booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
@@ -249,34 +270,32 @@ export function resolveReaderSettings(
     // 判成不可解析然后落回上一层，等于自动态永远存不住。
     lineSpacing: perBookSettings[perBookSettingKeys.lineSpacing] !== undefined
       ? parseLineSpacing(perBookSettings[perBookSettingKeys.lineSpacing])
-      : (globalSettings.line_spacing ? parseLineSpacing(globalSettings.line_spacing) : previous.lineSpacing),
+      : (globalSettings.line_spacing ? parseLineSpacing(globalSettings.line_spacing) : defaults.lineSpacing),
     wordSpacing: numberSetting(perBookSettings[perBookSettingKeys.wordSpacing])
-      ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : previous.wordSpacing),
+      ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : defaults.wordSpacing),
     textJustification: booleanSetting(
       perBookSettings[perBookSettingKeys.textJustification],
-      booleanSetting(globalSettings.text_justification, previous.textJustification),
+      booleanSetting(globalSettings.text_justification, defaults.textJustification),
     ),
     paragraphSpacing: paragraphSpacingSetting(
       perBookSettings[perBookSettingKeys.paragraphSpacing],
-      paragraphSpacingSetting(globalSettings.paragraph_spacing, previous.paragraphSpacing),
+      paragraphSpacingSetting(globalSettings.paragraph_spacing, defaults.paragraphSpacing),
     ),
     firstLineIndent: booleanSetting(
       perBookSettings[perBookSettingKeys.firstLineIndent],
-      booleanSetting(globalSettings.first_line_indent, previous.firstLineIndent),
+      booleanSetting(globalSettings.first_line_indent, defaults.firstLineIndent),
     ),
     margins: marginSetting(
       perBookSettings[perBookSettingKeys.margins],
-      marginSetting(globalSettings.margins, previous.margins),
+      marginSetting(globalSettings.margins, defaults.margins),
     ),
     charSpacing: numberSetting(perBookSettings[perBookSettingKeys.charSpacing])
-      ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : previous.charSpacing),
-    // Marker visibility resolves per-book → global → default, like everything
-    // else. The global row is allowed to be absent — that is the state every
-    // existing install upgrades into, and it must land on exactly the same
-    // values the hardcoded defaults gave before the global layer existed.
-    // `previous` is deliberately not in the chain: these used to leak between
-    // books through it, and the canonical default is what a book with no row of
-    // its own is entitled to.
+      ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : defaults.charSpacing),
+    // Marker visibility resolves per-book → global → default, like every other
+    // overridable key now. The global row is allowed to be absent — that is the
+    // state every existing install upgrades into, and it must land on exactly
+    // the same values the hardcoded defaults gave before the global layer
+    // existed, hence the pinned constant instead of `defaults`.
     showLookupMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLookupMarkers],
       booleanSetting(globalSettings.show_lookup_markers, DEFAULT_MARKER_VISIBILITY.showLookupMarkers),

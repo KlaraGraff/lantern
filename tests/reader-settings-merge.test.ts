@@ -7,7 +7,10 @@ import {
   getReaderFontOptions,
   setCustomReaderFonts,
 } from "../src/components/reader-settings.ts";
-import { resolveReaderSettings } from "../src/pages/reader/useReaderSettingsSync.ts";
+import {
+  createDefaultReaderSettings,
+  resolveReaderSettings,
+} from "../src/pages/reader/useReaderSettingsSync.ts";
 
 const previous: ReaderSettingsState = {
   theme: "paper",
@@ -134,8 +137,13 @@ test("the theme override does not drag the other typography keys with it", () =>
   assert.equal(merged.fontSize, 18);
 });
 
-test("with neither a per-book row nor a global value the theme stays put", () => {
-  assert.equal(merge().theme, previous.theme);
+test("with neither a per-book row nor a global value the theme is the shipped default", () => {
+  // Not `previous.theme`: the previous state is exactly where a just-deleted
+  // override would still be living, so it must not be the floor.
+  assert.equal(
+    resolveReaderSettings({ ...previous, theme: "dark" }, {}, {}).theme,
+    createDefaultReaderSettings().theme,
+  );
 });
 
 test("a book with no rows at all follows every global typography setting", () => {
@@ -276,8 +284,35 @@ test("marker settings without rows return to canonical defaults instead of leaki
   assert.equal(merged.showLearningMarkers, true);
 });
 
+// What the in-memory state holds right after an override carrying this value
+// was deleted. Every entry differs from the shipped default on purpose, so the
+// leak assertions below cannot pass by coincidence.
+const leakedStateValues: Record<keyof typeof perBookRows, unknown> = {
+  theme: "dark",
+  font: "georgia",
+  font_size: 40,
+  line_spacing: 2.4,
+  word_spacing: 9,
+  char_spacing: 7,
+  text_justification: false,
+  paragraph_spacing: "comfortable",
+  first_line_indent: true,
+  reading_mode: "paginated",
+  page_columns: 1,
+  margins: 24,
+  show_lookup_markers: false,
+  show_new_vocab_markers: false,
+  show_learning_markers: false,
+};
+
+const shippedDefaults = createDefaultReaderSettings();
+
 // The per-book guarantee, one key at a time: book A's row must not reach book B,
-// and book B having no row must leave the previous value standing.
+// and with no row at either layer the key resolves to the shipped default — not
+// to whatever the in-memory state was carrying when the sources were re-read.
+// 「恢复全局」 deletes the override row and re-resolves with the current state as
+// `previous`; a `previous` floor kept the just-deleted value alive until the
+// next restart (the iOS 2.15.5 「follow global」 repro).
 for (const [key, expected] of Object.entries(perBookExpectations)) {
   const rowKey = key as keyof typeof perBookRows;
   const field = perBookStateFields[rowKey];
@@ -289,11 +324,31 @@ for (const [key, expected] of Object.entries(perBookExpectations)) {
     assert.notEqual(bookB[field], expected);
   });
 
-  test(`${key} without a row leaves the previous value standing`, () => {
-    // No global counterpart either, so the merge has nothing but `previous` left.
-    assert.equal(merge()[field], previous[field]);
+  test(`${key} with no row at either layer resolves to the shipped default, not the leaked state`, () => {
+    assert.notEqual(leakedStateValues[rowKey], shippedDefaults[field]);
+    const polluted = { ...previous, [field]: leakedStateValues[rowKey] } as ReaderSettingsState;
+    assert.equal(resolveReaderSettings(polluted, {}, {})[field], shippedDefaults[field]);
   });
 }
+
+test("deleting the font override with no global row underneath returns to the shipped default", () => {
+  // The end-to-end repro, at this function's level: factory-default globals
+  // (no `font_family` row), a Georgia override picked in the reader panel, then
+  // 「follow global」 deleting the row. The resolve that follows runs with the
+  // Georgia-carrying state as `previous` and must come back to the default
+  // face, immediately — not after a restart.
+  const afterRestore = resolveReaderSettings({ ...previous, font: "georgia" }, {}, {});
+  assert.equal(afterRestore.font, "literata");
+});
+
+test("deleting the font override with a global row underneath lands on the global font", () => {
+  const afterRestore = resolveReaderSettings(
+    { ...previous, font: "georgia" },
+    { font_family: "times" },
+    {},
+  );
+  assert.equal(afterRestore.font, "times");
+});
 
 test("customTheme is global-first, so it needs no per-book override", () => {
   const merged = merge(
