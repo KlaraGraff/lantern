@@ -1,4 +1,5 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Database, Loader2, Save, X } from "lucide-react";
@@ -288,17 +289,34 @@ export default function IndexManagerModal({
 
   const showAdvanced = state != null && state !== "none" && state !== "unsupported" && !running;
 
-  return (
+  return createPortal(
+    /* Through the body, not through whatever opened it. This dialog is called
+       up from four places, two of which live inside the reader's covering
+       panel, and a `position: fixed` element is only viewport-positioned while
+       no ancestor has claimed the containing block — an ancestor that is
+       transformed, filtered, or mid-animation claims it. Anchored to the panel
+       instead of the screen, the dialog's top edge — the row holding the only
+       close button — slides up behind the reader's header, which is exactly
+       what a phone reported: a card with no visible way out. The same trap
+       `SortableList` documents for its drag overlay, and the same escape. */
     <div className="motion-scrim fixed inset-0 z-[70] flex items-center justify-center bg-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" className="motion-dialog flex max-h-[86vh] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-popover">
-        <header className="flex items-center justify-between border-b border-border px-5 py-4">
+      {/* Full-bleed on a phone, a centred card above the breakpoint. A 86vh
+          card on a 375px screen leaves margins too thin to aim at and puts the
+          close button a thumb-width from the notch anyway; taking the whole
+          screen costs nothing there, because there is nothing behind it worth
+          seeing. */}
+      <div role="dialog" aria-modal="true" className="motion-dialog flex h-full w-full flex-col overflow-hidden border-border bg-bg-surface md:h-auto md:max-h-[86vh] md:w-[min(760px,calc(100vw-32px))] md:rounded-lg md:border md:shadow-popover">
+        {/* The inset term is what keeps the close button clear of the notch or
+            the Dynamic Island, which sit in front of the page rather than
+            above it. Zero in a desktop window, where this is plain `py-4`. */}
+        <header className="flex items-center justify-between border-b border-border px-5 pb-4 pt-[calc(var(--spacing-safe-top)+1rem)] md:pt-4">
           <div className="flex min-w-0 items-center gap-2">
             <Database size={17} className="shrink-0 text-accent-text" />
             <h3 className="truncate text-[15px] font-semibold text-text-primary">
               {bookTitle ? t("indexManager.titleWithBook", { title: bookTitle }) : t("indexManager.title")}
             </h3>
           </div>
-          <button type="button" onClick={onClose} aria-label={t("common.close")} className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-bg-input"><X size={15} /></button>
+          <button type="button" onClick={onClose} aria-label={t("common.close")} className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-bg-input touch:size-11"><X size={15} /></button>
         </header>
         <div className="flex-1 overflow-auto px-5 py-4">
           {!details || !state ? <Loader2 size={18} className="animate-spin text-text-muted" /> : (
@@ -427,7 +445,9 @@ export default function IndexManagerModal({
           )}
           {error && <p role="alert" className="mt-3 text-[12px] text-danger-text">{error}</p>}
         </div>
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+        {/* Full-bleed means the footer's buttons end up where the home
+            indicator lives, so the bottom inset joins the padding here too. */}
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 pt-3 pb-[calc(var(--spacing-safe-bottom)+0.75rem)] md:pb-3">
           <span className="text-[11.5px] text-text-muted">
             {outcome === "running" && inLibraryBatch
               ? t("indexManager.stopAffectsLibraryRun")
@@ -459,7 +479,8 @@ export default function IndexManagerModal({
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
