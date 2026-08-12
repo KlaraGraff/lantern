@@ -30,7 +30,13 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
+      # The Rust staticlib is linked via `dependencies: framework: libapp.a`
+      # plus LIBRARY_SEARCH_PATHS below — it must never be a build-phase
+      # member, or xcodegen lists whatever .a files exist at generation time
+      # as bundle Resources and the app ships a copy of its own object code
+      # (a ~1GB debug lib inside the .ipa, until this bit).
       - path: Externals
+        buildPhase: none
       - path: lantern_iOS
       - path: assets
         buildPhase: resources
