@@ -93,8 +93,8 @@ impl WordClass {
 /// only ever holds words the reader actually met in a 90-day window, and
 /// one map lookup per scored row beats one query per scored row.
 pub fn cached_verdicts(conn: &Connection) -> AppResult<HashMap<(String, String), WordClass>> {
-    let mut stmt = conn
-        .prepare("SELECT normalized_word, book_id, verdict FROM level_word_classifications")?;
+    let mut stmt =
+        conn.prepare("SELECT normalized_word, book_id, verdict FROM level_word_classifications")?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -310,7 +310,13 @@ async fn classify_chunk<R: Runtime>(
             "INSERT OR IGNORE INTO level_word_classifications
                 (normalized_word, book_id, verdict, classified_at, batch_id)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![candidate.word, candidate.book_id, class.as_db(), now, batch_id],
+            params![
+                candidate.word,
+                candidate.book_id,
+                class.as_db(),
+                now,
+                batch_id
+            ],
         )?;
         stored += changed;
     }
@@ -375,8 +381,14 @@ mod tests {
     #[test]
     fn the_prompt_carries_only_words_and_book_names() {
         let rows = vec![
-            (candidate("harpoon"), "Moby-Dick — Herman Melville".to_string()),
-            (candidate("melancholy"), "Moby-Dick — Herman Melville".to_string()),
+            (
+                candidate("harpoon"),
+                "Moby-Dick — Herman Melville".to_string(),
+            ),
+            (
+                candidate("melancholy"),
+                "Moby-Dick — Herman Melville".to_string(),
+            ),
         ];
         let messages = classification_prompt(&rows);
         assert_eq!(messages.len(), 2);
@@ -455,9 +467,7 @@ mod tests {
     #[tokio::test]
     async fn a_pass_stores_verdicts_and_bills_the_job_id() {
         let (_dir, db) = setup();
-        let body = sse_answer(
-            r#"[{"index":0,"class":"topical"},{"index":1,"class":"general"}]"#,
-        );
+        let body = sse_answer(r#"[{"index":0,"class":"topical"},{"index":1,"class":"general"}]"#);
         let base_url = fake_sse_server(vec![body]).await;
         let secrets = crate::secrets::Secrets::init_in_memory().unwrap();
         wire_fake_provider(&db, &secrets, base_url);
@@ -473,7 +483,10 @@ mod tests {
         .unwrap();
         assert_eq!(stored, 2);
         assert_eq!(stored_verdict(&db, "harpoon").as_deref(), Some("topical"));
-        assert_eq!(stored_verdict(&db, "melancholy").as_deref(), Some("general"));
+        assert_eq!(
+            stored_verdict(&db, "melancholy").as_deref(),
+            Some("general")
+        );
 
         let (origin, feature): (String, String) = db
             .reader()
@@ -570,8 +583,8 @@ mod tests {
         }
         let read_only = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY;
         let prod = Connection::open_with_flags(config_dir.join("lantern.db"), read_only).unwrap();
-        let (profile_id, provider, base_url, model): (String, String, Option<String>, String) = prod
-            .query_row(
+        let (profile_id, provider, base_url, model): (String, String, Option<String>, String) =
+            prod.query_row(
                 "SELECT id, provider, base_url, model FROM ai_profiles WHERE enabled = 1 LIMIT 1",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),

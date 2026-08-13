@@ -269,7 +269,10 @@ fn retire(key: &str, slot: &Arc<Slot>) {
         .unwrap_or_else(|poison| poison.into_inner());
     // Only if it is still *this* slot: a caller that arrived after an earlier
     // retire may already have installed a newer one for the same key.
-    if map.get(key).is_some_and(|current| Arc::ptr_eq(current, slot)) {
+    if map
+        .get(key)
+        .is_some_and(|current| Arc::ptr_eq(current, slot))
+    {
         map.remove(key);
     }
 }

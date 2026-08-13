@@ -408,8 +408,9 @@ pub(crate) fn query_all_explanations(
         }
     }
     let base_where = format!(" WHERE {}", conditions.join(" AND "));
-    let total_sql =
-        format!("SELECT COUNT(*) FROM explanations e LEFT JOIN books b ON e.book_id = b.id{base_where}");
+    let total_sql = format!(
+        "SELECT COUNT(*) FROM explanations e LEFT JOIN books b ON e.book_id = b.id{base_where}"
+    );
     let total_refs: Vec<&dyn rusqlite::types::ToSql> =
         values.iter().map(|value| value.as_ref()).collect();
     let total: usize = conn.query_row(&total_sql, total_refs.as_slice(), |row| row.get(0))?;
@@ -445,8 +446,7 @@ pub(crate) fn query_all_explanations(
 
     if let Some((timestamp, id)) = cursor.as_deref().and_then(|value| value.split_once(':')) {
         if let Ok(timestamp) = timestamp.parse::<i64>() {
-            conditions
-                .push("(e.updated_at < ? OR (e.updated_at = ? AND e.id > ?))".to_string());
+            conditions.push("(e.updated_at < ? OR (e.updated_at = ? AND e.id > ?))".to_string());
             values.push(Box::new(timestamp));
             values.push(Box::new(timestamp));
             values.push(Box::new(id.to_string()));
@@ -579,8 +579,7 @@ mod tests {
         assert_eq!(normalize_passage("   \n\t\u{00A0}  "), "");
 
         let db = setup();
-        let result =
-            get_cached_explanation_inner("book", None, "   \n\t  ", &db).unwrap();
+        let result = get_cached_explanation_inner("book", None, "   \n\t  ", &db).unwrap();
         assert!(result.is_none());
 
         let count: i64 = db
@@ -598,9 +597,12 @@ mod tests {
     fn same_key_write_twice_overwrites_in_place() {
         let db = setup();
         let variant = "adaptive_bilingual|B1";
-        let first =
-            save_explanation_inner(input("A passage.", "first take", Some("cfi1")), variant, &db)
-                .unwrap();
+        let first = save_explanation_inner(
+            input("A passage.", "first take", Some("cfi1")),
+            variant,
+            &db,
+        )
+        .unwrap();
         let second = save_explanation_inner(
             input("A passage.", "second take", Some("cfi1")),
             variant,
@@ -625,9 +627,12 @@ mod tests {
     fn rewriting_a_saved_row_keeps_it_saved() {
         let db = setup();
         let variant = "adaptive_bilingual|B1";
-        let row =
-            save_explanation_inner(input("A passage.", "first take", Some("cfi1")), variant, &db)
-                .unwrap();
+        let row = save_explanation_inner(
+            input("A passage.", "first take", Some("cfi1")),
+            variant,
+            &db,
+        )
+        .unwrap();
         set_explanation_saved_conn(&db, &row.id, true);
 
         let updated = save_explanation_inner(
@@ -658,14 +663,10 @@ mod tests {
         let db = setup();
         let variant = "adaptive_bilingual|B1";
         let first =
-            save_explanation_inner(input("A passage.", "first take", None), variant, &db)
+            save_explanation_inner(input("A passage.", "first take", None), variant, &db).unwrap();
+        let second =
+            save_explanation_inner(input("A passage.", "second take", Some("")), variant, &db)
                 .unwrap();
-        let second = save_explanation_inner(
-            input("A passage.", "second take", Some("")),
-            variant,
-            &db,
-        )
-        .unwrap();
         assert_eq!(first.id, second.id);
 
         let count: i64 = db
@@ -710,14 +711,9 @@ mod tests {
             find_cached_explanation(&conn, "book", "cfi1", &normalized, "adaptive_bilingual|B1")
                 .unwrap();
         assert_eq!(hit_b1.unwrap().id, b1.id);
-        let miss = find_cached_explanation(
-            &conn,
-            "book",
-            "cfi1",
-            &normalized,
-            "adaptive_bilingual|C2",
-        )
-        .unwrap();
+        let miss =
+            find_cached_explanation(&conn, "book", "cfi1", &normalized, "adaptive_bilingual|C2")
+                .unwrap();
         assert!(miss.is_none());
     }
 
@@ -749,7 +745,11 @@ mod tests {
     fn list_explanations_search_matches_explanation_body() {
         let db = setup();
         let row = save_explanation_inner(
-            input("A tricky passage.", "unusual metaphor about lighthouses", Some("cfi1")),
+            input(
+                "A tricky passage.",
+                "unusual metaphor about lighthouses",
+                Some("cfi1"),
+            ),
             "adaptive_bilingual|B1",
             &db,
         )
@@ -757,8 +757,7 @@ mod tests {
         set_explanation_saved_conn(&db, &row.id, true);
 
         let hit =
-            query_all_explanations(Some("lighthouses".to_string()), None, None, None, &db)
-                .unwrap();
+            query_all_explanations(Some("lighthouses".to_string()), None, None, None, &db).unwrap();
         assert_eq!(hit.items.len(), 1);
         assert_eq!(hit.items[0].id, row.id);
 

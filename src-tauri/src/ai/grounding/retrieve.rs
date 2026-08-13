@@ -21,7 +21,10 @@ pub enum SpoilerCutoff {
     /// unread tail of the current chapter. The two differ only in where they
     /// land when the viewport text can't be located: xray tightens, chat keeps
     /// the wider `Section`.
-    SectionPrefix { section: i64, chunk_index: i64 },
+    SectionPrefix {
+        section: i64,
+        chunk_index: i64,
+    },
 }
 
 impl SpoilerCutoff {
@@ -66,7 +69,10 @@ impl SpoilerCutoff {
         match self {
             Self::Character(offset) => (1, offset, 0),
             Self::Section(section) => (2, section, 0),
-            Self::SectionPrefix { section, chunk_index } => (3, section, chunk_index),
+            Self::SectionPrefix {
+                section,
+                chunk_index,
+            } => (3, section, chunk_index),
         }
     }
 }
@@ -243,7 +249,11 @@ pub(crate) fn retrieve_ranked(
                 continue;
             };
             if cutoff.is_some_and(|value| {
-                !value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
+                !value.allows_complete_chunk_at(
+                    chunk.section_index,
+                    chunk.chunk_index,
+                    chunk.char_end,
+                )
             }) {
                 continue;
             }
@@ -385,8 +395,13 @@ pub fn retrieve(
     budget_tokens: usize,
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<RetrievedChunk>> {
-    let hits =
-        lexical_ranks_with_limit(conn, book_id, query_text, top_k_for_budget(budget_tokens), cutoff)?;
+    let hits = lexical_ranks_with_limit(
+        conn,
+        book_id,
+        query_text,
+        top_k_for_budget(budget_tokens),
+        cutoff,
+    )?;
     retrieve_ranked(conn, book_id, &hits, budget_tokens, cutoff)
 }
 
@@ -433,7 +448,11 @@ pub fn retrieve_all(
         // boundary section rather than dropping it wholesale.
         .filter(|chunk| {
             cutoff.is_none_or(|value| {
-                value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
+                value.allows_complete_chunk_at(
+                    chunk.section_index,
+                    chunk.chunk_index,
+                    chunk.char_end,
+                )
             })
         })
         .collect())
@@ -522,7 +541,11 @@ pub fn retrieve_section_range_with_budget(
         // the boundary section instead of excluding it wholesale.
         .filter(|chunk| {
             cutoff.is_none_or(|value| {
-                value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
+                value.allows_complete_chunk_at(
+                    chunk.section_index,
+                    chunk.chunk_index,
+                    chunk.char_end,
+                )
             })
         })
         .collect::<Vec<_>>();

@@ -539,7 +539,16 @@ mod tests {
     #[test]
     fn a_kept_place_is_an_item_even_with_nothing_written_on_it() {
         let f = fixture();
-        note(&f.db, "n1", Some("b1"), "position", None, Some("cfi-9"), "", 1000);
+        note(
+            &f.db,
+            "n1",
+            Some("b1"),
+            "position",
+            None,
+            Some("cfi-9"),
+            "",
+            1000,
+        );
 
         let page = list(&f.db, None);
         assert_eq!(ids(&page), vec!["n:n1"]);
@@ -556,10 +565,46 @@ mod tests {
     fn kept_places_answer_to_position_and_mark_but_never_to_word() {
         let f = fixture();
         highlight(&f.db, "h1", "b1", "cfi-1", "quoted", 1000);
-        note(&f.db, "n1", Some("b1"), "position", None, Some("cfi-2"), "why I stopped here", 1100);
-        note(&f.db, "n2", Some("b1"), "position", None, Some("cfi-3"), "", 1200);
-        note(&f.db, "n3", Some("b1"), "word", Some("courage"), None, "gloss", 1300);
-        note(&f.db, "n4", Some("b1"), "selection", None, Some("cfi-4"), "on a passage", 1400);
+        note(
+            &f.db,
+            "n1",
+            Some("b1"),
+            "position",
+            None,
+            Some("cfi-2"),
+            "why I stopped here",
+            1100,
+        );
+        note(
+            &f.db,
+            "n2",
+            Some("b1"),
+            "position",
+            None,
+            Some("cfi-3"),
+            "",
+            1200,
+        );
+        note(
+            &f.db,
+            "n3",
+            Some("b1"),
+            "word",
+            Some("courage"),
+            None,
+            "gloss",
+            1300,
+        );
+        note(
+            &f.db,
+            "n4",
+            Some("b1"),
+            "selection",
+            None,
+            Some("cfi-4"),
+            "on a passage",
+            1400,
+        );
 
         let positions = list(&f.db, Some("position"));
         assert_eq!(ids(&positions), vec!["n:n2", "n:n1"]);
@@ -577,7 +622,13 @@ mod tests {
 
         let counts = list(&f.db, None).counts;
         assert_eq!(
-            (counts.all, counts.words, counts.selections, counts.positions, counts.marks),
+            (
+                counts.all,
+                counts.words,
+                counts.selections,
+                counts.positions,
+                counts.marks
+            ),
             (5, 1, 2, 2, 4),
             "every item is a word, a selection or a position, and marks is all but the words"
         );

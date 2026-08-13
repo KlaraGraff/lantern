@@ -982,7 +982,8 @@ pub async fn run_book_finished_analysis(
 /// The `ai_reading_reviews` columns `row_to_cached_review` reads, named in
 /// exactly one place so the two feeding SELECTs in `cached_review` can't
 /// drift out of order.
-const CACHED_REVIEW_COLUMNS: &str = "id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at";
+const CACHED_REVIEW_COLUMNS: &str =
+    "id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at";
 
 fn row_to_cached_review(row: &rusqlite::Row) -> rusqlite::Result<CachedReadingReview> {
     Ok(CachedReadingReview {
@@ -1266,9 +1267,7 @@ mod tests {
             data_dir: Arc::new(Mutex::new(dir.path().to_path_buf())),
             local_dir: Arc::new(Mutex::new(dir.path().to_path_buf())),
         };
-        let review = cached_review(&db, 0, 0, Some("book-1"))
-            .unwrap()
-            .unwrap();
+        let review = cached_review(&db, 0, 0, Some("book-1")).unwrap().unwrap();
         assert_eq!(review.narrative, "latest summary");
     }
 
@@ -1432,7 +1431,13 @@ mod tests {
             ..Default::default()
         };
         save_cached_review_inner(
-            &db, &first_facts, Some("book-1"), "First read.", "profile", "anthropic", "model",
+            &db,
+            &first_facts,
+            Some("book-1"),
+            "First read.",
+            "profile",
+            "anthropic",
+            "model",
         )
         .unwrap();
         // A reader who rereads the book generates again much later — the
@@ -1444,7 +1449,13 @@ mod tests {
             ..Default::default()
         };
         save_cached_review_inner(
-            &db, &second_facts, Some("book-1"), "Second read.", "profile", "anthropic", "model",
+            &db,
+            &second_facts,
+            Some("book-1"),
+            "Second read.",
+            "profile",
+            "anthropic",
+            "model",
         )
         .unwrap();
         let count: i64 = db
@@ -1475,7 +1486,13 @@ mod tests {
             ..Default::default()
         };
         save_cached_review_inner(
-            &db, &facts, Some("book-1"), "A summary.", "profile", "anthropic", "model",
+            &db,
+            &facts,
+            Some("book-1"),
+            "A summary.",
+            "profile",
+            "anthropic",
+            "model",
         )
         .unwrap();
         let found = cached_review(&db, 0, 9_999_999_999_999, Some("book-1")).unwrap();
@@ -1502,10 +1519,14 @@ mod tests {
             "model",
         )
         .unwrap();
-        assert!(cached_review(&db, 1_700_000_000_000, 1_700_000_100_000, None)
+        assert!(
+            cached_review(&db, 1_700_000_000_000, 1_700_000_100_000, None)
+                .unwrap()
+                .is_some()
+        );
+        assert!(cached_review(&db, 0, 9_999_999_999_999, None)
             .unwrap()
-            .is_some());
-        assert!(cached_review(&db, 0, 9_999_999_999_999, None).unwrap().is_none());
+            .is_none());
     }
 
     #[test]

@@ -696,7 +696,10 @@ fn build_reply_pacing_block(
     if (rows.len() as i64) < MIN_RECORDS {
         return Ok(None);
     }
-    let total_chars: usize = rows.iter().map(|(_, question, _)| question.chars().count()).sum();
+    let total_chars: usize = rows
+        .iter()
+        .map(|(_, question, _)| question.chars().count())
+        .sum();
     let average_question_length = total_chars as f64 / rows.len() as f64;
 
     let mut per_chat: HashMap<&str, i64> = HashMap::new();
@@ -753,7 +756,12 @@ struct SlotContext {
 #[derive(Default)]
 struct RawSlotContexts {
     ready: Vec<SlotContext>,
-    lookup_pattern: Option<(&'static str, &'static str, Option<&'static str>, LookupPatternRaw)>,
+    lookup_pattern: Option<(
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+        LookupPatternRaw,
+    )>,
 }
 
 /// Walks every dimension, in registry order, and decides what the
@@ -950,7 +958,10 @@ fn parse_summary(text: &str, known_slots: &[&str]) -> Option<Vec<RawCard>> {
 }
 
 fn cards_pass_limits(cards: &[RawCard]) -> bool {
-    let total: usize = cards.iter().map(|card| card.conclusion.chars().count()).sum();
+    let total: usize = cards
+        .iter()
+        .map(|card| card.conclusion.chars().count())
+        .sum();
     total <= MAX_TOTAL_CHARS
         && cards
             .iter()
@@ -1073,7 +1084,10 @@ async fn call_utility<R: Runtime>(
 /// subsequent chat message until the reader happens to send a batch the
 /// model parses cleanly.
 fn record_empty_attempt(db: &Db, reason: &str, now: i64) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let cards = active_cards_json(&conn)?;
     conn.execute(
         "INSERT INTO profile_revisions (cards_before, cards_after, reason, created_at) VALUES (?1, ?2, ?3, ?4)",
@@ -1083,8 +1097,9 @@ fn record_empty_attempt(db: &Db, reason: &str, now: i64) -> AppResult<()> {
 }
 
 fn active_cards_json(conn: &Connection) -> AppResult<String> {
-    let mut stmt =
-        conn.prepare("SELECT slot, conclusion FROM profile_cards WHERE status = 'active' ORDER BY slot")?;
+    let mut stmt = conn.prepare(
+        "SELECT slot, conclusion FROM profile_cards WHERE status = 'active' ORDER BY slot",
+    )?;
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;
@@ -1204,7 +1219,9 @@ pub async fn run_summarize<R: Runtime>(
         return Ok(0);
     }
 
-    let reviews = match call_utility(app, db, secrets, &review_messages(&cards), 1_000, origin).await {
+    let reviews = match call_utility(app, db, secrets, &review_messages(&cards), 1_000, origin)
+        .await
+    {
         Ok(completion) => parse_review(&completion.text).unwrap_or_default(),
         Err(error) => {
             log::debug!("user_profile: review call failed, defaulting every card to keep: {error}");
@@ -1225,7 +1242,10 @@ pub async fn run_summarize<R: Runtime>(
         .map(|ctx| (ctx.slot, ctx.payload.to_string()))
         .collect();
 
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let cards_before = active_cards_json(&conn)?;
     for card in &cards {
         upsert_card(
@@ -1364,11 +1384,10 @@ pub fn profile_get_inner(db: &Db) -> AppResult<ProfileView> {
             .unwrap_or(usize::MAX)
     });
 
-    let last_summarized_at: Option<i64> = conn.query_row(
-        "SELECT MAX(created_at) FROM profile_revisions",
-        [],
-        |row| row.get(0),
-    )?;
+    let last_summarized_at: Option<i64> =
+        conn.query_row("SELECT MAX(created_at) FROM profile_revisions", [], |row| {
+            row.get(0)
+        })?;
     let since = last_summarized_at.unwrap_or(0);
     let new_followups_since_last_batch: i64 = conn.query_row(
         "SELECT COUNT(*) FROM followup_questions WHERE classified_at IS NOT NULL AND classified_at > ?1",
@@ -1376,7 +1395,9 @@ pub fn profile_get_inner(db: &Db) -> AppResult<ProfileView> {
         |row| row.get(0),
     )?;
     let revision_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM profile_revisions", [], |row| row.get(0))?;
+        conn.query_row("SELECT COUNT(*) FROM profile_revisions", [], |row| {
+            row.get(0)
+        })?;
 
     Ok(ProfileView {
         user_text,
@@ -1525,8 +1546,8 @@ pub fn injection_block(db: &Db, locale: &str) -> AppResult<Option<String>> {
     let user_text = read_setting(&conn, USER_TEXT_KEY).unwrap_or_default();
     let user_text = user_text.trim();
 
-    let mut stmt = conn
-        .prepare("SELECT slot, conclusion FROM profile_cards WHERE status = 'active'")?;
+    let mut stmt =
+        conn.prepare("SELECT slot, conclusion FROM profile_cards WHERE status = 'active'")?;
     let mut cards: Vec<(usize, String, String)> = stmt
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -1613,7 +1634,10 @@ pub fn profile_injection_preview(db: State<'_, Db>) -> AppResult<InjectionPrevie
 }
 
 pub fn profile_save_text_inner(db: &Db, text: &str) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let limit = hard_limit(&conn);
     if text.chars().count() as i64 > limit {
         return Err(AppError::Other("PROFILE_TEXT_TOO_LONG".to_string()));
@@ -1627,7 +1651,10 @@ pub fn profile_save_text(text: String, db: State<'_, Db>) -> AppResult<()> {
 }
 
 pub fn profile_save_draft_inner(db: &Db, text: &str) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     write_setting(&conn, DRAFT_TEXT_KEY, text)
 }
 
@@ -1664,7 +1691,10 @@ pub fn profile_move_card_inner(
         return Err(AppError::Other("PROFILE_MOVE_TEXT_EMPTY".to_string()));
     }
     let now = now_ms();
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let status: Option<String> = conn
         .query_row(
             "SELECT status FROM profile_cards WHERE slot = ?1",
@@ -1730,7 +1760,10 @@ pub fn profile_undo_move_inner(db: &Db, slot: &str) -> AppResult<()> {
         return Err(AppError::Other("PROFILE_SLOT_UNKNOWN".to_string()));
     }
     let now = now_ms();
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let row: Option<(String, Option<String>)> = conn
         .query_row(
             "SELECT status, inserted_text FROM profile_cards WHERE slot = ?1",
@@ -1773,7 +1806,10 @@ pub fn profile_delete_card_inner(db: &Db, slot: &str) -> AppResult<()> {
         return Err(AppError::Other("PROFILE_SLOT_UNKNOWN".to_string()));
     }
     let now = now_ms();
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let exists: Option<i64> = conn
         .query_row(
             "SELECT 1 FROM profile_cards WHERE slot = ?1",
@@ -1804,7 +1840,10 @@ pub fn profile_delete_card(slot: String, db: State<'_, Db>) -> AppResult<()> {
 /// `profile.enabled` / `.soft_limit` are left untouched — those genuinely
 /// are preferences about the feature, not profile content.
 pub fn profile_delete_all_inner(db: &Db) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     conn.execute("DELETE FROM profile_cards", [])?;
     conn.execute("DELETE FROM profile_events", [])?;
     conn.execute("DELETE FROM profile_revisions", [])?;
@@ -1825,7 +1864,9 @@ pub async fn profile_summarize_now<R: Runtime>(
     secrets: State<'_, Secrets>,
 ) -> AppResult<usize> {
     let Some(guard) = SummarizeGuard::acquire() else {
-        return Err(AppError::Other("PROFILE_SUMMARIZE_ALREADY_RUNNING".to_string()));
+        return Err(AppError::Other(
+            "PROFILE_SUMMARIZE_ALREADY_RUNNING".to_string(),
+        ));
     };
     let result = run_summarize(&app, &db, &secrets, "user", "manual").await;
     drop(guard);
@@ -1932,7 +1973,10 @@ pub async fn profile_compress_text<R: Runtime>(
     if text.trim().is_empty() {
         return Err(AppError::Other("PROFILE_TEXT_EMPTY".to_string()));
     }
-    let direction = direction.as_deref().map(str::trim).filter(|value| !value.is_empty());
+    let direction = direction
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let messages = compress_messages(&text, direction);
     let completion = call_utility(&app, &db, &secrets, &messages, 2_000, "user").await?;
     // The model is asked for bare text, not JSON, but nothing stops it from
@@ -1958,7 +2002,10 @@ pub async fn profile_tidy_text<R: Runtime>(
     if text.trim().is_empty() {
         return Err(AppError::Other("PROFILE_TEXT_EMPTY".to_string()));
     }
-    let direction = direction.as_deref().map(str::trim).filter(|value| !value.is_empty());
+    let direction = direction
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let messages = tidy_messages(&text, direction);
     let completion = call_utility(&app, &db, &secrets, &messages, 2_000, "user").await?;
     Ok(strip_code_fence(&completion.text).to_string())
@@ -2042,7 +2089,12 @@ mod tests {
     fn the_profile_switch_being_off_suppresses_the_block_entirely() {
         let (_dir, db) = setup();
         set_user_text(&db, "I read slowly.");
-        card_with_conclusion(&db, "vocab_explain", "active", "Wants the root, not a synonym.");
+        card_with_conclusion(
+            &db,
+            "vocab_explain",
+            "active",
+            "Wants the root, not a synonym.",
+        );
         {
             let conn = db.conn.lock().unwrap();
             write_setting(&conn, ENABLED_KEY, "false").unwrap();
@@ -2127,9 +2179,18 @@ mod tests {
     #[test]
     fn latest_action_wins_regardless_of_ledger_order() {
         let events = [
-            EventRecord { event_type: ProfileEventType::Move, created_at: 300 },
-            EventRecord { event_type: ProfileEventType::Delete, created_at: 100 },
-            EventRecord { event_type: ProfileEventType::Undo, created_at: 200 },
+            EventRecord {
+                event_type: ProfileEventType::Move,
+                created_at: 300,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Delete,
+                created_at: 100,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Undo,
+                created_at: 200,
+            },
         ];
         let (status, _) = derive_slot_state(&events);
         // Timestamps: delete@100, undo@200, move@300 — move is latest.
@@ -2139,8 +2200,14 @@ mod tests {
     #[test]
     fn an_undo_after_a_move_cancels_it_back_to_active() {
         let events = [
-            EventRecord { event_type: ProfileEventType::Move, created_at: 100 },
-            EventRecord { event_type: ProfileEventType::Undo, created_at: 200 },
+            EventRecord {
+                event_type: ProfileEventType::Move,
+                created_at: 100,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Undo,
+                created_at: 200,
+            },
         ];
         let (status, watermark) = derive_slot_state(&events);
         assert_eq!(status, CardStatus::Active);
@@ -2150,9 +2217,18 @@ mod tests {
     #[test]
     fn a_delete_after_an_undone_move_goes_back_to_deleted() {
         let events = [
-            EventRecord { event_type: ProfileEventType::Move, created_at: 100 },
-            EventRecord { event_type: ProfileEventType::Undo, created_at: 200 },
-            EventRecord { event_type: ProfileEventType::Delete, created_at: 300 },
+            EventRecord {
+                event_type: ProfileEventType::Move,
+                created_at: 100,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Undo,
+                created_at: 200,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Delete,
+                created_at: 300,
+            },
         ];
         let (status, watermark) = derive_slot_state(&events);
         assert_eq!(status, CardStatus::Deleted);
@@ -2162,9 +2238,18 @@ mod tests {
     #[test]
     fn watermark_is_the_max_timestamp_across_every_delete_ever_seen() {
         let events = [
-            EventRecord { event_type: ProfileEventType::Delete, created_at: 100 },
-            EventRecord { event_type: ProfileEventType::Delete, created_at: 500 },
-            EventRecord { event_type: ProfileEventType::Delete, created_at: 300 },
+            EventRecord {
+                event_type: ProfileEventType::Delete,
+                created_at: 100,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Delete,
+                created_at: 500,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Delete,
+                created_at: 300,
+            },
         ];
         let (status, watermark) = derive_slot_state(&events);
         assert_eq!(status, CardStatus::Deleted);
@@ -2174,8 +2259,14 @@ mod tests {
     #[test]
     fn rewrite_events_carry_no_status_weight() {
         let events = [
-            EventRecord { event_type: ProfileEventType::Delete, created_at: 100 },
-            EventRecord { event_type: ProfileEventType::Rewrite, created_at: 200 },
+            EventRecord {
+                event_type: ProfileEventType::Delete,
+                created_at: 100,
+            },
+            EventRecord {
+                event_type: ProfileEventType::Rewrite,
+                created_at: 200,
+            },
         ];
         let (status, watermark) = derive_slot_state(&events);
         // A rewrite after a delete must not flip status back to active —
@@ -2297,7 +2388,10 @@ mod tests {
             insert_followup(&db, &format!("f{i}"), "vocabulary", 10 * DAY_MS, true);
         }
         let contexts = gather_slot_contexts(&db, now).unwrap();
-        let ctx = contexts.iter().find(|c| c.slot == "vocab_explain").expect("should regrow");
+        let ctx = contexts
+            .iter()
+            .find(|c| c.slot == "vocab_explain")
+            .expect("should regrow");
         assert_eq!(ctx.derived_line, Some(DELETION_STATE_LINE));
     }
 
@@ -2335,9 +2429,15 @@ mod tests {
             // Every word here is either a person's name or Chinese — neither
             // appears in the static frequency table, so each one forces the
             // table-miss / `FormIndex` fallback path.
-            for (i, word) in ["Zylathorn", "Brindlewick", "阿尔忒弥斯", "凯瑟琳", "Q'ravik"]
-                .iter()
-                .enumerate()
+            for (i, word) in [
+                "Zylathorn",
+                "Brindlewick",
+                "阿尔忒弥斯",
+                "凯瑟琳",
+                "Q'ravik",
+            ]
+            .iter()
+            .enumerate()
             {
                 conn.execute(
                     "INSERT INTO lookup_records
@@ -2424,7 +2524,9 @@ mod tests {
     #[test]
     fn a_total_over_1000_chars_fails_even_if_every_card_is_individually_fine() {
         // 8 cards at 130 chars each = 1040 > MAX_TOTAL_CHARS, each individually under 140.
-        let cards: Vec<RawCard> = (0..8).map(|i| card(&format!("s{i}"), &"a".repeat(130))).collect();
+        let cards: Vec<RawCard> = (0..8)
+            .map(|i| card(&format!("s{i}"), &"a".repeat(130)))
+            .collect();
         assert!(cards[0].conclusion.chars().count() <= MAX_CARD_CHARS);
         assert!(!cards_pass_limits(&cards));
     }
@@ -2574,17 +2676,26 @@ mod tests {
         let (_dir, db) = setup();
         let now = now_ms();
         insert_card(&db, "vocab_explain", "active", None, now);
-        profile_move_card_inner(&db, "vocab_explain", "词义讲解：更细致", "词义讲解：更细致").unwrap();
+        profile_move_card_inner(&db, "vocab_explain", "词义讲解：更细致", "词义讲解：更细致")
+            .unwrap();
         {
             let view = profile_get_inner(&db).unwrap();
             assert_eq!(view.user_text, "词义讲解：更细致");
-            let card = view.cards.iter().find(|c| c.slot == "vocab_explain").unwrap();
+            let card = view
+                .cards
+                .iter()
+                .find(|c| c.slot == "vocab_explain")
+                .unwrap();
             assert_eq!(card.status, CardStatus::Moved);
         }
         profile_undo_move_inner(&db, "vocab_explain").unwrap();
         let view = profile_get_inner(&db).unwrap();
         assert_eq!(view.user_text, "");
-        let card = view.cards.iter().find(|c| c.slot == "vocab_explain").unwrap();
+        let card = view
+            .cards
+            .iter()
+            .find(|c| c.slot == "vocab_explain")
+            .unwrap();
         assert_eq!(card.status, CardStatus::Active);
     }
 
@@ -2638,7 +2749,11 @@ mod tests {
         assert!(result.is_err());
         let view = profile_get_inner(&db).unwrap();
         assert_eq!(view.user_text, "hello");
-        let card = view.cards.iter().find(|c| c.slot == "vocab_explain").unwrap();
+        let card = view
+            .cards
+            .iter()
+            .find(|c| c.slot == "vocab_explain")
+            .unwrap();
         assert_eq!(card.status, CardStatus::Active);
     }
 
@@ -2801,7 +2916,10 @@ mod tests {
         // (e.g. a tidy-mode bullet list), since an unescaped control
         // character inside a JSON string is invalid and the SSE parser
         // rejects the whole event.
-        let escaped = text.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+        let escaped = text
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
         format!(
             "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{escaped}\"}}}}]}}\n\ndata: {{\"choices\":[],\"usage\":{{\"prompt_tokens\":10,\"completion_tokens\":5}}}}\n\ndata: [DONE]\n\n"
         )
@@ -2869,7 +2987,9 @@ mod tests {
         let app = tauri::test::mock_app();
         // No AI profile configured — if this attempted a call it would fail
         // with NOT_CONFIGURED rather than return Ok(0).
-        let written = run_summarize(app.handle(), &db, &secrets, "user", "manual").await.unwrap();
+        let written = run_summarize(app.handle(), &db, &secrets, "user", "manual")
+            .await
+            .unwrap();
         assert_eq!(written, 0);
     }
 
@@ -2900,7 +3020,9 @@ mod tests {
         // first (summarize) leg completing and, on a review-call failure,
         // confirms the safety net still writes the card (default-keep).
         let app = tauri::test::mock_app();
-        let written = run_summarize(app.handle(), &db, &secrets, "user", "manual").await.unwrap();
+        let written = run_summarize(app.handle(), &db, &secrets, "user", "manual")
+            .await
+            .unwrap();
         assert_eq!(written, 1);
 
         let conn = db.reader();
@@ -2926,9 +3048,11 @@ mod tests {
         assert!(feature_count >= 1);
 
         let revision_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM profile_revisions WHERE reason = 'manual'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM profile_revisions WHERE reason = 'manual'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(revision_count, 1);
     }
@@ -2951,13 +3075,14 @@ mod tests {
         let summarize_body = sse_answer(
             r#"{"cards":[{"slot":"vocab_explain","conclusion":"Prefers contrastive nuance over definitions.","evidence":"6 vocabulary follow-ups"}]}"#,
         );
-        let review_body = sse_answer(
-            r#"{"reviews":[{"slot":"vocab_explain","decision":"reject","rule":"R4"}]}"#,
-        );
+        let review_body =
+            sse_answer(r#"{"reviews":[{"slot":"vocab_explain","decision":"reject","rule":"R4"}]}"#);
         configure_fake_provider_sequence(&db, &secrets, vec![summarize_body, review_body]).await;
 
         let app = tauri::test::mock_app();
-        let written = run_summarize(app.handle(), &db, &secrets, "user", "batch").await.unwrap();
+        let written = run_summarize(app.handle(), &db, &secrets, "user", "batch")
+            .await
+            .unwrap();
         assert_eq!(written, 0);
 
         let conn = db.reader();
@@ -2969,7 +3094,9 @@ mod tests {
         );
 
         let revision_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM profile_revisions", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM profile_revisions", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(revision_count, 1);
     }
@@ -2990,7 +3117,10 @@ mod tests {
             "compress must not carry tidy's reorder-only restriction"
         );
         assert_eq!(messages[1].role, "user");
-        assert_eq!(messages[1].content, "some notes", "no direction => text passed through verbatim");
+        assert_eq!(
+            messages[1].content, "some notes",
+            "no direction => text passed through verbatim"
+        );
     }
 
     #[test]
@@ -2999,7 +3129,10 @@ mod tests {
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         let system = &messages[0].content;
-        assert!(system.contains("Only reorder"), "tidy must be explicit that it only reorders");
+        assert!(
+            system.contains("Only reorder"),
+            "tidy must be explicit that it only reorders"
+        );
         assert!(system.contains("never rewrite, paraphrase, merge, shorten, drop, or invent"));
         assert!(
             system.contains("\"- \""),
@@ -3027,7 +3160,10 @@ mod tests {
                  the original profile_optimize_text"
             );
             assert!(user.contains("keep it short"));
-            assert!(user.ends_with("my notes"), "the original text must still follow the wrapped direction verbatim");
+            assert!(
+                user.ends_with("my notes"),
+                "the original text must still follow the wrapped direction verbatim"
+            );
         }
     }
 
@@ -3060,14 +3196,22 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result, "short and merged.", "the fence must not survive into the returned text");
+        assert_eq!(
+            result, "short and merged.",
+            "the fence must not survive into the returned text"
+        );
     }
 
     #[tokio::test]
     async fn profile_tidy_text_strips_a_fence_the_model_added_anyway() {
         let (_dir, db) = setup();
         let secrets = crate::secrets::Secrets::init_in_memory().unwrap();
-        configure_fake_provider(&db, &secrets, sse_answer("```\n- line one\n- line two\n```")).await;
+        configure_fake_provider(
+            &db,
+            &secrets,
+            sse_answer("```\n- line one\n- line two\n```"),
+        )
+        .await;
         let app = tauri::test::mock_app();
         app.manage(db.clone());
         app.manage(secrets);
@@ -3082,7 +3226,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result, "- line one\n- line two", "the fence must not survive into the returned text");
+        assert_eq!(
+            result, "- line one\n- line two",
+            "the fence must not survive into the returned text"
+        );
     }
 
     #[tokio::test]
@@ -3178,8 +3325,24 @@ mod tests {
         let second = serde_json::json!({ "count": 30 }).to_string();
         {
             let conn = db.conn.lock().unwrap();
-            upsert_card(&conn, "reply_pacing", "旧结论", "旧依据", Some(&first), 1_000).unwrap();
-            upsert_card(&conn, "reply_pacing", "新结论", "新依据", Some(&second), 2_000).unwrap();
+            upsert_card(
+                &conn,
+                "reply_pacing",
+                "旧结论",
+                "旧依据",
+                Some(&first),
+                1_000,
+            )
+            .unwrap();
+            upsert_card(
+                &conn,
+                "reply_pacing",
+                "新结论",
+                "新依据",
+                Some(&second),
+                2_000,
+            )
+            .unwrap();
         }
         let evidence = profile_card_evidence_inner(&db, "reply_pacing")
             .unwrap()

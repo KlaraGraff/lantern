@@ -70,9 +70,9 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+use super::retrieve::SpoilerCutoff;
 use super::segment::{is_cjk, segment_for_fts, SegmentMode};
 use super::spoiler::{cutoff_for_position, parse_spine_section, parse_text_offset};
-use super::retrieve::SpoilerCutoff;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 
@@ -226,8 +226,7 @@ fn forms_for_word(db: &Db, word: &str) -> AppResult<Vec<String>> {
     if normalized.is_empty() {
         return Ok(Vec::new());
     }
-    let entries =
-        crate::commands::word_marks::query_word_forms_for(db, vec![normalized.clone()])?;
+    let entries = crate::commands::word_marks::query_word_forms_for(db, vec![normalized.clone()])?;
     let stored_forms = entries.into_iter().next().map(|entry| entry.forms);
     Ok(expand_forms(&normalized, stored_forms.as_deref()))
 }
@@ -671,10 +670,10 @@ pub fn find_quotes(
             // No `.take(MAX_CANDIDATE_CHUNKS_PER_BOOK)` needed here — the SQL
             // query already capped each book to that many rows via its own
             // `book_rank` partition, before cutoff filtering ever runs.
-            for hit in book_hits
-                .iter()
-                .filter(|hit| book.cutoff.allows_complete_chunk(hit.section_index, hit.char_end))
-            {
+            for hit in book_hits.iter().filter(|hit| {
+                book.cutoff
+                    .allows_complete_chunk(hit.section_index, hit.char_end)
+            }) {
                 for sentence in sentences_containing(&hit.text, &forms) {
                     if seen.insert(sentence.text.clone()) {
                         candidates.push(QuoteCandidate {
@@ -855,10 +854,9 @@ mod tests {
             vec!["He ran across the field."],
             "\"ran\" must not match inside \"branch\" or \"Grant\"-like words"
         );
-        assert!(sentences.iter().all(|sentence| word_boundary_contains(
-            &sentence.text.to_lowercase(),
-            "ran"
-        )));
+        assert!(sentences
+            .iter()
+            .all(|sentence| word_boundary_contains(&sentence.text.to_lowercase(), "ran")));
     }
 
     #[test]
@@ -987,10 +985,16 @@ mod tests {
                 [],
             )
             .unwrap();
-            conn.execute(insert_book, params!["book-other", "textloc:v2:1000:1005", 2000_i64])
-                .unwrap();
-            conn.execute(insert_book, params!["book-unread", None::<String>, 3000_i64])
-                .unwrap();
+            conn.execute(
+                insert_book,
+                params!["book-other", "textloc:v2:1000:1005", 2000_i64],
+            )
+            .unwrap();
+            conn.execute(
+                insert_book,
+                params!["book-unread", None::<String>, 3000_i64],
+            )
+            .unwrap();
 
             let insert_chunk = "INSERT INTO book_chunks (
                  id, book_id, chunk_index, section_index, section_href, section_title,
@@ -1065,7 +1069,9 @@ mod tests {
         assert!(results[1].text.contains("running"));
         assert_eq!(results[1].chunk_char_start, Some(0));
         assert!(
-            results.iter().all(|candidate| candidate.book_id != "book-unread"),
+            results
+                .iter()
+                .all(|candidate| candidate.book_id != "book-unread"),
             "a book with no saved reading progress must be excluded entirely"
         );
     }
@@ -1157,12 +1163,24 @@ mod tests {
              ) VALUES (?1, 'book-solo', ?2, 0, 's.xhtml', 'Section', ?3, ?4, ?5, ?5, 10, 1)";
             conn.execute(
                 insert_chunk,
-                params!["chunk-solo-a", 0_i64, 0_i64, 30_i64, "She loves to run every single morning."],
+                params![
+                    "chunk-solo-a",
+                    0_i64,
+                    0_i64,
+                    30_i64,
+                    "She loves to run every single morning."
+                ],
             )
             .unwrap();
             conn.execute(
                 insert_chunk,
-                params!["chunk-solo-b", 1_i64, 40_i64, 80_i64, "He would run for miles without stopping."],
+                params![
+                    "chunk-solo-b",
+                    1_i64,
+                    40_i64,
+                    80_i64,
+                    "He would run for miles without stopping."
+                ],
             )
             .unwrap();
         }
@@ -1174,7 +1192,9 @@ mod tests {
             2,
             "round two must relax the same book's quota to two, using real DB-fetched hits"
         );
-        assert!(results.iter().all(|candidate| candidate.book_id == "book-solo"));
+        assert!(results
+            .iter()
+            .all(|candidate| candidate.book_id == "book-solo"));
     }
 
     #[test]
@@ -1243,7 +1263,9 @@ mod tests {
                      char_start, char_end, text, snippet, token_estimate, created_at
                  ) VALUES ('chunk-thin-a', 'book-thin', 0, 0, 't.xhtml', 'Section', 0, 500,
                            ?1, ?1, 50, 1)",
-                params![format!("{filler} She loves to run every single morning. {filler}")],
+                params![format!(
+                    "{filler} She loves to run every single morning. {filler}"
+                )],
             )
             .unwrap();
             tx.execute(
@@ -1252,7 +1274,9 @@ mod tests {
                      char_start, char_end, text, snippet, token_estimate, created_at
                  ) VALUES ('chunk-thin-b', 'book-thin', 1, 0, 't.xhtml', 'Section', 500, 1000,
                            ?1, ?1, 50, 1)",
-                params![format!("{filler} He would run for miles without stopping. {filler}")],
+                params![format!(
+                    "{filler} He would run for miles without stopping. {filler}"
+                )],
             )
             .unwrap();
             tx.commit().unwrap();

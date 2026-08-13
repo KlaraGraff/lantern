@@ -321,7 +321,11 @@ fn split_pos_marker(raw: &str) -> (String, Vec<String>) {
     }
     if let Some(dot_pos) = trimmed.find(['.', '．']) {
         let head = &trimmed[..dot_pos];
-        let dot_len = trimmed[dot_pos..].chars().next().map(char::len_utf8).unwrap_or(1);
+        let dot_len = trimmed[dot_pos..]
+            .chars()
+            .next()
+            .map(char::len_utf8)
+            .unwrap_or(1);
         if !head.is_empty()
             && head.chars().count() <= 5
             && head.chars().all(|c| c.is_ascii_alphabetic())
@@ -365,7 +369,11 @@ fn drop_name_group(groups: Vec<(String, Vec<String>)>) -> Vec<(String, Vec<Strin
     let (real, names): (Vec<_>, Vec<_>) = groups
         .into_iter()
         .partition(|(pos, _)| pos != NAME_POS_MARKER);
-    if real.is_empty() { names } else { real }
+    if real.is_empty() {
+        names
+    } else {
+        real
+    }
 }
 
 /// Turns parsed groups into an entry, whole. Nothing is trimmed for display
@@ -508,7 +516,8 @@ fn merge_lookup_outcome(
 }
 
 fn lookup_cache() -> &'static Mutex<HashMap<String, Result<DictionaryEntry, String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Result<DictionaryEntry, String>>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<String, Result<DictionaryEntry, String>>>> =
+        OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -521,7 +530,11 @@ fn lookup_cache() -> &'static Mutex<HashMap<String, Result<DictionaryEntry, Stri
 pub async fn dictionary_lookup_word(word: String) -> AppResult<DictionaryEntry> {
     let query = normalize_query(&word)?;
 
-    if let Some(cached) = lookup_cache().lock().ok().and_then(|map| map.get(&query).cloned()) {
+    if let Some(cached) = lookup_cache()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&query).cloned())
+    {
         return cached.map_err(AppError::Other);
     }
 
@@ -650,7 +663,11 @@ mod tests {
         let entry = build_entry("bank", parse(BANK_EC)).expect("bank should resolve");
         assert_eq!(entry.word, "bank");
         assert_eq!(entry.phonetic.as_deref(), Some("bæŋk"));
-        assert_eq!(entry.groups.len(), 2, "the 【名】 transliteration group is not one of them");
+        assert_eq!(
+            entry.groups.len(),
+            2,
+            "the 【名】 transliteration group is not one of them"
+        );
         assert_eq!(entry.groups[0].pos, "n.");
         assert_eq!(entry.groups[0].senses[0], "银行");
         assert_eq!(entry.groups[1].pos, "v.");
@@ -660,8 +677,7 @@ mod tests {
     fn a_name_only_entry_keeps_its_name_group() {
         // `Frankl`-shaped: dropping 【名】 unconditionally would leave a real
         // proper noun with nothing at all to show.
-        const NAME_ONLY: &str =
-            r#"{"ec": {"word": [{"trs": [{"tr": [{"l": {"i": ["【名】 （Bank）（英）班克（人名）"]}}]}]}]}}"#;
+        const NAME_ONLY: &str = r#"{"ec": {"word": [{"trs": [{"tr": [{"l": {"i": ["【名】 （Bank）（英）班克（人名）"]}}]}]}]}}"#;
         let entry = build_entry("Bank", parse(NAME_ONLY)).expect("a name entry still resolves");
         assert_eq!(entry.groups.len(), 1);
         assert_eq!(entry.groups[0].pos, "名");
@@ -678,7 +694,10 @@ mod tests {
         assert_eq!(entry.groups[0].senses.len(), 11);
         assert_eq!(entry.groups[0].senses[10], "处理");
         assert!(
-            entry.groups.iter().all(|g| g.senses.iter().all(|s| !s.ends_with('…'))),
+            entry
+                .groups
+                .iter()
+                .all(|g| g.senses.iter().all(|s| !s.ends_with('…'))),
             "no sense is cut mid-way — a ragged half-empty line is exactly what this avoids",
         );
     }
@@ -696,9 +715,21 @@ mod tests {
         // `run` is the worst real case: two groups of ~20-25 senses. All of
         // them cross, because 展开 has to have something to expand to.
         let entry = build_entry("run", parse(RUN_EC)).expect("run should resolve");
-        assert_eq!(entry.groups.len(), 2, "v. and n.; run's third group is 【名】");
-        assert!(entry.groups[0].senses.len() > 20, "{}", entry.groups[0].senses.len());
-        assert!(entry.groups[1].senses.len() > 15, "{}", entry.groups[1].senses.len());
+        assert_eq!(
+            entry.groups.len(),
+            2,
+            "v. and n.; run's third group is 【名】"
+        );
+        assert!(
+            entry.groups[0].senses.len() > 20,
+            "{}",
+            entry.groups[0].senses.len()
+        );
+        assert!(
+            entry.groups[1].senses.len() > 15,
+            "{}",
+            entry.groups[1].senses.len()
+        );
         for group in &entry.groups {
             assert!(group.senses.len() <= MAX_SENSES_PER_GROUP);
         }
@@ -744,7 +775,10 @@ mod tests {
     fn split_pos_marker_handles_ascii_bracketed_and_bare_forms() {
         assert_eq!(
             split_pos_marker("n. 银行；储蓄罐"),
-            ("n.".to_string(), vec!["银行".to_string(), "储蓄罐".to_string()]),
+            (
+                "n.".to_string(),
+                vec!["银行".to_string(), "储蓄罐".to_string()]
+            ),
         );
         assert_eq!(
             split_pos_marker("【名】 （Bank）（人名）"),
@@ -752,7 +786,10 @@ mod tests {
         );
         assert_eq!(
             split_pos_marker("改善前景或条件：指在前景或条件方面有所改善。"),
-            (String::new(), vec!["改善前景或条件：指在前景或条件方面有所改善。".to_string()]),
+            (
+                String::new(),
+                vec!["改善前景或条件：指在前景或条件方面有所改善。".to_string()]
+            ),
         );
     }
 
@@ -772,7 +809,10 @@ mod tests {
         let entry = DictionaryEntry {
             word: "bank".to_string(),
             phonetic: Some("bæŋk".to_string()),
-            groups: vec![DictionaryGroup { pos: "n.".to_string(), senses: vec!["银行".to_string()] }],
+            groups: vec![DictionaryGroup {
+                pos: "n.".to_string(),
+                senses: vec!["银行".to_string()],
+            }],
             fallback_summary: None,
         };
         let result = merge_lookup_outcome(Ok(Some(entry.clone())), "bank", None);
@@ -819,7 +859,10 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires network"]
     async fn live_jsonapi_lookup_resolves_bank() {
-        let entry = jsonapi_lookup("bank").await.unwrap().expect("bank should resolve");
+        let entry = jsonapi_lookup("bank")
+            .await
+            .unwrap()
+            .expect("bank should resolve");
         assert_eq!(entry.phonetic.as_deref(), Some("bæŋk"));
         assert!(!entry.groups.is_empty());
     }

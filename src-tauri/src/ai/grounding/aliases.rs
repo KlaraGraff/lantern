@@ -102,10 +102,20 @@ pub fn list_person_aliases(conn: &Connection, book_id: &str) -> AppResult<Vec<Al
         .collect::<Result<Vec<_>, _>>()?;
     let mut groups: Vec<AliasGroupView> = Vec::new();
     for (id, canonical, alias, source, mentions, kind, source_query) in rows {
-        let entry = AliasEntryView { id, alias, source, mentions, kind, source_query };
+        let entry = AliasEntryView {
+            id,
+            alias,
+            source,
+            mentions,
+            kind,
+            source_query,
+        };
         match groups.last_mut() {
             Some(group) if group.canonical == canonical => group.entries.push(entry),
-            _ => groups.push(AliasGroupView { canonical, entries: vec![entry] }),
+            _ => groups.push(AliasGroupView {
+                canonical,
+                entries: vec![entry],
+            }),
         }
     }
     Ok(groups)
@@ -156,11 +166,16 @@ pub fn add_person_alias(
         return Err(AppError::Other("PERSON_ALIAS_INVALID_KIND".to_string()));
     }
     let source_query = if kind == "description" {
-        source_query.map(str::trim).filter(|query| !query.is_empty())
+        source_query
+            .map(str::trim)
+            .filter(|query| !query.is_empty())
     } else {
         None
     };
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let mentions = count_mentions(&conn, book_id, canonical)?;
     let id = uuid::Uuid::new_v4().to_string();
     conn.execute(
@@ -190,7 +205,10 @@ pub fn add_person_alias(
 }
 
 pub fn delete_person_alias(db: &Db, id: &str) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
     conn.execute("DELETE FROM book_person_aliases WHERE id = ?1", params![id])?;
     // A description row's vector lives in two more tables and SQLite will not
     // clean them up for us: this database opens with `PRAGMA foreign_keys=OFF`
@@ -248,7 +266,9 @@ pub async fn teach_description_alias(
     // definition did not use, which is the whole reason this row exists.
     let text = alias.trim().to_string();
     if let Err(error) = super::vector::embed_alias(db, &source, &id, book_id, &text).await {
-        log::warn!("teach_description_alias: embedding failed, alias saved without a vector: {error}");
+        log::warn!(
+            "teach_description_alias: embedding failed, alias saved without a vector: {error}"
+        );
     }
     Ok(id)
 }
@@ -258,8 +278,14 @@ pub async fn teach_description_alias(
 /// confirmation copy is expected to say so plainly (see the doc's 界面
 /// section), because this function itself has no way to warn twice.
 pub fn clear_person_aliases(db: &Db, book_id: &str) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
-    conn.execute("DELETE FROM book_person_aliases WHERE book_id = ?1", params![book_id])?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    conn.execute(
+        "DELETE FROM book_person_aliases WHERE book_id = ?1",
+        params![book_id],
+    )?;
     super::vector::delete_book_alias_vectors(&conn, book_id)?;
     Ok(())
 }
@@ -334,7 +360,12 @@ fn section_summaries(conn: &Connection, book_id: &str) -> AppResult<String> {
     Ok(parts.join("\n\n"))
 }
 
-fn build_messages(title: &str, author: &str, language: Option<&str>, summaries: &str) -> Vec<ChatMessage> {
+fn build_messages(
+    title: &str,
+    author: &str,
+    language: Option<&str>,
+    summaries: &str,
+) -> Vec<ChatMessage> {
     let mut header = format!("Title: {title}\nAuthor: {author}");
     if let Some(language) = language {
         header.push_str(&format!("\nLanguage: {language}"));
@@ -348,8 +379,14 @@ fn build_messages(title: &str, author: &str, language: Option<&str>, summaries: 
         format!("{header}\n\nChapter summaries:\n{summaries}")
     };
     vec![
-        ChatMessage { role: "system".to_string(), content: PERSON_ALIASES_SYSTEM_PROMPT.to_string() },
-        ChatMessage { role: "user".to_string(), content: body },
+        ChatMessage {
+            role: "system".to_string(),
+            content: PERSON_ALIASES_SYSTEM_PROMPT.to_string(),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: body,
+        },
     ]
 }
 
@@ -552,7 +589,11 @@ fn name_tokens(chars: &[char]) -> Vec<NameToken> {
             while index < chars.len() && is_name_token_char(chars[index]) {
                 index += 1;
             }
-            tokens.push(NameToken { text: chars[start..index].iter().collect(), start, end: index });
+            tokens.push(NameToken {
+                text: chars[start..index].iter().collect(),
+                start,
+                end: index,
+            });
         } else {
             index += 1;
         }
@@ -565,8 +606,9 @@ fn name_tokens(chars: &[char]) -> Vec<NameToken> {
 /// small and Western-European rather than exhaustive — this only needs to
 /// cover the kind of names this build pass already targets: translated,
 /// shortened, or honorific variants of a Latin-script name.
-const NAME_CONNECTORS: &[&str] =
-    &["van", "de", "von", "der", "den", "la", "le", "di", "da", "del", "dos", "das"];
+const NAME_CONNECTORS: &[&str] = &[
+    "van", "de", "von", "der", "den", "la", "le", "di", "da", "del", "dos", "das",
+];
 
 fn is_connector(token: &str) -> bool {
     NAME_CONNECTORS.contains(&token.to_lowercase().as_str())
@@ -593,8 +635,15 @@ fn gap_is_plain_space(chars: &[char], from: usize, to: usize) -> bool {
 /// Beethoven" together, so a stray lowercase preposition can never dangle
 /// off the end of an extracted name. Only ever grows outward from the
 /// caller's own `[left, right)`; never shrinks it.
-fn expand_name_run(tokens: &[NameToken], chars: &[char], mut left: usize, mut right: usize) -> (usize, usize) {
-    while right < tokens.len() && gap_is_plain_space(chars, tokens[right - 1].end, tokens[right].start) {
+fn expand_name_run(
+    tokens: &[NameToken],
+    chars: &[char],
+    mut left: usize,
+    mut right: usize,
+) -> (usize, usize) {
+    while right < tokens.len()
+        && gap_is_plain_space(chars, tokens[right - 1].end, tokens[right].start)
+    {
         let token = &tokens[right];
         if starts_uppercase(&token.text) {
             right += 1;
@@ -667,7 +716,11 @@ fn name_runs_for_alias(conn: &Connection, book_id: &str, alias: &str) -> AppResu
         let mut from = 0;
         while let Some(start) = find_token_span(&tokens, &alias_words, from) {
             let (left, right) = expand_name_run(&tokens, &chars, start, start + alias_words.len());
-            let run = tokens[left..right].iter().map(|token| token.text.as_str()).collect::<Vec<_>>().join(" ");
+            let run = tokens[left..right]
+                .iter()
+                .map(|token| token.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
             // A run that lands at the end of a sentence carries that
             // sentence's own full stop as part of its last token (a period
             // is a name-token character, for "Mr." and "St."'s sake) —
@@ -791,7 +844,8 @@ fn evaluate_attempt(
         // canonical, one that isn't actually in this book's text is worse
         // than no entry at all, because it becomes a query-expansion term
         // with nothing in the book for it to correctly match.
-        let Some((winner, winner_mentions, losers)) = resolve_group_canonical(conn, book_id, group)?
+        let Some((winner, winner_mentions, losers)) =
+            resolve_group_canonical(conn, book_id, group)?
         else {
             continue;
         };
@@ -827,7 +881,10 @@ fn evaluate_attempt(
                     continue;
                 }
                 known_forms.insert(key.clone());
-                match new_canonicals.iter_mut().find(|(name, _)| name.to_lowercase() == key) {
+                match new_canonicals
+                    .iter_mut()
+                    .find(|(name, _)| name.to_lowercase() == key)
+                {
                     Some((_, aliases)) => aliases.push(alias.clone()),
                     None => new_canonicals.push((run, vec![alias.clone()])),
                 }
@@ -927,7 +984,10 @@ async fn attempt_build<R: Runtime>(
     )
     .await?;
     let result = {
-        let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+        let conn = db
+            .conn
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
         classify_reply(&conn, db, book_id, &completion.text)?
     };
     Ok((completion.text, result))
@@ -936,14 +996,21 @@ async fn attempt_build<R: Runtime>(
 /// One reply, all the way to the retry decision, with no network and no
 /// writes — so a test can hand it a string and assert which of the three
 /// endings it is. Everything `attempt_build` does besides making the call.
-fn classify_reply(conn: &Connection, db: &Db, book_id: &str, text: &str) -> AppResult<AttemptResult> {
+fn classify_reply(
+    conn: &Connection,
+    db: &Db,
+    book_id: &str,
+    text: &str,
+) -> AppResult<AttemptResult> {
     let Some(json_slice) = extract_json_array(text) else {
         return Ok(AttemptResult::Unreadable);
     };
     let Ok(raw) = serde_json::from_str::<Vec<RawAliasGroup>>(json_slice) else {
         return Ok(AttemptResult::Unreadable);
     };
-    Ok(AttemptResult::Parsed(evaluate_attempt(conn, db, book_id, &raw)?))
+    Ok(AttemptResult::Parsed(evaluate_attempt(
+        conn, db, book_id, &raw,
+    )?))
 }
 
 /// Returns how many model calls it took. Neither caller needs the number —
@@ -989,7 +1056,10 @@ async fn run_build_pass<R: Runtime>(
                 }
             }
             AttemptResult::Parsed(AttemptOutcome::Commit(rows)) => {
-                let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+                let conn = db
+                    .conn
+                    .lock()
+                    .map_err(|error| AppError::Other(error.to_string()))?;
                 clear_auto_aliases(&conn, book_id)?;
                 let now = chrono::Utc::now().timestamp_millis();
                 for (canonical, alias, mentions) in &rows {
@@ -1038,7 +1108,9 @@ impl RunGuard {
         if !set.insert(book_id.to_string()) {
             return None;
         }
-        Some(Self { book_id: book_id.to_string() })
+        Some(Self {
+            book_id: book_id.to_string(),
+        })
     }
 }
 
@@ -1073,7 +1145,9 @@ pub async fn ensure_person_aliases<R: Runtime>(
     let Some(_guard) = RunGuard::claim(book_id) else {
         return Ok(());
     };
-    run_build_pass(app, db, secrets, book_id, "auto").await.map(|_| ())
+    run_build_pass(app, db, secrets, book_id, "auto")
+        .await
+        .map(|_| ())
 }
 
 /// The reader's own rebuild button. Runs regardless of the automatic-analysis
@@ -1089,9 +1163,13 @@ pub async fn build_person_aliases<R: Runtime>(
     book_id: &str,
 ) -> AppResult<()> {
     let Some(_guard) = RunGuard::claim(book_id) else {
-        return Err(AppError::Other("PERSON_ALIASES_ALREADY_RUNNING".to_string()));
+        return Err(AppError::Other(
+            "PERSON_ALIASES_ALREADY_RUNNING".to_string(),
+        ));
     };
-    run_build_pass(app, db, secrets, book_id, "user").await.map(|_| ())
+    run_build_pass(app, db, secrets, book_id, "user")
+        .await
+        .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -1157,7 +1235,12 @@ impl MatchedAlias {
     /// `chat.rs::alias_disclosure_payload` documents for refusing to construct
     /// a payload it expects the UI to ignore.
     fn description(alias: String, canonicals: Vec<String>) -> Self {
-        Self { alias, canonicals, pinyin: false, description: true }
+        Self {
+            alias,
+            canonicals,
+            pinyin: false,
+            description: true,
+        }
     }
 }
 
@@ -1204,7 +1287,11 @@ fn alias_groups(conn: &Connection, book_id: &str) -> AppResult<Vec<(String, Vec<
     )?;
     let rows = statement
         .query_map(params![book_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut by_alias: HashMap<String, Vec<AliasRow>> = HashMap::new();
@@ -1213,13 +1300,21 @@ fn alias_groups(conn: &Connection, book_id: &str) -> AppResult<Vec<(String, Vec<
         if !by_alias.contains_key(&alias) {
             order.push(alias.clone());
         }
-        by_alias.entry(alias).or_default().push(AliasRow { canonical, mentions });
+        by_alias.entry(alias).or_default().push(AliasRow {
+            canonical,
+            mentions,
+        });
     }
     // Longest alias first (by character count, not bytes — a CJK alias of
     // four characters is 12 UTF-8 bytes and must still outrank a two-character
     // one). Ties broken by the alias text itself purely so the scan order is
     // deterministic and tests aren't at the mercy of hash-map iteration order.
-    order.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()).then_with(|| a.cmp(b)));
+    order.sort_by(|a, b| {
+        b.chars()
+            .count()
+            .cmp(&a.chars().count())
+            .then_with(|| a.cmp(b))
+    });
     Ok(order
         .into_iter()
         .map(|alias| {
@@ -1239,7 +1334,11 @@ fn is_word_char(character: char) -> bool {
 /// Everything else requires a non-word character (or the string edge) on
 /// both sides, the same rule that keeps "Eliza" from matching inside
 /// "Elizabeth".
-fn find_unconsumed_match(haystack: &[char], needle: &[char], consumed: &[bool]) -> Option<(usize, usize)> {
+fn find_unconsumed_match(
+    haystack: &[char],
+    needle: &[char],
+    consumed: &[bool],
+) -> Option<(usize, usize)> {
     if needle.is_empty() || needle.len() > haystack.len() {
         return None;
     }
@@ -1269,7 +1368,9 @@ fn find_unconsumed_match(haystack: &[char], needle: &[char], consumed: &[bool]) 
 /// character is exactly one syllable, which is what lets a pinyin hit reuse
 /// `resolve`'s existing `consumed` bookkeeping unchanged.
 fn query_syllables(text: &str) -> Vec<Option<&'static str>> {
-    text.to_pinyin().map(|syllable| syllable.map(|syllable| syllable.plain())).collect()
+    text.to_pinyin()
+        .map(|syllable| syllable.map(|syllable| syllable.plain()))
+        .collect()
 }
 
 /// `None` for any alias that is not Han end to end. A Latin alias has no
@@ -1356,7 +1457,9 @@ fn query_script(query: &str) -> Option<Script> {
         }
         if ('\u{0400}'..='\u{04FF}').contains(&character) {
             has_cyrillic = true;
-        } else if character.is_alphabetic() && character.is_ascii() || ('\u{00C0}'..='\u{024F}').contains(&character) {
+        } else if character.is_alphabetic() && character.is_ascii()
+            || ('\u{00C0}'..='\u{024F}').contains(&character)
+        {
             has_latin = true;
         }
     }
@@ -1394,7 +1497,8 @@ pub fn resolve(conn: &Connection, book_id: &str, query: &str) -> AppResult<Alias
             for slot in &mut consumed[start..end] {
                 *slot = true;
             }
-            let mut canonicals: Vec<String> = rows.iter().map(|row| row.canonical.clone()).collect();
+            let mut canonicals: Vec<String> =
+                rows.iter().map(|row| row.canonical.clone()).collect();
             canonicals.sort();
             canonicals.dedup();
             matched.push(MatchedAlias {
@@ -1442,7 +1546,8 @@ pub fn resolve(conn: &Connection, book_id: &str, query: &str) -> AppResult<Alias
                 for slot in &mut consumed[start..end] {
                     *slot = true;
                 }
-                let mut canonicals: Vec<String> = rows.iter().map(|row| row.canonical.clone()).collect();
+                let mut canonicals: Vec<String> =
+                    rows.iter().map(|row| row.canonical.clone()).collect();
                 canonicals.sort();
                 canonicals.dedup();
                 matched.push(MatchedAlias {
@@ -1474,7 +1579,11 @@ pub fn resolve(conn: &Connection, book_id: &str, query: &str) -> AppResult<Alias
 
     let confidence = if matched.is_empty() {
         let language: Option<String> = conn
-            .query_row("SELECT language FROM books WHERE id = ?1", params![book_id], |row| row.get(0))
+            .query_row(
+                "SELECT language FROM books WHERE id = ?1",
+                params![book_id],
+                |row| row.get(0),
+            )
             .ok()
             .flatten();
         let cross_script = match (query_script(query), book_script(language.as_deref())) {
@@ -1482,7 +1591,11 @@ pub fn resolve(conn: &Connection, book_id: &str, query: &str) -> AppResult<Alias
             // Either side is unclassifiable — refuse to guess "different".
             _ => false,
         };
-        if cross_script { AliasConfidence::Low } else { AliasConfidence::None }
+        if cross_script {
+            AliasConfidence::Low
+        } else {
+            AliasConfidence::None
+        }
     } else if by_pinyin || matched.iter().any(|entry| entry.canonicals.len() > 1) {
         // `by_pinyin` first, and unconditionally: a sound match that lands on
         // a single canonical is still only a guess at what the reader typed,
@@ -1508,7 +1621,12 @@ pub fn resolve(conn: &Connection, book_id: &str, query: &str) -> AppResult<Alias
         format!("{query} {}", expansion_terms.join(" "))
     };
 
-    Ok(AliasResolution { confidence, matched, default_canonical, expanded_query })
+    Ok(AliasResolution {
+        confidence,
+        matched,
+        default_canonical,
+        expanded_query,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1661,11 +1779,16 @@ fn merge_description_candidates(
         .into_iter()
         .filter(|candidate| candidate.similarity >= DESCRIPTION_SIMILARITY_FLOOR)
     {
-        match groups.iter_mut().find(|group| group.alias == candidate.alias) {
+        match groups
+            .iter_mut()
+            .find(|group| group.alias == candidate.alias)
+        {
             Some(group) => {
                 group.similarity = group.similarity.max(candidate.similarity);
                 group.mentions = group.mentions.max(candidate.mentions);
-                group.canonicals.push((candidate.canonical, candidate.mentions));
+                group
+                    .canonicals
+                    .push((candidate.canonical, candidate.mentions));
             }
             None => groups.push(DescriptionGroup {
                 alias: candidate.alias,
@@ -1699,7 +1822,12 @@ fn merge_description_candidates(
         .flat_map(|entry| entry.canonicals.iter().cloned())
         .collect();
 
-    for DescriptionGroup { alias, mut canonicals, .. } in groups {
+    for DescriptionGroup {
+        alias,
+        mut canonicals,
+        ..
+    } in groups
+    {
         // Most-mentioned first, unlike pass one's alphabetical sort. Pass one
         // can afford alphabetical because `default_canonical` carries its pick
         // separately; a description group may not be the one that owns
@@ -1721,7 +1849,9 @@ fn merge_description_candidates(
                 resolution.expanded_query.push_str(name);
             }
         }
-        resolution.matched.push(MatchedAlias::description(alias, names));
+        resolution
+            .matched
+            .push(MatchedAlias::description(alias, names));
     }
     // Rule 5, and the only statement that decides it: a description hit is
     // `Medium`, always, however high the cosine came out. It is a guess about
@@ -1774,7 +1904,14 @@ mod tests {
     /// Inserts a `kind = 'name'` row (the column's own default) — every
     /// existing test in this file is about name matching, so this stays the
     /// convenient default rather than every call site spelling it out.
-    fn insert_alias(db: &Db, book_id: &str, canonical: &str, alias: &str, source: &str, mentions: i64) {
+    fn insert_alias(
+        db: &Db,
+        book_id: &str,
+        canonical: &str,
+        alias: &str,
+        source: &str,
+        mentions: i64,
+    ) {
         db.conn
             .lock()
             .unwrap()
@@ -1815,7 +1952,10 @@ mod tests {
         insert_alias(&db, "b1", "Mr. Collins", "柯林斯", "auto", 10);
         let groups = list_person_aliases(&db.reader(), "b1").unwrap();
         assert_eq!(groups.len(), 2);
-        let darcy = groups.iter().find(|group| group.canonical == "Mr. Darcy").unwrap();
+        let darcy = groups
+            .iter()
+            .find(|group| group.canonical == "Mr. Darcy")
+            .unwrap();
         assert_eq!(darcy.entries.len(), 2);
     }
 
@@ -1825,7 +1965,11 @@ mod tests {
         insert_alias(&db, "b1", "Mr. Darcy", "达西", "auto", 40);
         add_person_alias(&db, "b1", "Mr. Darcy", "达西", "name", None).unwrap();
         let groups = list_person_aliases(&db.reader(), "b1").unwrap();
-        assert_eq!(groups[0].entries.len(), 1, "conflict must update in place, not duplicate");
+        assert_eq!(
+            groups[0].entries.len(),
+            1,
+            "conflict must update in place, not duplicate"
+        );
         assert_eq!(groups[0].entries[0].source, "user");
     }
 
@@ -1901,8 +2045,9 @@ mod tests {
             canonical: "Mr. Darcy".to_string(),
             aliases: vec!["达西".to_string(), "Darcy".to_string()],
         };
-        let (winner, mentions, losers) =
-            resolve_group_canonical(&db.reader(), "b1", &group).unwrap().unwrap();
+        let (winner, mentions, losers) = resolve_group_canonical(&db.reader(), "b1", &group)
+            .unwrap()
+            .unwrap();
         assert_eq!(winner, "Mr. Darcy");
         assert_eq!(mentions, 1);
         assert_eq!(losers, vec!["达西".to_string(), "Darcy".to_string()]);
@@ -1923,8 +2068,9 @@ mod tests {
             canonical: "Mrs. Philips".to_string(),
             aliases: vec!["Phillips".to_string(), "太太".to_string()],
         };
-        let (winner, mentions, losers) =
-            resolve_group_canonical(&db.reader(), "b1", &group).unwrap().unwrap();
+        let (winner, mentions, losers) = resolve_group_canonical(&db.reader(), "b1", &group)
+            .unwrap()
+            .unwrap();
         assert_eq!(winner, "Phillips");
         assert_eq!(mentions, 1);
         assert_eq!(
@@ -1942,7 +2088,10 @@ mod tests {
             canonical: "Ghost Character".to_string(),
             aliases: vec!["Nobody".to_string()],
         };
-        assert_eq!(resolve_group_canonical(&db.reader(), "b1", &group).unwrap(), None);
+        assert_eq!(
+            resolve_group_canonical(&db.reader(), "b1", &group).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -1954,10 +2103,21 @@ mod tests {
         // below, not `db.reader()`: `evaluate_attempt` now looks up "达西" in
         // the frequency table, whose lemma fallback locks `db.read_conn`
         // itself, and `Mutex` is not reentrant.
-        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby. 达西 said nothing.");
+        insert_chunk(
+            &db,
+            "b1",
+            0,
+            "Mr. Darcy spoke with Mr. Collins nearby. 达西 said nothing.",
+        );
         let raw = vec![
-            RawAliasGroup { canonical: "Mr. Darcy".to_string(), aliases: vec!["达西".to_string()] },
-            RawAliasGroup { canonical: "Ghost".to_string(), aliases: vec!["Nobody".to_string()] },
+            RawAliasGroup {
+                canonical: "Mr. Darcy".to_string(),
+                aliases: vec!["达西".to_string()],
+            },
+            RawAliasGroup {
+                canonical: "Ghost".to_string(),
+                aliases: vec!["Nobody".to_string()],
+            },
         ];
         let conn = db.conn.lock().unwrap();
         let outcome = evaluate_attempt(&conn, &db, "b1", &raw).unwrap();
@@ -1979,7 +2139,13 @@ mod tests {
     fn a_reply_with_no_json_array_is_unreadable_and_therefore_retryable() {
         let (_dir, db) = setup();
         assert_eq!(
-            classify_reply(&db.reader(), &db, "b1", "I'm sorry, I can't help with that.").unwrap(),
+            classify_reply(
+                &db.reader(),
+                &db,
+                "b1",
+                "I'm sorry, I can't help with that."
+            )
+            .unwrap(),
             AttemptResult::Unreadable
         );
     }
@@ -2010,7 +2176,12 @@ mod tests {
         // See the sibling `evaluate_attempt_commits_survivors_...` test for
         // why "达西" has to actually occur in the fixture text now, and why
         // this uses `db.conn.lock()` rather than `db.reader()`.
-        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby. 达西 said nothing.");
+        insert_chunk(
+            &db,
+            "b1",
+            0,
+            "Mr. Darcy spoke with Mr. Collins nearby. 达西 said nothing.",
+        );
         let reply = r#"prose first [{"canonical": "Mr. Darcy", "aliases": ["达西"]}] and after"#;
         let conn = db.conn.lock().unwrap();
         assert_eq!(
@@ -2055,10 +2226,15 @@ mod tests {
         // Every string the model wrote is Chinese and the book is English —
         // the measured inversion, with the book's own spelling nowhere in
         // the group for `resolve_group_canonical` to fall back to.
-        let raw =
-            vec![RawAliasGroup { canonical: "达西先生".to_string(), aliases: vec!["达西".to_string()] }];
+        let raw = vec![RawAliasGroup {
+            canonical: "达西先生".to_string(),
+            aliases: vec!["达西".to_string()],
+        }];
         let conn = db.conn.lock().unwrap();
-        assert_eq!(evaluate_attempt(&conn, &db, "b1", &raw).unwrap(), AttemptOutcome::Unusable);
+        assert_eq!(
+            evaluate_attempt(&conn, &db, "b1", &raw).unwrap(),
+            AttemptOutcome::Unusable
+        );
     }
 
     // --- build pass: change A (row-level zero-mention drop) ----------------
@@ -2093,7 +2269,10 @@ mod tests {
     fn a_group_whose_only_alias_is_fabricated_is_unusable() {
         let (_dir, db) = setup();
         insert_chunk(&db, "b1", 0, "Mr. Darcy spoke quietly to Mr. Collins.");
-        let raw = vec![RawAliasGroup { canonical: "Mr. Darcy".to_string(), aliases: vec!["达西".to_string()] }];
+        let raw = vec![RawAliasGroup {
+            canonical: "Mr. Darcy".to_string(),
+            aliases: vec!["达西".to_string()],
+        }];
         let conn = db.conn.lock().unwrap();
         assert_eq!(
             evaluate_attempt(&conn, &db, "b1", &raw).unwrap(),
@@ -2152,10 +2331,21 @@ mod tests {
         // confirms, and this pass never promotes an alias to canonical on its
         // own initiative.
         let (_dir, db) = setup();
-        insert_chunk(&db, "b1", 0, "Joel Young walked into the young prince's court.");
-        let raw = vec![RawAliasGroup { canonical: "Young".to_string(), aliases: vec!["Joel".to_string()] }];
+        insert_chunk(
+            &db,
+            "b1",
+            0,
+            "Joel Young walked into the young prince's court.",
+        );
+        let raw = vec![RawAliasGroup {
+            canonical: "Young".to_string(),
+            aliases: vec!["Joel".to_string()],
+        }];
         let conn = db.conn.lock().unwrap();
-        assert_eq!(evaluate_attempt(&conn, &db, "b1", &raw).unwrap(), AttemptOutcome::Unusable);
+        assert_eq!(
+            evaluate_attempt(&conn, &db, "b1", &raw).unwrap(),
+            AttemptOutcome::Unusable
+        );
     }
 
     // --- build pass: change C (recovering a person the model missed) -------
@@ -2204,10 +2394,16 @@ mod tests {
         }
         let resolution = resolve(&db.reader(), "b1", "What did Vesely-Frankl say?").unwrap();
         assert_eq!(resolution.confidence, AliasConfidence::Medium);
-        let mut resolved: Vec<&str> =
-            resolution.matched[0].canonicals.iter().map(String::as_str).collect();
+        let mut resolved: Vec<&str> = resolution.matched[0]
+            .canonicals
+            .iter()
+            .map(String::as_str)
+            .collect();
         resolved.sort_unstable();
-        assert_eq!(resolved, vec!["Alexander Vesely-Frankl", "Franz Vesely-Frankl"]);
+        assert_eq!(
+            resolved,
+            vec!["Alexander Vesely-Frankl", "Franz Vesely-Frankl"]
+        );
     }
 
     #[test]
@@ -2226,8 +2422,14 @@ mod tests {
         assert_eq!(resolution.confidence, AliasConfidence::Medium);
         let mut canonicals = resolution.matched[0].canonicals.clone();
         canonicals.sort();
-        assert_eq!(canonicals, vec!["Franz Frankl".to_string(), "Viktor E. Frankl".to_string()]);
-        assert_eq!(resolution.default_canonical.as_deref(), Some("Viktor E. Frankl"));
+        assert_eq!(
+            canonicals,
+            vec!["Franz Frankl".to_string(), "Viktor E. Frankl".to_string()]
+        );
+        assert_eq!(
+            resolution.default_canonical.as_deref(),
+            Some("Viktor E. Frankl")
+        );
     }
 
     // --- build pass: A, B, and C stacked together ---------------------------
@@ -2254,8 +2456,10 @@ mod tests {
         let AttemptOutcome::Commit(rows) = evaluate_attempt(&conn, &db, "b1", &raw).unwrap() else {
             panic!("expected Commit")
         };
-        let mut simplified: Vec<(String, String)> =
-            rows.iter().map(|(canonical, alias, _)| (canonical.clone(), alias.clone())).collect();
+        let mut simplified: Vec<(String, String)> = rows
+            .iter()
+            .map(|(canonical, alias, _)| (canonical.clone(), alias.clone()))
+            .collect();
         simplified.sort();
         assert_eq!(
             simplified,
@@ -2276,9 +2480,16 @@ mod tests {
         insert_alias(&db, "b1", "Georgiana Darcy", "达西小姐", "auto", 5);
         insert_alias(&db, "b1", "Mr. Darcy", "达西", "auto", 40);
         let resolution = resolve(&db.reader(), "b1", "达西小姐是谁").unwrap();
-        assert_eq!(resolution.matched.len(), 1, "the short alias must not also match inside the long one");
+        assert_eq!(
+            resolution.matched.len(),
+            1,
+            "the short alias must not also match inside the long one"
+        );
         assert_eq!(resolution.matched[0].alias, "达西小姐");
-        assert_eq!(resolution.matched[0].canonicals, vec!["Georgiana Darcy".to_string()]);
+        assert_eq!(
+            resolution.matched[0].canonicals,
+            vec!["Georgiana Darcy".to_string()]
+        );
     }
 
     #[test]
@@ -2363,7 +2574,9 @@ mod tests {
         let (_dir, db) = setup();
         insert_alias(&db, "b1", "Mr. Darcy", "达西", "auto", 40);
         let resolution = resolve(&db.reader(), "b1", "达西第一次向伊丽莎白求婚").unwrap();
-        assert!(resolution.expanded_query.starts_with("达西第一次向伊丽莎白求婚"));
+        assert!(resolution
+            .expanded_query
+            .starts_with("达西第一次向伊丽莎白求婚"));
         assert!(resolution.expanded_query.contains("Mr. Darcy"));
     }
 
@@ -2416,7 +2629,9 @@ mod tests {
         assert!(resolution.matched[0].pinyin);
         assert_eq!(resolution.confidence, AliasConfidence::Medium);
         assert_eq!(resolution.default_canonical.as_deref(), Some("Mr. Darcy"));
-        assert!(resolution.expanded_query.starts_with("达希对伊丽莎白说了什么"));
+        assert!(resolution
+            .expanded_query
+            .starts_with("达希对伊丽莎白说了什么"));
         assert!(resolution.expanded_query.contains("Mr. Darcy"));
     }
 
@@ -2539,7 +2754,12 @@ mod tests {
         }
     }
 
-    fn candidate(alias: &str, canonical: &str, mentions: i64, similarity: f32) -> DescriptionCandidate {
+    fn candidate(
+        alias: &str,
+        canonical: &str,
+        mentions: i64,
+        similarity: f32,
+    ) -> DescriptionCandidate {
         DescriptionCandidate {
             alias: alias.to_string(),
             canonical: canonical.to_string(),
@@ -2615,7 +2835,11 @@ mod tests {
         );
         assert!(added);
         assert_eq!(resolution.confidence, AliasConfidence::Medium);
-        assert_eq!(resolution.matched.len(), 2, "pass one's match is kept, not replaced");
+        assert_eq!(
+            resolution.matched.len(),
+            2,
+            "pass one's match is kept, not replaced"
+        );
         assert!(!resolution.matched[0].description);
         assert!(resolution.matched[1].description);
     }
@@ -2770,7 +2994,14 @@ mod tests {
     #[test]
     fn a_description_row_is_reachable_through_the_vec0_table() {
         let (_dir, db) = setup();
-        insert_description_alias(&db, "b1", "Mr. Collins", "那个总在拍马屁的牧师", "谁最讨人厌", 30);
+        insert_description_alias(
+            &db,
+            "b1",
+            "Mr. Collins",
+            "那个总在拍马屁的牧师",
+            "谁最讨人厌",
+            30,
+        );
         insert_description_alias(&db, "b1", "Mr. Wickham", "那个骗钱的军官", "谁最讨人厌", 20);
         let id: String = db
             .conn
@@ -2786,7 +3017,10 @@ mod tests {
         super::super::vector::ensure_alias_vector_table(&conn, 4).unwrap();
         conn.execute(
             "INSERT INTO book_alias_vectors (alias_id, book_id, embedding) VALUES (?1, 'b1', ?2)",
-            params![id, super::super::vector::embedding_json(&[1.0, 0.0, 0.0, 0.0]).unwrap()],
+            params![
+                id,
+                super::super::vector::embedding_json(&[1.0, 0.0, 0.0, 0.0]).unwrap()
+            ],
         )
         .unwrap();
 
@@ -2811,11 +3045,20 @@ mod tests {
         // exists in `book_person_aliases` and is invisible to pass two until
         // `ensure_alias_embeddings` gets to it. Invisible, not an error.
         let (_dir, db) = setup();
-        insert_description_alias(&db, "b1", "Mr. Collins", "那个总在拍马屁的牧师", "谁最讨人厌", 30);
+        insert_description_alias(
+            &db,
+            "b1",
+            "Mr. Collins",
+            "那个总在拍马屁的牧师",
+            "谁最讨人厌",
+            30,
+        );
         let conn = db.conn.lock().unwrap();
         super::super::vector::ensure_alias_vector_table(&conn, 4).unwrap();
         let mut resolution = empty_resolution("谁最讨人厌");
-        assert!(!resolve_descriptions(&conn, "b1", &[1.0, 0.0, 0.0, 0.0], &mut resolution).unwrap());
+        assert!(
+            !resolve_descriptions(&conn, "b1", &[1.0, 0.0, 0.0, 0.0], &mut resolution).unwrap()
+        );
         assert_eq!(resolution.confidence, AliasConfidence::None);
     }
 
@@ -2831,7 +3074,14 @@ mod tests {
                 [],
             )
             .unwrap();
-        insert_description_alias(&db, "b2", "Mr. Elton", "那个总在拍马屁的牧师", "谁最讨人厌", 30);
+        insert_description_alias(
+            &db,
+            "b2",
+            "Mr. Elton",
+            "那个总在拍马屁的牧师",
+            "谁最讨人厌",
+            30,
+        );
         let id: String = db
             .conn
             .lock()
@@ -2842,11 +3092,16 @@ mod tests {
         super::super::vector::ensure_alias_vector_table(&conn, 4).unwrap();
         conn.execute(
             "INSERT INTO book_alias_vectors (alias_id, book_id, embedding) VALUES (?1, 'b2', ?2)",
-            params![id, super::super::vector::embedding_json(&[1.0, 0.0, 0.0, 0.0]).unwrap()],
+            params![
+                id,
+                super::super::vector::embedding_json(&[1.0, 0.0, 0.0, 0.0]).unwrap()
+            ],
         )
         .unwrap();
         let mut resolution = empty_resolution("谁最讨人厌");
-        assert!(!resolve_descriptions(&conn, "b1", &[1.0, 0.0, 0.0, 0.0], &mut resolution).unwrap());
+        assert!(
+            !resolve_descriptions(&conn, "b1", &[1.0, 0.0, 0.0, 0.0], &mut resolution).unwrap()
+        );
     }
 
     #[tokio::test]
@@ -2883,7 +3138,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(vectors, 0, "no model configured, so no vector — and no error");
+        assert_eq!(
+            vectors, 0,
+            "no model configured, so no vector — and no error"
+        );
     }
 
     #[test]
@@ -2892,7 +3150,14 @@ mod tests {
         // will not do this for us, and a surviving vector would go on matching
         // for an alias the reader deleted.
         let (_dir, db) = setup();
-        insert_description_alias(&db, "b1", "Mr. Collins", "那个总在拍马屁的牧师", "谁最讨人厌", 30);
+        insert_description_alias(
+            &db,
+            "b1",
+            "Mr. Collins",
+            "那个总在拍马屁的牧师",
+            "谁最讨人厌",
+            30,
+        );
         let id: String = db
             .conn
             .lock()
@@ -2919,16 +3184,28 @@ mod tests {
         let conn = db.conn.lock().unwrap();
         for table in ["book_person_alias_embeddings", "book_alias_vectors"] {
             let remaining: i64 = conn
-                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
                 .unwrap();
-            assert_eq!(remaining, 0, "{table} still holds a vector for a deleted alias");
+            assert_eq!(
+                remaining, 0,
+                "{table} still holds a vector for a deleted alias"
+            );
         }
     }
 
     #[test]
     fn clearing_a_books_aliases_clears_its_vectors_too() {
         let (_dir, db) = setup();
-        insert_description_alias(&db, "b1", "Mr. Collins", "那个总在拍马屁的牧师", "谁最讨人厌", 30);
+        insert_description_alias(
+            &db,
+            "b1",
+            "Mr. Collins",
+            "那个总在拍马屁的牧师",
+            "谁最讨人厌",
+            30,
+        );
         let id: String = db
             .conn
             .lock()
@@ -2949,9 +3226,11 @@ mod tests {
         clear_person_aliases(&db, "b1").unwrap();
         let conn = db.conn.lock().unwrap();
         let remaining: i64 = conn
-            .query_row("SELECT COUNT(*) FROM book_person_alias_embeddings", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM book_person_alias_embeddings",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(remaining, 0);
     }
@@ -3039,7 +3318,10 @@ mod live_tests {
     }
 
     fn env_count(name: &str, default: u32) -> u32 {
-        std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(default)
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
     }
 
     /// The arm under test. Every field comes from the environment because one
@@ -3198,15 +3480,28 @@ mod live_tests {
                 [],
             )
             .unwrap();
-            conn.execute("UPDATE ai_profiles SET state = 'active', cooldown_until = NULL", [])
-                .unwrap();
+            conn.execute(
+                "UPDATE ai_profiles SET state = 'active', cooldown_until = NULL",
+                [],
+            )
+            .unwrap();
             // Seed a table so "the old table survived" is a claim about
             // something. The reader's row is the one that matters most: a
             // rebuild that loses a correction they typed by hand is the worst
             // version of this bug.
             for (id, canonical, alias, source) in [
-                ("seed-auto-1", "Seeded Canonical", "seeded-auto-alias", "auto"),
-                ("seed-user-1", "Seeded Canonical", "seeded-taught-alias", "user"),
+                (
+                    "seed-auto-1",
+                    "Seeded Canonical",
+                    "seeded-auto-alias",
+                    "auto",
+                ),
+                (
+                    "seed-user-1",
+                    "Seeded Canonical",
+                    "seeded-taught-alias",
+                    "user",
+                ),
             ] {
                 conn.execute(
                     "INSERT OR REPLACE INTO book_person_aliases
@@ -3218,7 +3513,12 @@ mod live_tests {
             }
         }
         (
-            Lab { _directory: directory, db, secrets, book_id },
+            Lab {
+                _directory: directory,
+                db,
+                secrets,
+                book_id,
+            },
             title,
             sections,
         )
@@ -3237,7 +3537,11 @@ mod live_tests {
     fn group_for_reading(rows: &[(String, String, String)]) -> Vec<String> {
         let mut lines: Vec<String> = Vec::new();
         for (canonical, alias, source) in rows {
-            let entry = if source == "user" { format!("{alias}*") } else { alias.clone() };
+            let entry = if source == "user" {
+                format!("{alias}*")
+            } else {
+                alias.clone()
+            };
             match lines.last_mut() {
                 Some(line) if line.starts_with(&format!("{canonical} · ")) => {
                     line.push_str(", ");
@@ -3253,8 +3557,16 @@ mod live_tests {
     /// printed and asserted inside it, so the report reads in pass order
     /// instead of in whatever order the endpoint happened to answer.
     enum Verdict {
-        Built { attempts: u32, rows: usize, taught_kept: bool, table: Vec<String> },
-        Unusable { rows: usize, unchanged: bool },
+        Built {
+            attempts: u32,
+            rows: usize,
+            taught_kept: bool,
+            table: Vec<String>,
+        },
+        Unusable {
+            rows: usize,
+            unchanged: bool,
+        },
         /// Not a verdict on the model's output: the request never came back,
         /// so `run_build_pass` bailed out of the retry loop on the attempt
         /// that failed rather than using up all three. Counting these as
@@ -3302,7 +3614,8 @@ mod live_tests {
                     snapshot(&conn, &lab.book_id)
                 };
                 let verdict =
-                    match run_build_pass(handle, &lab.db, &lab.secrets, &lab.book_id, "user").await {
+                    match run_build_pass(handle, &lab.db, &lab.secrets, &lab.book_id, "user").await
+                    {
                         Ok(attempts) => {
                             let rows = {
                                 let conn = lab.db.conn.lock().unwrap();
@@ -3352,7 +3665,12 @@ mod live_tests {
 
         for (pass, verdict) in &verdicts {
             match verdict {
-                Verdict::Built { attempts, rows, taught_kept, table } => {
+                Verdict::Built {
+                    attempts,
+                    rows,
+                    taught_kept,
+                    table,
+                } => {
                     succeeded += 1;
                     attempts_total += attempts;
                     unusable_attempts += attempts - 1;
@@ -3411,7 +3729,10 @@ mod live_tests {
                 100.0 * f64::from(attempts_total - unusable_attempts) / f64::from(attempts_total)
             );
         }
-        println!("{}/{passes} passes never got an answer at all", other_failures.len());
+        println!(
+            "{}/{passes} passes never got an answer at all",
+            other_failures.len()
+        );
         if survivals == 0 {
             println!(
                 "no pass failed {MAX_BUILD_ATTEMPTS} times in a row, so the \

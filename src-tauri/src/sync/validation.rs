@@ -4,9 +4,9 @@ use crate::error::{AppError, AppResult};
 
 use super::events::{
     auto_highlight_dismissal_id, is_supported_event_schema_version, lookup_occurrence_mark_id,
-    normalize_learning_term, word_mark_exception_id, word_mark_rule_id, AutoHighlightDismissalPayload,
-    BookAssetPayload, BookSummaryPayload, ChatMessagePayload, Event, EventBody,
-    LookupOccurrenceMarkPayload, NotePayload, WordMarkExceptionPayload, WordMarkPayload,
+    normalize_learning_term, word_mark_exception_id, word_mark_rule_id,
+    AutoHighlightDismissalPayload, BookAssetPayload, BookSummaryPayload, ChatMessagePayload, Event,
+    EventBody, LookupOccurrenceMarkPayload, NotePayload, WordMarkExceptionPayload, WordMarkPayload,
 };
 
 const BOOK_EXTENSIONS: &[&str] = &[

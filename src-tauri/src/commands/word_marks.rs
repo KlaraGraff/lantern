@@ -1002,7 +1002,16 @@ fn ensure_lookup_occurrence_mark_inner(
             )
             .optional()?;
         match row {
-            Some((id, book_id, normalized_word, display_word, location, enabled, created_at, updated_at)) => {
+            Some((
+                id,
+                book_id,
+                normalized_word,
+                display_word,
+                location,
+                enabled,
+                created_at,
+                updated_at,
+            )) => {
                 let fade = lookup_mark_fade(&conn, &book_id, &normalized_word)?;
                 Some(LookupOccurrenceMark {
                     id,
@@ -1061,7 +1070,8 @@ pub fn list_lookup_occurrence_marks(
     // One pass over this book's exposure rows instead of one query per mark:
     // a book can carry hundreds of marks, and each would otherwise repeat the
     // same per-chapter SUM that `lookup_mark_fade` runs for a single word.
-    let mut unaided_by_word: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut unaided_by_word: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::new();
     {
         let mut exposure_statement = conn.prepare(
             "SELECT normalized_word,

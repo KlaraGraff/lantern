@@ -136,9 +136,7 @@ fn pile_key(kind: &ReviewPileKind) -> String {
 /// reason about merges without being asked to invent a reason itself.
 fn kind_reason(kind: &ReviewPileKind) -> &'static str {
     match kind {
-        ReviewPileKind::RepeatLookupsInBook { .. } => {
-            "looked up more than once in the same book"
-        }
+        ReviewPileKind::RepeatLookupsInBook { .. } => "looked up more than once in the same book",
         ReviewPileKind::PromotedThenLookedUp => {
             "the app thought these were known, then the reader looked them up"
         }
@@ -185,7 +183,8 @@ fn build_prompt_payload(piles: &[ReviewPile]) -> Vec<PileForPrompt<'_>> {
 
 fn curation_prompt(piles: &[ReviewPile]) -> AppResult<Vec<ChatMessage>> {
     let payload = build_prompt_payload(piles);
-    let json = serde_json::to_string(&payload).map_err(|error| AppError::Other(error.to_string()))?;
+    let json =
+        serde_json::to_string(&payload).map_err(|error| AppError::Other(error.to_string()))?;
     Ok(vec![
         ChatMessage {
             role: "system".to_string(),
@@ -351,8 +350,8 @@ fn load_cached_curation(db: &Db) -> AppResult<Option<ReviewPileCuration>> {
 }
 
 fn save_curation(db: &Db, curation: &ReviewPileCuration) -> AppResult<()> {
-    let groups_json =
-        serde_json::to_string(&curation.groups).map_err(|error| AppError::Other(error.to_string()))?;
+    let groups_json = serde_json::to_string(&curation.groups)
+        .map_err(|error| AppError::Other(error.to_string()))?;
     let conn = db
         .conn
         .lock()
@@ -365,7 +364,12 @@ fn save_curation(db: &Db, curation: &ReviewPileCuration) -> AppResult<()> {
             groups_json = excluded.groups_json,
             provider = excluded.provider,
             model = excluded.model",
-        params![curation.generated_at, groups_json, curation.provider, curation.model],
+        params![
+            curation.generated_at,
+            groups_json,
+            curation.provider,
+            curation.model
+        ],
     )?;
     Ok(())
 }
@@ -536,14 +540,15 @@ async fn maybe_refresh_review_pile_curation_inner(
     }
     match refresh_decision(db, now_ms)? {
         RefreshDecision::Skip => load_and_validate_curation(db, now_ms),
-        RefreshDecision::Refresh => match generate_curation_inner(app, db, secrets, now_ms, origin).await
-        {
-            Ok(curation) => Ok(Some(curation)),
-            Err(error) => {
-                log::debug!("review pile curation skipped: {error}");
-                load_and_validate_curation(db, now_ms)
+        RefreshDecision::Refresh => {
+            match generate_curation_inner(app, db, secrets, now_ms, origin).await {
+                Ok(curation) => Ok(Some(curation)),
+                Err(error) => {
+                    log::debug!("review pile curation skipped: {error}");
+                    load_and_validate_curation(db, now_ms)
+                }
             }
-        },
+        }
     }
 }
 
@@ -817,7 +822,8 @@ mod tests {
     #[test]
     fn parse_drops_a_hallucinated_pile_key() {
         let piles = sample_live_piles();
-        let response = r#"{"groups":[{"label":"invented","piles":[{"pileKey":"does_not_exist"}]}]}"#;
+        let response =
+            r#"{"groups":[{"label":"invented","piles":[{"pileKey":"does_not_exist"}]}]}"#;
         let groups = parse_curation_response(response, &piles).unwrap();
         assert!(groups.is_empty());
     }
@@ -954,7 +960,8 @@ mod tests {
         // the model might have produced degrades to nothing — matches
         // `generate_curation_inner`'s own early return, exercised at the
         // parse layer here without needing a network call.
-        let response = r#"{"groups":[{"label":"invented from nothing","piles":[{"pileKey":"long_unseen"}]}]}"#;
+        let response =
+            r#"{"groups":[{"label":"invented from nothing","piles":[{"pileKey":"long_unseen"}]}]}"#;
         let groups = parse_curation_response(response, &piles).unwrap();
         assert!(groups.is_empty());
     }

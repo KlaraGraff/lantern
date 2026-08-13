@@ -490,7 +490,15 @@ mod tests {
         let (_dir, db) = setup();
         let long_passage = "a".repeat(MAX_FIELD_CHARS * 2);
         let long_question = "b".repeat(MAX_FIELD_CHARS * 2);
-        capture(&db, "chat1", "m1", "user", &long_question, Some(&long_passage)).unwrap();
+        capture(
+            &db,
+            "chat1",
+            "m1",
+            "user",
+            &long_question,
+            Some(&long_passage),
+        )
+        .unwrap();
         let conn = db.reader();
         let (passage, question): (String, String) = conn
             .query_row(
@@ -702,7 +710,9 @@ mod tests {
         .unwrap();
 
         let app = tauri::test::mock_app();
-        let classified = run_batch(app.handle(), &db, &secrets, "auto").await.unwrap();
+        let classified = run_batch(app.handle(), &db, &secrets, "auto")
+            .await
+            .unwrap();
         assert_eq!(classified, 2);
         assert_eq!(pending(&db), 0);
 
@@ -777,7 +787,9 @@ mod tests {
         .unwrap();
 
         let app = tauri::test::mock_app();
-        let classified = run_batch(app.handle(), &db, &secrets, "auto").await.unwrap();
+        let classified = run_batch(app.handle(), &db, &secrets, "auto")
+            .await
+            .unwrap();
         assert_eq!(classified, 0);
         assert_eq!(pending(&db), 1);
     }
@@ -789,7 +801,9 @@ mod tests {
         let app = tauri::test::mock_app();
         // No AI profile configured at all — if this attempted a call it
         // would fail with NOT_CONFIGURED rather than return Ok(0).
-        let classified = run_batch(app.handle(), &db, &secrets, "auto").await.unwrap();
+        let classified = run_batch(app.handle(), &db, &secrets, "auto")
+            .await
+            .unwrap();
         assert_eq!(classified, 0);
     }
 }

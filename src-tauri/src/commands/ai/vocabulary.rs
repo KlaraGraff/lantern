@@ -194,12 +194,12 @@ fn candidate_mastery(
         .collect();
 
     let mut saved: HashMap<String, String> = HashMap::new();
-    let record = |saved: &mut HashMap<String, String>, word: String, mastery: String| {
-        match saved.get(&word) {
-            Some(existing) if mastery_rank(existing) <= mastery_rank(&mastery) => {}
-            _ => {
-                saved.insert(word, mastery);
-            }
+    let record = |saved: &mut HashMap<String, String>, word: String, mastery: String| match saved
+        .get(&word)
+    {
+        Some(existing) if mastery_rank(existing) <= mastery_rank(&mastery) => {}
+        _ => {
+            saved.insert(word, mastery);
         }
     };
 
@@ -855,7 +855,10 @@ mod tests {
     #[test]
     fn a_gloss_of_the_requested_length_passes_through_untouched() {
         assert_eq!(sanitize_gloss("逐渐向某处移动"), "逐渐向某处移动");
-        assert_eq!(sanitize_gloss("to move gradually toward"), "to move gradually toward");
+        assert_eq!(
+            sanitize_gloss("to move gradually toward"),
+            "to move gradually toward"
+        );
     }
 
     // The gloss is printed above a word in a Chinese interface, so it must be
@@ -890,10 +893,22 @@ mod tests {
 
     #[test]
     fn length_instruction_follows_the_script_of_the_locale() {
-        assert_eq!(gloss_length_instruction("zh"), gloss_length_instruction("zh-Hans"));
-        assert_eq!(gloss_length_instruction("ja"), gloss_length_instruction("zh"));
-        assert_ne!(gloss_length_instruction("en"), gloss_length_instruction("zh"));
-        assert_eq!(gloss_length_instruction("fr-FR"), gloss_length_instruction("en"));
+        assert_eq!(
+            gloss_length_instruction("zh"),
+            gloss_length_instruction("zh-Hans")
+        );
+        assert_eq!(
+            gloss_length_instruction("ja"),
+            gloss_length_instruction("zh")
+        );
+        assert_ne!(
+            gloss_length_instruction("en"),
+            gloss_length_instruction("zh")
+        );
+        assert_eq!(
+            gloss_length_instruction("fr-FR"),
+            gloss_length_instruction("en")
+        );
     }
 
     #[test]

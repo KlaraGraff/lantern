@@ -95,7 +95,13 @@ fn tally(tokens: i64, capitalized: i64) -> WordTally {
 fn a_form_that_is_capitalized_every_time_and_unlisted_is_a_name() {
     let profile = ReaderProfile::default();
     assert_eq!(
-        classify("heathcliff", tally(438, 438), false, &profile, &names_of(&[])),
+        classify(
+            "heathcliff",
+            tally(438, 438),
+            false,
+            &profile,
+            &names_of(&[])
+        ),
         Bucket::Name
     );
 }
@@ -105,7 +111,13 @@ fn a_word_that_merely_opens_a_sentence_is_not_a_name() {
     // 12 occurrences, 3 of them sentence-initial: an ordinary word.
     let profile = ReaderProfile::default();
     assert_eq!(
-        classify("nevertheless", tally(12, 3), false, &profile, &names_of(&[])),
+        classify(
+            "nevertheless",
+            tally(12, 3),
+            false,
+            &profile,
+            &names_of(&[])
+        ),
         Bucket::Unknown
     );
 }
@@ -149,7 +161,13 @@ fn a_word_is_counted_in_exactly_one_row_strongest_first() {
 
     let credit_only = profile_of(&[], &["ahab"]);
     assert_eq!(
-        classify("ahab", tally(5, 5), false, &credit_only, &names_of(&["ahab"])),
+        classify(
+            "ahab",
+            tally(5, 5),
+            false,
+            &credit_only,
+            &names_of(&["ahab"])
+        ),
         Bucket::Name
     );
 }
@@ -182,7 +200,10 @@ fn the_four_rows_add_up_to_the_whole_book() {
     assert_eq!(result.name_words, 1);
     assert_eq!(result.unknown_words, 1);
     assert_eq!(
-        result.mastered_tokens + result.familiar_tokens + result.name_tokens + result.unknown_tokens,
+        result.mastered_tokens
+            + result.familiar_tokens
+            + result.name_tokens
+            + result.unknown_tokens,
         result.total_tokens
     );
 }
@@ -352,7 +373,13 @@ fn half_the_credit_to_a_tier_is_familiar_enough_and_less_is_not() {
     let (_directory, db) = test_db();
     insert_book(&db, "book", "Book", 0);
     insert_vocab(&db, "v1", "cetology", "new", Some(FAMILIAR_ENOUGH_CREDIT));
-    insert_vocab(&db, "v2", "squall", "learning", Some(FAMILIAR_ENOUGH_CREDIT - 0.1));
+    insert_vocab(
+        &db,
+        "v2",
+        "squall",
+        "learning",
+        Some(FAMILIAR_ENOUGH_CREDIT - 0.1),
+    );
 
     let profile = load_reader_profile(&db).unwrap();
 

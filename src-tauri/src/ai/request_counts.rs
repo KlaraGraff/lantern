@@ -27,7 +27,11 @@ fn month_key(now: DateTime<Local>) -> String {
 
 fn previous_month_key(now: DateTime<Local>) -> String {
     let (year, month) = (now.year(), now.month());
-    let (prev_year, prev_month) = if month == 1 { (year - 1, 12) } else { (year, month - 1) };
+    let (prev_year, prev_month) = if month == 1 {
+        (year - 1, 12)
+    } else {
+        (year, month - 1)
+    };
     format!("{prev_year:04}-{prev_month:02}")
 }
 
@@ -184,8 +188,14 @@ mod tests {
         // Even a feature literal that would map to something else when
         // user-triggered (e.g. "reading_review") still counts as background
         // auto-analysis spend when it fired on its own.
-        assert_eq!(counted_feature("auto", "reading_review"), Some("autoAnalysis"));
-        assert_eq!(counted_feature("auto", "followup_difficulty"), Some("autoAnalysis"));
+        assert_eq!(
+            counted_feature("auto", "reading_review"),
+            Some("autoAnalysis")
+        );
+        assert_eq!(
+            counted_feature("auto", "followup_difficulty"),
+            Some("autoAnalysis")
+        );
     }
 
     #[test]
@@ -194,7 +204,10 @@ mod tests {
         assert_eq!(counted_feature("user", "word_forms"), Some("other"));
         assert_eq!(counted_feature("user", "vocab_gloss"), Some("other"));
         assert_eq!(counted_feature("user", "book_summary"), Some("other"));
-        assert_eq!(counted_feature("user", "some_future_feature"), Some("other"));
+        assert_eq!(
+            counted_feature("user", "some_future_feature"),
+            Some("other")
+        );
     }
 
     #[test]
@@ -209,13 +222,28 @@ mod tests {
         let month = month_key(Local::now());
         let counts = month_counts(&db, &month).unwrap();
         assert_eq!(counts.total, 4);
-        let explain = counts.by_feature.iter().find(|row| row.feature == "explain").unwrap();
+        let explain = counts
+            .by_feature
+            .iter()
+            .find(|row| row.feature == "explain")
+            .unwrap();
         assert_eq!(explain.count, 2);
-        let translate = counts.by_feature.iter().find(|row| row.feature == "translate").unwrap();
+        let translate = counts
+            .by_feature
+            .iter()
+            .find(|row| row.feature == "translate")
+            .unwrap();
         assert_eq!(translate.count, 1);
-        let other = counts.by_feature.iter().find(|row| row.feature == "other").unwrap();
+        let other = counts
+            .by_feature
+            .iter()
+            .find(|row| row.feature == "other")
+            .unwrap();
         assert_eq!(other.count, 1);
-        assert!(counts.by_feature.iter().all(|row| row.feature != "word_forms"));
+        assert!(counts
+            .by_feature
+            .iter()
+            .all(|row| row.feature != "word_forms"));
     }
 
     #[test]

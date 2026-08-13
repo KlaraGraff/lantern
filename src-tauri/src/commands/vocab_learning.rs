@@ -424,7 +424,15 @@ mod tests {
         // Outside the period — must not be counted.
         insert_lookup(&db, "l3", "b1", 1_600_000_000_000);
 
-        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_010_000, None);
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "mastered",
+            "confirmed",
+            1_700_000_010_000,
+            None,
+        );
         // A watchlist row (never saved) must not inflate new_words_count.
         insert_vocab_word(&db, "v2", "b1", "new", "watchlist", 1_700_000_010_000, None);
 
@@ -446,7 +454,15 @@ mod tests {
     fn mastered_count_deduplicates_a_word_that_flapped_up_down_up_within_the_period() {
         let (_dir, db) = test_db();
         insert_book(&db, "b1");
-        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "mastered",
+            "confirmed",
+            1_700_000_000_000,
+            None,
+        );
         insert_mastery_event(&db, "v1", "mastered", 1_700_000_010_000);
         insert_mastery_event(&db, "v1", "learning", 1_700_000_020_000);
         insert_mastery_event(&db, "v1", "mastered", 1_700_000_030_000);
@@ -463,7 +479,15 @@ mod tests {
     fn mastered_count_excludes_a_word_that_fell_back_to_learning_after_the_promotion() {
         let (_dir, db) = test_db();
         insert_book(&db, "b1");
-        insert_vocab_word(&db, "v1", "b1", "learning", "confirmed", 1_700_000_000_000, None);
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "learning",
+            "confirmed",
+            1_700_000_000_000,
+            None,
+        );
         insert_mastery_event(&db, "v1", "mastered", 1_700_000_010_000);
         insert_mastery_event(&db, "v1", "learning", 1_700_000_020_000);
 
@@ -479,8 +503,24 @@ mod tests {
     fn mastered_count_counts_two_distinct_words_that_are_each_still_mastered() {
         let (_dir, db) = test_db();
         insert_book(&db, "b1");
-        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
-        insert_vocab_word(&db, "v2", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "mastered",
+            "confirmed",
+            1_700_000_000_000,
+            None,
+        );
+        insert_vocab_word(
+            &db,
+            "v2",
+            "b1",
+            "mastered",
+            "confirmed",
+            1_700_000_000_000,
+            None,
+        );
         insert_mastery_event(&db, "v1", "mastered", 1_700_000_010_000);
         insert_mastery_event(&db, "v2", "mastered", 1_700_000_020_000);
 
@@ -498,10 +538,34 @@ mod tests {
         insert_book(&db, "b1");
         insert_book(&db, "b2");
         let now = chrono::Utc::now().timestamp_millis();
-        insert_vocab_word(&db, "v1", "b1", "learning", "confirmed", now, Some(now - 1_000));
-        insert_vocab_word(&db, "v2", "b2", "learning", "confirmed", now, Some(now - 1_000));
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "learning",
+            "confirmed",
+            now,
+            Some(now - 1_000),
+        );
+        insert_vocab_word(
+            &db,
+            "v2",
+            "b2",
+            "learning",
+            "confirmed",
+            now,
+            Some(now - 1_000),
+        );
         // Not due yet.
-        insert_vocab_word(&db, "v3", "b1", "learning", "confirmed", now, Some(now + 999_999_999));
+        insert_vocab_word(
+            &db,
+            "v3",
+            "b1",
+            "learning",
+            "confirmed",
+            now,
+            Some(now + 999_999_999),
+        );
 
         // A period that does not cover "now" at all — due count is unaffected.
         let far_past = base_query(1, 2);
@@ -521,8 +585,24 @@ mod tests {
         insert_book(&db, "b2");
         insert_lookup(&db, "l1", "b1", 1_700_000_000_000);
         insert_lookup(&db, "l2", "b2", 1_700_000_000_000);
-        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
-        insert_vocab_word(&db, "v2", "b2", "familiar", "confirmed", 1_700_000_000_000, None);
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "mastered",
+            "confirmed",
+            1_700_000_000_000,
+            None,
+        );
+        insert_vocab_word(
+            &db,
+            "v2",
+            "b2",
+            "familiar",
+            "confirmed",
+            1_700_000_000_000,
+            None,
+        );
 
         let mut query = base_query(1_690_000_000_000, 1_710_000_000_000);
         query.scope_book_id = Some("b1".to_string());
@@ -575,7 +655,11 @@ mod tests {
         let query = base_query(946_684_800_000, chrono::Utc::now().timestamp_millis()); // 2000-01-01 .. now
         let dashboard = get_vocab_learning_dashboard_inner(&db, &query).unwrap();
         assert_eq!(dashboard.trend_granularity, VocabTrendGranularity::Day);
-        assert!(dashboard.trend.len() < 10, "trend should span only the last few days of real activity, got {} buckets", dashboard.trend.len());
+        assert!(
+            dashboard.trend.len() < 10,
+            "trend should span only the last few days of real activity, got {} buckets",
+            dashboard.trend.len()
+        );
     }
 
     #[test]

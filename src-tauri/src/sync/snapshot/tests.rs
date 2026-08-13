@@ -1642,7 +1642,15 @@ fn pre_065_peer_snapshot_delivers_its_bookmarks_as_position_notes() {
         tx.commit().unwrap();
     }
 
-    let row = |id: &str| -> (String, String, Option<String>, Option<String>, String, i64, i64) {
+    let row = |id: &str| -> (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        i64,
+        i64,
+    ) {
         local
             .query_row(
                 "SELECT anchor_kind, scope, location, selected_text, content,
@@ -2105,7 +2113,10 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(definition, "到那里", "re-gloss must survive snapshot bootstrap");
+    assert_eq!(
+        definition, "到那里",
+        "re-gloss must survive snapshot bootstrap"
+    );
     assert_eq!(
         explanation.as_deref(),
         Some("Meaning in this context\nto that place, in older English."),

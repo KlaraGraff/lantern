@@ -63,7 +63,9 @@ fn chat_anchor(message_id: &str, quote_index: usize) -> String {
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
-    value.map(|text| text.trim().to_string()).filter(|text| !text.is_empty())
+    value
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
 }
 
 /// One quote pulled off a chat message: the text, where it came from in the
@@ -83,7 +85,10 @@ fn quotes_from_message(context: Option<String>, metadata: Option<&str>) -> Vec<C
     let parsed: Option<Value> = metadata.and_then(|raw| serde_json::from_str(raw).ok());
     let meta = parsed.as_ref().and_then(Value::as_object);
 
-    if let Some(list) = meta.and_then(|m| m.get("contexts")).and_then(Value::as_array) {
+    if let Some(list) = meta
+        .and_then(|m| m.get("contexts"))
+        .and_then(Value::as_array)
+    {
         return list
             .iter()
             .map(|entry| ChatQuote {
@@ -93,12 +98,7 @@ fn quotes_from_message(context: Option<String>, metadata: Option<&str>) -> Vec<C
                     .unwrap_or_default()
                     .trim()
                     .to_string(),
-                cfi: non_empty(
-                    entry
-                        .get("cfi")
-                        .and_then(Value::as_str)
-                        .map(str::to_string),
-                ),
+                cfi: non_empty(entry.get("cfi").and_then(Value::as_str).map(str::to_string)),
                 is_reply: entry.get("kind").and_then(Value::as_str) == Some("reply"),
             })
             .collect();
@@ -109,8 +109,15 @@ fn quotes_from_message(context: Option<String>, metadata: Option<&str>) -> Vec<C
     };
     vec![ChatQuote {
         text,
-        cfi: non_empty(meta.and_then(|m| m.get("cfi")).and_then(Value::as_str).map(str::to_string)),
-        is_reply: meta.and_then(|m| m.get("contextKind")).and_then(Value::as_str) == Some("reply"),
+        cfi: non_empty(
+            meta.and_then(|m| m.get("cfi"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        ),
+        is_reply: meta
+            .and_then(|m| m.get("contextKind"))
+            .and_then(Value::as_str)
+            == Some("reply"),
     }]
 }
 
@@ -413,7 +420,14 @@ mod tests {
         (dir, db, sync)
     }
 
-    fn insert_lookup(db: &Db, id: &str, word: &str, sentence: Option<&str>, cfi: Option<&str>, at: i64) {
+    fn insert_lookup(
+        db: &Db,
+        id: &str,
+        word: &str,
+        sentence: Option<&str>,
+        cfi: Option<&str>,
+        at: i64,
+    ) {
         let conn = db.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO lookup_records
@@ -425,7 +439,13 @@ mod tests {
         .unwrap();
     }
 
-    fn insert_chat_message(db: &Db, id: &str, context: Option<&str>, metadata: Option<&str>, at: i64) {
+    fn insert_chat_message(
+        db: &Db,
+        id: &str,
+        context: Option<&str>,
+        metadata: Option<&str>,
+        at: i64,
+    ) {
         let conn = db.conn.lock().unwrap();
         conn.execute(
             "INSERT OR IGNORE INTO chats (id, book_id, title, created_at, updated_at)
@@ -444,7 +464,14 @@ mod tests {
     #[test]
     fn a_lookup_with_a_location_becomes_a_highlight_of_its_sentence() {
         let (_dir, db, _sync) = setup();
-        insert_lookup(&db, "r1", "steadfastness", Some("He admired her steadfastness."), Some("epubcfi(/6/4!/2)"), 1_000);
+        insert_lookup(
+            &db,
+            "r1",
+            "steadfastness",
+            Some("He admired her steadfastness."),
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
 
         let derived = query_auto_highlights(&db, "book").unwrap();
         assert_eq!(derived.len(), 1);
@@ -464,15 +491,37 @@ mod tests {
     #[test]
     fn a_lookup_recorded_without_its_sentence_falls_back_to_the_word() {
         let (_dir, db, _sync) = setup();
-        insert_lookup(&db, "r1", "steadfastness", None, Some("epubcfi(/6/4!/2)"), 1_000);
-        assert_eq!(query_auto_highlights(&db, "book").unwrap()[0].text, "steadfastness");
+        insert_lookup(
+            &db,
+            "r1",
+            "steadfastness",
+            None,
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
+        assert_eq!(
+            query_auto_highlights(&db, "book").unwrap()[0].text,
+            "steadfastness"
+        );
     }
 
     #[test]
     fn a_quoted_passage_becomes_a_highlight_and_a_quoted_reply_does_not() {
         let (_dir, db, _sync) = setup();
-        insert_chat_message(&db, "m1", Some("The passage."), Some(r#"{"cfi":"epubcfi(/6/8!/4)"}"#), 2_000);
-        insert_chat_message(&db, "m2", Some("What the assistant said."), Some(r#"{"cfi":"epubcfi(/6/8!/6)","contextKind":"reply"}"#), 3_000);
+        insert_chat_message(
+            &db,
+            "m1",
+            Some("The passage."),
+            Some(r#"{"cfi":"epubcfi(/6/8!/4)"}"#),
+            2_000,
+        );
+        insert_chat_message(
+            &db,
+            "m2",
+            Some("What the assistant said."),
+            Some(r#"{"cfi":"epubcfi(/6/8!/6)","contextKind":"reply"}"#),
+            3_000,
+        );
 
         let derived = query_auto_highlights(&db, "book").unwrap();
         assert_eq!(derived.len(), 1);
@@ -511,9 +560,29 @@ mod tests {
     #[test]
     fn everything_is_ordered_newest_first_regardless_of_source() {
         let (_dir, db, _sync) = setup();
-        insert_lookup(&db, "r1", "one", Some("Oldest."), Some("epubcfi(/6/4!/2)"), 1_000);
-        insert_chat_message(&db, "m1", Some("Middle."), Some(r#"{"cfi":"epubcfi(/6/8!/4)"}"#), 2_000);
-        insert_lookup(&db, "r2", "two", Some("Newest."), Some("epubcfi(/6/4!/9)"), 3_000);
+        insert_lookup(
+            &db,
+            "r1",
+            "one",
+            Some("Oldest."),
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
+        insert_chat_message(
+            &db,
+            "m1",
+            Some("Middle."),
+            Some(r#"{"cfi":"epubcfi(/6/8!/4)"}"#),
+            2_000,
+        );
+        insert_lookup(
+            &db,
+            "r2",
+            "two",
+            Some("Newest."),
+            Some("epubcfi(/6/4!/9)"),
+            3_000,
+        );
 
         let texts: Vec<String> = query_auto_highlights(&db, "book")
             .unwrap()
@@ -526,7 +595,14 @@ mod tests {
     #[test]
     fn a_passage_the_reader_highlighted_by_hand_is_not_also_offered_automatically() {
         let (_dir, db, sync) = setup();
-        insert_lookup(&db, "r1", "one", Some("A sentence."), Some("epubcfi(/6/4!/2)"), 1_000);
+        insert_lookup(
+            &db,
+            "r1",
+            "one",
+            Some("A sentence."),
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
         super::super::bookmarks::add_highlight_inner(
             "book",
             "epubcfi(/6/4!/2)",
@@ -543,8 +619,22 @@ mod tests {
     #[test]
     fn dismissing_hides_one_anchor_and_undo_brings_it_back() {
         let (_dir, db, sync) = setup();
-        insert_lookup(&db, "r1", "one", Some("First."), Some("epubcfi(/6/4!/2)"), 1_000);
-        insert_lookup(&db, "r2", "two", Some("Second."), Some("epubcfi(/6/4!/9)"), 2_000);
+        insert_lookup(
+            &db,
+            "r1",
+            "one",
+            Some("First."),
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
+        insert_lookup(
+            &db,
+            "r2",
+            "two",
+            Some("Second."),
+            Some("epubcfi(/6/4!/9)"),
+            2_000,
+        );
 
         set_auto_highlight_dismissed_inner("book", "lookup:r1", true, &db, &sync).unwrap();
         let left = query_auto_highlights(&db, "book").unwrap();
@@ -560,7 +650,14 @@ mod tests {
     #[test]
     fn promotion_writes_a_real_highlight_and_retires_the_derived_one() {
         let (_dir, db, sync) = setup();
-        insert_lookup(&db, "r1", "one", Some("A sentence."), Some("epubcfi(/6/4!/2)"), 1_000);
+        insert_lookup(
+            &db,
+            "r1",
+            "one",
+            Some("A sentence."),
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
 
         let kept = promote_auto_highlight_inner("book", "lookup:r1", None, &db, &sync).unwrap();
         assert_eq!(kept.cfi_range, "epubcfi(/6/4!/2)");
@@ -586,7 +683,14 @@ mod tests {
     #[test]
     fn undoing_a_promotion_does_not_bring_the_automatic_row_back() {
         let (_dir, db, sync) = setup();
-        insert_lookup(&db, "r1", "one", Some("A sentence."), Some("epubcfi(/6/4!/2)"), 1_000);
+        insert_lookup(
+            &db,
+            "r1",
+            "one",
+            Some("A sentence."),
+            Some("epubcfi(/6/4!/2)"),
+            1_000,
+        );
         let kept = promote_auto_highlight_inner("book", "lookup:r1", None, &db, &sync).unwrap();
 
         super::super::bookmarks::delete_highlights_inner(&[kept.id], &db, &sync).unwrap();

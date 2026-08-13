@@ -3178,7 +3178,11 @@ mod tests {
             &[
                 ev(1000, "dev-A", import_book("b1")),
                 add(1100),
-                ev(1200, "dev-A", EventBody::BookmarkDelete { id: "bm1".into() }),
+                ev(
+                    1200,
+                    "dev-A",
+                    EventBody::BookmarkDelete { id: "bm1".into() },
+                ),
                 add(1300),
             ],
         );
@@ -3751,7 +3755,10 @@ mod tests {
                 again,
             ],
         );
-        assert_eq!(vocab_gloss(&db, "v1"), ("到那里".to_string(), Some(blob.to_string())));
+        assert_eq!(
+            vocab_gloss(&db, "v1"),
+            ("到那里".to_string(), Some(blob.to_string()))
+        );
     }
 
     /// The receiver's own kept analysis outranks anything being displaced —
@@ -3835,7 +3842,12 @@ mod tests {
                 ev(
                     1200,
                     "dev-B",
-                    card_set("v1", "到那里", Some("Here it means the manor."), Some(snapshot)),
+                    card_set(
+                        "v1",
+                        "到那里",
+                        Some("Here it means the manor."),
+                        Some(snapshot),
+                    ),
                 ),
             ],
         );
@@ -3869,7 +3881,11 @@ mod tests {
             &[
                 ev(1000, "dev-A", import_book("b1")),
                 ev(1100, "dev-A", add_vocab("v1", blob, None)),
-                ev(1200, "dev-B", card_set("v1", "到那里", Some("The new card's paragraph."), None)),
+                ev(
+                    1200,
+                    "dev-B",
+                    card_set("v1", "到那里", Some("The new card's paragraph."), None),
+                ),
             ],
         );
         let (definition, explanation, _) = vocab_card(&db, "v1");
@@ -3888,7 +3904,11 @@ mod tests {
             &mut db,
             &[
                 ev(1000, "dev-A", import_book("b1")),
-                ev(1100, "dev-A", add_vocab("v1", "到那处", Some("the reader's own kept analysis"))),
+                ev(
+                    1100,
+                    "dev-A",
+                    add_vocab("v1", "到那处", Some("the reader's own kept analysis")),
+                ),
                 ev(
                     1200,
                     "dev-B",
@@ -3913,7 +3933,11 @@ mod tests {
     fn a_redelivered_card_changes_nothing() {
         let mut db = open_db();
         let snapshot = r#"{"modules":{"word_info":{"summary":"到那里"}}}"#;
-        let again = ev(1200, "dev-B", card_set("v1", "到那里", Some("paragraph"), Some(snapshot)));
+        let again = ev(
+            1200,
+            "dev-B",
+            card_set("v1", "到那里", Some("paragraph"), Some(snapshot)),
+        );
         apply_all(
             &mut db,
             &[
@@ -3969,13 +3993,19 @@ mod tests {
                 ev(1000, "dev-A", import_book("b1")),
                 ev(1100, "dev-A", add_vocab("v1", "到那处", None)),
                 ev(1200, "dev-A", EventBody::VocabDelete { id: "v1".into() }),
-                ev(1300, "dev-B", card_set("v1", "到那里", None, Some(r#"{"a":1}"#))),
+                ev(
+                    1300,
+                    "dev-B",
+                    card_set("v1", "到那里", None, Some(r#"{"a":1}"#)),
+                ),
             ],
         );
         let rows: i64 = db
-            .query_row("SELECT COUNT(*) FROM vocab_words WHERE id = 'v1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(rows, 0);
     }
@@ -4086,7 +4116,11 @@ mod tests {
             &mut db,
             &[
                 ev(1000, "dev-A", import_book("b1")),
-                ev(1100, "dev-A", add_vocab("v1", "Meaning\nin this context", None)),
+                ev(
+                    1100,
+                    "dev-A",
+                    add_vocab("v1", "Meaning\nin this context", None),
+                ),
                 ev(1200, "dev-B", definition_set("v1", "到那里")),
                 ev(1300, "dev-A", mastery.clone()),
             ],
@@ -4111,7 +4145,11 @@ mod tests {
             &mut db2,
             &[
                 ev(1000, "dev-A", import_book("b1")),
-                ev(1100, "dev-A", add_vocab("v1", "Meaning\nin this context", None)),
+                ev(
+                    1100,
+                    "dev-A",
+                    add_vocab("v1", "Meaning\nin this context", None),
+                ),
                 ev(1300, "dev-A", mastery),
                 ev(1200, "dev-B", definition_set("v1", "到那里")),
             ],

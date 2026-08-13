@@ -149,11 +149,15 @@ fn load_chunk_rows(db: &Db, book_id: &str) -> AppResult<(String, Vec<ChunkRow>)>
 /// nothing" sentinel stage ② itself writes, and re-picking it up on every
 /// run would retry a chunk the model has already failed on forever.
 fn pending_rows(rows: &[ChunkRow]) -> Vec<&ChunkRow> {
-    rows.iter().filter(|row| row.context_line.is_none()).collect()
+    rows.iter()
+        .filter(|row| row.context_line.is_none())
+        .collect()
 }
 
 fn chapter_header(book_title: &str, section_index: i64, section_title: Option<&str>) -> String {
-    let title = section_title.map(str::trim).filter(|title| !title.is_empty());
+    let title = section_title
+        .map(str::trim)
+        .filter(|title| !title.is_empty());
     match title {
         // Chapters are numbered for the model's benefit only (never shown to
         // the reader), so an off-by-one against however the book itself
@@ -224,7 +228,11 @@ fn local_window(section_rows: &[&ChunkRow], target_chunk_index: i64) -> String {
         used += row.token_estimate;
         after.push(row.text.as_str());
     }
-    before.into_iter().chain(after).collect::<Vec<_>>().join("\n\n")
+    before
+        .into_iter()
+        .chain(after)
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 fn user_messages(header: &str, prefix: &str, window: &str, passage: &str) -> Vec<ChatMessage> {
@@ -397,10 +405,7 @@ fn write_fts_context(conn: &Connection, chunk_id: &str, context_line: &str) -> A
     conn.execute(
         "UPDATE book_chunks_fts SET seg_context = ?1
          WHERE rowid = (SELECT fts_rowid FROM book_chunks WHERE id = ?2 AND fts_rowid IS NOT NULL)",
-        params![
-            segment_for_fts(context_line, SegmentMode::Index),
-            chunk_id
-        ],
+        params![segment_for_fts(context_line, SegmentMode::Index), chunk_id],
     )?;
     Ok(())
 }
@@ -720,9 +725,15 @@ pub async fn ensure_context_lines<R: Runtime>(
             }
         };
         let messages = context_line_messages(&header, &prefix, section_rows, row);
-        let outcome =
-            resolve_context_line(app, db, secrets, &messages, &row.id, &mut consecutive_failures)
-                .await?;
+        let outcome = resolve_context_line(
+            app,
+            db,
+            secrets,
+            &messages,
+            &row.id,
+            &mut consecutive_failures,
+        )
+        .await?;
         let (cleaned, model) = match outcome {
             ContextLineOutcome::Written { cleaned, model } => (cleaned, model),
             ContextLineOutcome::Skipped => continue,
@@ -904,7 +915,8 @@ mod live_tests {
         // this book's chunks — that sample is the whole run.
         let sampled: Vec<String> = {
             let conn = db.conn.lock().unwrap();
-            conn.execute("UPDATE book_chunks SET context_line = '·'", []).unwrap();
+            conn.execute("UPDATE book_chunks SET context_line = '·'", [])
+                .unwrap();
             let total: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM book_chunks WHERE book_id = ?1",
@@ -1532,7 +1544,8 @@ mod live_tests {
                     row,
                 );
                 let mut failures = 0usize;
-                match resolve_context_line(app, db, secrets, &messages, &row.id, &mut failures).await
+                match resolve_context_line(app, db, secrets, &messages, &row.id, &mut failures)
+                    .await
                 {
                     Ok(ContextLineOutcome::Written { cleaned, model }) => {
                         write_context_line(db, &row.id, &cleaned, &model).unwrap();
@@ -1795,7 +1808,11 @@ mod live_tests {
                     |row| row.get(0),
                 )
                 .unwrap();
-            println!("{}: {chunks} chunks, {} queries", book.id, book.queries.len());
+            println!(
+                "{}: {chunks} chunks, {} queries",
+                book.id,
+                book.queries.len()
+            );
             for case in book.queries {
                 let hits: i64 = conn
                     .query_row(
@@ -1937,7 +1954,10 @@ mod tests {
     #[test]
     fn clean_context_line_truncates_to_the_character_cap() {
         let long = "x".repeat(CONTEXT_LINE_MAX_CHARS + 50);
-        assert_eq!(clean_context_line(&long).chars().count(), CONTEXT_LINE_MAX_CHARS);
+        assert_eq!(
+            clean_context_line(&long).chars().count(),
+            CONTEXT_LINE_MAX_CHARS
+        );
     }
 
     #[test]

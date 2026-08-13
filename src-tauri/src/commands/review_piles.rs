@@ -1075,8 +1075,26 @@ mod tests {
         let conn = db.conn.lock().unwrap();
         insert_book(&conn, "book-a", "Book A");
         insert_watchlist_word(&conn, "w1", "book-a", "solitude");
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 1);
-        insert_lookup_record(&conn, "l2", "book-a", "solitude", None, Some("cfi-2"), 2_000, 1);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            1,
+        );
+        insert_lookup_record(
+            &conn,
+            "l2",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-2"),
+            2_000,
+            1,
+        );
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();

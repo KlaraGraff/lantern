@@ -57,9 +57,7 @@
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, Runtime, State};
 
-use crate::commands::ai::vocabulary::{
-    gloss_display_width, generate_vocab_gloss, MAX_GLOSS_WIDTH,
-};
+use crate::commands::ai::vocabulary::{generate_vocab_gloss, gloss_display_width, MAX_GLOSS_WIDTH};
 use crate::commands::vocab::{row_to_vocab, set_definition, VocabWord, SELECT_COLS};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
@@ -255,7 +253,10 @@ mod tests {
         assert_eq!(displaced_explanation(blob, None).as_deref(), Some(blob));
         // An explanation already there is never overwritten.
         assert_eq!(displaced_explanation(blob, Some("kept")), None);
-        assert_eq!(displaced_explanation(blob, Some("  ")).as_deref(), Some(blob));
+        assert_eq!(
+            displaced_explanation(blob, Some("  ")).as_deref(),
+            Some(blob)
+        );
         // An ordinary gloss is discarded rather than filed.
         assert_eq!(displaced_explanation("到那里", None), None);
     }
@@ -401,9 +402,10 @@ mod tests {
         configure_provider(&db, &secrets, base_url);
 
         let (app, sync) = test_app();
-        let updated = regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
-            .await
-            .unwrap();
+        let updated =
+            regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
+                .await
+                .unwrap();
         assert_eq!(updated.definition, "到那里");
         assert_eq!(updated.context_explanation.as_deref(), Some(blob));
         let (definition, explanation, _, _) = row(&db, "w1");
@@ -416,7 +418,12 @@ mod tests {
     #[tokio::test]
     async fn an_existing_explanation_is_never_overwritten() {
         let (_dir, db) = setup();
-        insert_word(&db, "w1", "to that place", Some("the reader's own kept analysis"));
+        insert_word(
+            &db,
+            "w1",
+            "to that place",
+            Some("the reader's own kept analysis"),
+        );
 
         let base_url = fake_sse_server(sse_answer("到那里")).await;
         let secrets = Secrets::init_in_memory().unwrap();
@@ -428,7 +435,10 @@ mod tests {
             .unwrap();
         let (definition, explanation, _, _) = row(&db, "w1");
         assert_eq!(definition, "到那里");
-        assert_eq!(explanation.as_deref(), Some("the reader's own kept analysis"));
+        assert_eq!(
+            explanation.as_deref(),
+            Some("the reader's own kept analysis")
+        );
     }
 
     /// Pressing twice must not walk the previous gloss into the explanation
@@ -462,9 +472,10 @@ mod tests {
 
         let secrets = Secrets::init_in_memory().unwrap();
         let (app, sync) = test_app();
-        let error = regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
-            .await
-            .unwrap_err();
+        let error =
+            regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
+                .await
+                .unwrap_err();
         // Something the UI can show, rather than a silent no-op.
         assert!(!error.to_string().is_empty());
         let (definition, explanation, _, _) = row(&db, "w1");
@@ -482,9 +493,10 @@ mod tests {
         configure_provider(&db, &secrets, base_url);
 
         let (app, sync) = test_app();
-        let error = regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
-            .await
-            .unwrap_err();
+        let error =
+            regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
+                .await
+                .unwrap_err();
         assert!(error.to_string().contains("VOCAB_GLOSS_EMPTY"));
         let (definition, explanation, _, _) = row(&db, "w1");
         assert_eq!(definition, "to that place");
@@ -498,9 +510,10 @@ mod tests {
         let (app, sync) = test_app();
         // No provider configured: reaching the AI call would have produced a
         // different error than this one.
-        let error = regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "gone", None)
-            .await
-            .unwrap_err();
+        let error =
+            regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "gone", None)
+                .await
+                .unwrap_err();
         assert!(error.to_string().contains("VOCAB_WORD_NOT_FOUND"));
     }
 
@@ -524,11 +537,9 @@ mod tests {
 
         let conn = db.reader();
         let (origin, feature): (String, String) = conn
-            .query_row(
-                "SELECT origin, feature FROM ai_usage_records",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
+            .query_row("SELECT origin, feature FROM ai_usage_records", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap();
         assert_eq!(origin, "user");
         assert_eq!(feature, FEATURE);

@@ -1067,7 +1067,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(vector_ranks(&conn, "book", &near, 12, None).unwrap()[0], "near");
+        assert_eq!(
+            vector_ranks(&conn, "book", &near, 12, None).unwrap()[0],
+            "near"
+        );
     }
 
     #[test]
@@ -1161,13 +1164,19 @@ mod tests {
     fn embedding_input_is_byte_identical_to_bare_text_when_there_is_no_context_line() {
         // The most important regression: a book with no identity sentences
         // must embed exactly as it does today.
-        assert_eq!(embedding_input("", "the raw chunk text"), "the raw chunk text");
+        assert_eq!(
+            embedding_input("", "the raw chunk text"),
+            "the raw chunk text"
+        );
     }
 
     #[test]
     fn embedding_input_prefixes_the_context_line_when_present() {
         assert_eq!(
-            embedding_input("Darcy proposes to Elizabeth.", "She stared, coloured, doubted."),
+            embedding_input(
+                "Darcy proposes to Elizabeth.",
+                "She stared, coloured, doubted."
+            ),
             "Darcy proposes to Elizabeth. —— She stared, coloured, doubted."
         );
     }

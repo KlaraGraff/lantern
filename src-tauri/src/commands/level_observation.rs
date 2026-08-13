@@ -774,8 +774,15 @@ fn score(
             // their context book is the one holding most of the sightings.)
             let spread = raw.sightings.get(word);
             let context_book = spread.and_then(|spread| spread.top_book.as_deref());
-            let (topical, candidate) =
-                classify(mode, &raw.verdicts, word, context_book, entry.band, spread, 0);
+            let (topical, candidate) = classify(
+                mode,
+                &raw.verdicts,
+                word,
+                context_book,
+                entry.band,
+                spread,
+                0,
+            );
             nominate(candidate, &mut candidates);
             if topical {
                 continue;
@@ -969,13 +976,7 @@ pub fn dismiss_level_observation_inner(db: &Db, outcome: &str, now: i64) -> AppR
             conn.execute(
                 "INSERT INTO level_observation_dismissals (id, outcome, kind, band, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    uuid::Uuid::new_v4().to_string(),
-                    outcome,
-                    kind,
-                    band,
-                    now
-                ],
+                params![uuid::Uuid::new_v4().to_string(), outcome, kind, band, now],
             )?;
         }
         other => {

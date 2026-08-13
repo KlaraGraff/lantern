@@ -308,7 +308,10 @@ fn the_whole_apostrophe_s_family_resolves_through_its_stem() {
         assert_eq!(contracted.band, 1);
     }
     // Nothing about a word with no apostrophe changes.
-    assert_eq!(lookup_with(&forms, "civility").unwrap().unwrap().rank, 15_097);
+    assert_eq!(
+        lookup_with(&forms, "civility").unwrap().unwrap().rank,
+        15_097
+    );
 }
 
 /// A possessive whose stem is *also* absent from the table must not
@@ -319,7 +322,9 @@ fn possessive_of_an_unknown_stem_stays_unknown() {
     let (_dir, db) = test_db();
     let forms = FormIndex::new(&db);
 
-    assert!(lookup_with(&forms, "zzznonexistentword's").unwrap().is_none());
+    assert!(lookup_with(&forms, "zzznonexistentword's")
+        .unwrap()
+        .is_none());
 }
 
 /// "cannot" is ranked 31 132 upstream because Google Books Ngram tokenizes
@@ -333,7 +338,9 @@ fn cannot_correction_matches_the_harder_of_its_parts() {
     let cannot = lookup(&db, "cannot")
         .unwrap()
         .expect("cannot is corrected, not dropped");
-    let can = lookup(&db, "can").unwrap().expect("\"can\" is in the table");
+    let can = lookup(&db, "can")
+        .unwrap()
+        .expect("\"can\" is in the table");
     assert_eq!(cannot.band, 1);
     assert_eq!(
         cannot.rank, can.rank,

@@ -75,7 +75,14 @@ fn insert_book(db: &Db, id: &str) {
         .unwrap();
 }
 
-fn insert_exposure_in(db: &Db, book: &str, word: &str, encounters: i64, on_lookup_active: i64, at: i64) {
+fn insert_exposure_in(
+    db: &Db,
+    book: &str,
+    word: &str,
+    encounters: i64,
+    on_lookup_active: i64,
+    at: i64,
+) {
     db.conn
         .lock()
         .unwrap()
@@ -275,7 +282,11 @@ fn a_thin_pile_in_an_easy_band_is_not_enough_to_claim_declared_high() {
 fn walking_past_hard_words_reads_as_declared_low() {
     // Declared B1 (band 3). 80 band-5 words read past twice or more against
     // 10 band-5 words actually looked up.
-    let record = summary([0, 0, 0, 10, 30, 80], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 10]);
+    let record = summary(
+        [0, 0, 0, 10, 30, 80],
+        [0, 0, 0, 0, 0, 80],
+        [0, 0, 0, 5, 20, 10],
+    );
     let observation = judge(&record, "B1").expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredLow);
     assert_eq!(observation.suggested_level.as_deref(), Some("C1"));
@@ -303,7 +314,11 @@ fn the_hardest_qualifying_band_wins_not_the_first() {
 #[test]
 fn passing_hard_words_while_also_stopping_at_them_proves_nothing() {
     // 80 passed against 40 stopped is 67% — under LOW_MIN_PASSED_SHARE.
-    let record = summary([0, 0, 0, 10, 30, 40], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 40]);
+    let record = summary(
+        [0, 0, 0, 10, 30, 40],
+        [0, 0, 0, 0, 0, 80],
+        [0, 0, 0, 5, 20, 40],
+    );
     assert_eq!(judge(&record, "B1"), None);
 }
 
@@ -406,7 +421,11 @@ fn the_screened_out_count_travels_with_the_lookup_variants() {
 
     // …and declaredLow, whose receipt counts passed words rather than
     // lookups, does not.
-    let mut record = summary([0, 0, 0, 10, 30, 80], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 10]);
+    let mut record = summary(
+        [0, 0, 0, 10, 30, 80],
+        [0, 0, 0, 0, 0, 80],
+        [0, 0, 0, 5, 20, 10],
+    );
     record.topical_lookups = 7;
     let observation = judge(&record, "B1").expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredLow);
@@ -571,7 +590,11 @@ fn words_awaiting_a_verdict_fall_back_to_the_heuristic_and_are_nominated() {
         .map(|candidate| candidate.word.as_str())
         .collect();
     words.sort_unstable();
-    let mut expected: Vec<&str> = BAND_4_WORDS.iter().chain(BAND_5_WORDS.iter()).copied().collect();
+    let mut expected: Vec<&str> = BAND_4_WORDS
+        .iter()
+        .chain(BAND_5_WORDS.iter())
+        .copied()
+        .collect();
     expected.sort_unstable();
     assert_eq!(words, expected);
     assert!(candidates
@@ -686,13 +709,7 @@ fn a_word_looked_up_in_two_books_is_never_sent_to_the_ai() {
 /// `at`: 30 band-1 lookups and 10 band-4 ones, spanning a month.
 fn record_that_produces_a_row(db: &Db, at: i64, tag: &str) {
     set_level(db, "B2");
-    insert_lookups(
-        db,
-        &BAND_1_WORDS,
-        30,
-        at - 30 * DAY,
-        &format!("{tag}-easy"),
-    );
+    insert_lookups(db, &BAND_1_WORDS, 30, at - 30 * DAY, &format!("{tag}-easy"));
     insert_lookups(db, &BAND_4_WORDS, 10, at - 2 * DAY, &format!("{tag}-hard"));
 }
 

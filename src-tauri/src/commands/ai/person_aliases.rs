@@ -11,7 +11,10 @@ use crate::error::AppResult;
 use crate::secrets::Secrets;
 
 #[tauri::command]
-pub fn list_person_aliases(book_id: String, db: State<'_, Db>) -> AppResult<Vec<aliases::AliasGroupView>> {
+pub fn list_person_aliases(
+    book_id: String,
+    db: State<'_, Db>,
+) -> AppResult<Vec<aliases::AliasGroupView>> {
     crate::sync::validation::validate_entity_id(&book_id)?;
     aliases::list_person_aliases(&db.reader(), &book_id)
 }
@@ -52,7 +55,14 @@ pub fn add_person_alias(
     db: State<'_, Db>,
 ) -> AppResult<String> {
     crate::sync::validation::validate_entity_id(&book_id)?;
-    aliases::add_person_alias(&db, &book_id, &canonical, &alias, &kind, source_query.as_deref())
+    aliases::add_person_alias(
+        &db,
+        &book_id,
+        &canonical,
+        &alias,
+        &kind,
+        source_query.as_deref(),
+    )
 }
 
 /// What the chat's alias-disclosure footer calls when the reader confirms

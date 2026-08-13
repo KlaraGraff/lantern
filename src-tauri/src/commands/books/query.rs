@@ -44,7 +44,9 @@ fn row_to_book(row: &rusqlite::Row<'_>, cover_data: Option<String>) -> rusqlite:
         render_format: row.get("render_format")?,
         source_file_path: row.get("source_file_path")?,
         source_sha256: row.get("source_sha256")?,
-        conversion_version: row.get::<_, Option<i32>>("conversion_version")?.unwrap_or(0),
+        conversion_version: row
+            .get::<_, Option<i32>>("conversion_version")?
+            .unwrap_or(0),
         preparation_state: row.get("preparation_state")?,
         preparation_error: row.get("preparation_error")?,
         genre: row.get("genre")?,

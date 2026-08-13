@@ -768,14 +768,9 @@ mod tests {
         );
         drop(conn);
 
-        let page = query_all_lookup_records(
-            Some("100%_ready\\now".to_string()),
-            None,
-            None,
-            None,
-            &db,
-        )
-        .unwrap();
+        let page =
+            query_all_lookup_records(Some("100%_ready\\now".to_string()), None, None, None, &db)
+                .unwrap();
         assert_eq!(page.total, 1, "search must treat %, _, and \\ literally");
         assert_eq!(page.records[0].id, "literal");
     }
@@ -836,16 +831,14 @@ mod tests {
         let cursor = first_page.next_cursor.clone().unwrap();
 
         // offset: cursor into the second page of 2.
-        let second_page =
-            query_all_lookup_records(None, None, Some(cursor), Some(2), &db).unwrap();
+        let second_page = query_all_lookup_records(None, None, Some(cursor), Some(2), &db).unwrap();
         let second_ids: Vec<&str> = second_page.records.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(second_ids, vec!["c", "b"]);
         let cursor2 = second_page.next_cursor.clone().unwrap();
 
         // boundary: cursor past all remaining rows still returns the last
         // one, with no further cursor.
-        let third_page =
-            query_all_lookup_records(None, None, Some(cursor2), Some(2), &db).unwrap();
+        let third_page = query_all_lookup_records(None, None, Some(cursor2), Some(2), &db).unwrap();
         let third_ids: Vec<&str> = third_page.records.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(third_ids, vec!["a"]);
         assert!(third_page.next_cursor.is_none());

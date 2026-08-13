@@ -511,10 +511,12 @@ fn lenient_examples(value: Option<&serde_json::Value>) -> Vec<LearningExample> {
     entries
         .iter()
         .filter_map(|entry| match entry {
-            serde_json::Value::String(source) if !source.trim().is_empty() => Some(LearningExample {
-                source: source.trim().to_string(),
-                target: None,
-            }),
+            serde_json::Value::String(source) if !source.trim().is_empty() => {
+                Some(LearningExample {
+                    source: source.trim().to_string(),
+                    target: None,
+                })
+            }
             serde_json::Value::Object(fields) => Some(LearningExample {
                 source: text_field(fields.get("source"))?,
                 target: text_field(fields.get("target")),

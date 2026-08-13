@@ -398,10 +398,7 @@ pub fn record_glance(
 /// been added to your list."
 fn glance_entry_detail(tx: &Transaction<'_>, book_id: &str, glance_count: i64) -> String {
     let mut detail = serde_json::Map::new();
-    detail.insert(
-        "reason".to_string(),
-        REASON_GLANCE_ENTRY.to_string().into(),
-    );
+    detail.insert("reason".to_string(), REASON_GLANCE_ENTRY.to_string().into());
     if let Ok(Some(title)) = book_title(tx, book_id) {
         detail.insert("book_title".to_string(), title.into());
     }

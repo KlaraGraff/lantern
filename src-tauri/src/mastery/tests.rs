@@ -157,10 +157,7 @@ fn promotion_resets_credit_to_zero() {
 
 #[test]
 fn demotion_resets_credit_to_zero() {
-    let decision = apply_lookup(
-        &WordState::new(Tier::Mastered, 6.0),
-        Lookup::card(1_000),
-    );
+    let decision = apply_lookup(&WordState::new(Tier::Mastered, 6.0), Lookup::card(1_000));
     assert_eq!(decision.tier, Tier::Familiar);
     assert_close(decision.credit, 0.0);
 }
@@ -170,10 +167,7 @@ fn demotion_resets_credit_to_zero() {
 /// design explicitly refuses.
 #[test]
 fn a_first_lookup_costs_exactly_one_tier() {
-    let decision = apply_lookup(
-        &WordState::new(Tier::Mastered, 3.0),
-        Lookup::card(1_000),
-    );
+    let decision = apply_lookup(&WordState::new(Tier::Mastered, 3.0), Lookup::card(1_000));
     assert_eq!(decision.tier, Tier::Familiar);
     assert!(decision.changed);
     assert_eq!(decision.reason, Some(REASON_LOOKUP_DEMOTION));
@@ -192,10 +186,7 @@ fn a_second_lookup_inside_the_window_drops_straight_to_learning() {
         glances_in_window: 0,
     };
 
-    let second = apply_lookup(
-        &state,
-        Lookup::card(REPEAT_LOOKUP_WINDOW_MS - 1),
-    );
+    let second = apply_lookup(&state, Lookup::card(REPEAT_LOOKUP_WINDOW_MS - 1));
     assert_eq!(second.tier, Tier::Learning);
     assert!(second.changed);
     assert_eq!(second.reason, Some(REASON_REPEAT_LOOKUP_DEMOTION));
@@ -227,10 +218,7 @@ fn a_third_lookup_inside_the_window_marks_the_word_a_blocker_for_its_book() {
 /// Learning, and looking one up there moved nothing. No row, every time.
 #[test]
 fn a_lookup_on_a_word_already_at_the_floor_writes_no_timeline_row() {
-    let decision = apply_lookup(
-        &WordState::new(Tier::Learning, 2.5),
-        Lookup::card(1_000),
-    );
+    let decision = apply_lookup(&WordState::new(Tier::Learning, 2.5), Lookup::card(1_000));
     assert_eq!(decision.tier, Tier::Learning);
     assert!(!decision.changed);
     assert_eq!(decision.reason, None);
@@ -250,10 +238,7 @@ fn a_lookup_outside_the_window_starts_the_ladder_over() {
         lookups_in_window: 2,
         glances_in_window: 0,
     };
-    let decision = apply_lookup(
-        &state,
-        Lookup::card(REPEAT_LOOKUP_WINDOW_MS + 1),
-    );
+    let decision = apply_lookup(&state, Lookup::card(REPEAT_LOOKUP_WINDOW_MS + 1));
     assert_eq!(decision.tier, Tier::Familiar);
     assert_eq!(decision.reason, Some(REASON_LOOKUP_DEMOTION));
     assert_eq!(decision.lookups_in_window, 1);
@@ -593,7 +578,10 @@ fn sitting_exactly_on_both_floors_still_passes() {
 fn just_under_either_floor_fails() {
     assert!(!should_auto_finish(94, 100, 100), "progress one under 95");
     assert!(!finish_coverage_met(79, 100), "coverage one under 80%");
-    assert!(!should_auto_finish(96, 79, 100), "coverage carries the gate");
+    assert!(
+        !should_auto_finish(96, 79, 100),
+        "coverage carries the gate"
+    );
 }
 
 /// Flipping through fast: progress reaches 100 (every screen was turned),
@@ -635,7 +623,10 @@ fn no_screen_total_never_auto_finishes() {
 
 /// A screen 800 words long, dwelt on for `dwell_ms`.
 fn screen(dwell_ms: i64) -> ScreenPace {
-    ScreenPace { word_count: 800, dwell_ms }
+    ScreenPace {
+        word_count: 800,
+        dwell_ms,
+    }
 }
 
 /// The ordinary case both gates are written to leave alone: a normal reading
@@ -654,7 +645,10 @@ fn a_normally_paced_screen_passes_both_gates() {
 /// reads that fast.
 #[test]
 fn a_page_turn_is_caught_even_when_the_relative_gate_waves_it_through() {
-    let page_turn = ScreenPace { word_count: 189, dwell_ms: 1_800 };
+    let page_turn = ScreenPace {
+        word_count: 189,
+        dwell_ms: 1_800,
+    };
     let contaminated_median = 5_627.0;
     // Stated as arithmetic rather than by calling `exceeds_pace_limit`: that
     // function now answers with both gates, so it can no longer witness what
@@ -697,9 +691,27 @@ fn a_screen_exactly_on_either_limit_is_kept() {
 /// the absolute gate, which must not turn a garbage pace into a verdict.
 #[test]
 fn unmeasurable_screens_are_still_never_excluded() {
-    assert!(!is_screen_too_fast(ScreenPace { word_count: 0, dwell_ms: 1_000 }, None));
-    assert!(!is_screen_too_fast(ScreenPace { word_count: 800, dwell_ms: 0 }, None));
-    assert!(!is_screen_too_fast(ScreenPace { word_count: -5, dwell_ms: 1_000 }, None));
+    assert!(!is_screen_too_fast(
+        ScreenPace {
+            word_count: 0,
+            dwell_ms: 1_000
+        },
+        None
+    ));
+    assert!(!is_screen_too_fast(
+        ScreenPace {
+            word_count: 800,
+            dwell_ms: 0
+        },
+        None
+    ));
+    assert!(!is_screen_too_fast(
+        ScreenPace {
+            word_count: -5,
+            dwell_ms: 1_000
+        },
+        None
+    ));
     assert!(!exceeds_pace_limit(f64::NAN, Some(200.0)));
     assert!(!exceeds_pace_limit(f64::INFINITY, Some(200.0)));
 }

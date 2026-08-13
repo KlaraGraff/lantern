@@ -83,7 +83,20 @@ const ABBREVIATIONS: [&str; 24] = [
 fn is_sentence_tail(character: char) -> bool {
     matches!(
         character,
-        '」' | '』' | '）' | '》' | '〉' | '】' | '〕' | '｝' | '”' | '’' | '"' | '\'' | ')' | ']' | '}'
+        '」' | '』'
+            | '）'
+            | '》'
+            | '〉'
+            | '】'
+            | '〕'
+            | '｝'
+            | '”'
+            | '’'
+            | '"'
+            | '\''
+            | ')'
+            | ']'
+            | '}'
     ) || TERMINATORS_ALWAYS_CUT.contains(&character)
         || TERMINATORS_CUT_BEFORE_SPACE.contains(&character)
 }
@@ -407,7 +420,10 @@ mod tests {
 
     #[test]
     fn keeps_a_terminator_inside_quotation_marks_with_its_sentence() {
-        assert_eq!(sentence_split("\"Stop!\" she said."), ["\"Stop!\" she said."]);
+        assert_eq!(
+            sentence_split("\"Stop!\" she said."),
+            ["\"Stop!\" she said."]
+        );
     }
 
     #[test]
@@ -447,14 +463,21 @@ mod tests {
             sentence_split("他说：「好的。」然后就走了。"),
             ["他说：「好的。」", "然后就走了。"]
         );
-        assert_eq!(sentence_split("真的吗？！我不信。"), ["真的吗？！", "我不信。"]);
+        assert_eq!(
+            sentence_split("真的吗？！我不信。"),
+            ["真的吗？！", "我不信。"]
+        );
     }
 
     #[test]
     fn splits_a_mixed_chinese_and_english_paragraph_at_every_terminator() {
         assert_eq!(
             sentence_split("他读到 Chapter 3。The room was quiet. 然后合上了书。"),
-            ["他读到 Chapter 3。", "The room was quiet.", " 然后合上了书。"]
+            [
+                "他读到 Chapter 3。",
+                "The room was quiet.",
+                " 然后合上了书。"
+            ]
         );
     }
 

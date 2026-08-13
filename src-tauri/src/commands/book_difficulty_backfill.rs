@@ -351,9 +351,15 @@ mod tests {
         std::fs::create_dir_all(&books_dir).unwrap();
         std::fs::copy(epub_fixture_path(), books_dir.join("book.epub")).unwrap();
         insert_book(&db, "book", "epub", "books/book.epub");
-        insert_difficulty(&db, "book", "done", Some("a-hash-that-does-not-match-the-file"));
+        insert_difficulty(
+            &db,
+            "book",
+            "done",
+            Some("a-hash-that-does-not-match-the-file"),
+        );
 
-        let filled = backfill_one(&db, "book", Some("a-hash-that-does-not-match-the-file")).unwrap();
+        let filled =
+            backfill_one(&db, "book", Some("a-hash-that-does-not-match-the-file")).unwrap();
         assert!(!filled);
         assert_eq!(section_count(&db, "book"), 0);
     }

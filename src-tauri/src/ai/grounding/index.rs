@@ -265,7 +265,10 @@ pub(crate) fn ensure_fts_current(conn: &mut Connection) -> AppResult<()> {
         params![FTS_VERSION],
     )?;
     transaction.commit()?;
-    log::info!("grounding: full-text index rebuilt over {} chunks", chunks.len());
+    log::info!(
+        "grounding: full-text index rebuilt over {} chunks",
+        chunks.len()
+    );
     Ok(())
 }
 
@@ -655,7 +658,13 @@ mod tests {
         let directory = tempfile::TempDir::new().unwrap();
         let db = Db::init(directory.path()).unwrap();
         let mut conn = db.conn.lock().unwrap();
-        seed_chunk(&conn, "chunk-a", 0, "He said nothing at all.", Some("Mr. Bennet"));
+        seed_chunk(
+            &conn,
+            "chunk-a",
+            0,
+            "He said nothing at all.",
+            Some("Mr. Bennet"),
+        );
         seed_chunk(&conn, "chunk-b", 1, "She replied at once.", None);
         conn.execute("DELETE FROM book_chunks_fts", []).unwrap();
 
@@ -680,7 +689,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(rowids, 2, "every chunk should now address its own index row");
+        assert_eq!(
+            rowids, 2,
+            "every chunk should now address its own index row"
+        );
     }
 
     #[test]
@@ -698,8 +710,9 @@ mod tests {
         conn.execute("DELETE FROM book_chunks_fts", []).unwrap();
         ensure_fts_current(&mut conn).unwrap();
 
-        let hits = super::super::retrieve::lexical_ranks_with_limit(&conn, "book", "Bennet", 10, None)
-            .unwrap();
+        let hits =
+            super::super::retrieve::lexical_ranks_with_limit(&conn, "book", "Bennet", 10, None)
+                .unwrap();
         assert_eq!(
             hits.len(),
             1,
@@ -715,12 +728,19 @@ mod tests {
         let mut conn = db.conn.lock().unwrap();
         // One chunk says "entail"; the other only has it in its description.
         seed_chunk(&conn, "says-it", 0, "the entail of Longbourn", None);
-        seed_chunk(&conn, "described", 1, "It cannot be helped.", Some("the entail"));
+        seed_chunk(
+            &conn,
+            "described",
+            1,
+            "It cannot be helped.",
+            Some("the entail"),
+        );
         conn.execute("DELETE FROM book_chunks_fts", []).unwrap();
         ensure_fts_current(&mut conn).unwrap();
 
-        let hits = super::super::retrieve::lexical_ranks_with_limit(&conn, "book", "entail", 10, None)
-            .unwrap();
+        let hits =
+            super::super::retrieve::lexical_ranks_with_limit(&conn, "book", "entail", 10, None)
+                .unwrap();
         assert_eq!(hits.len(), 2, "both should be found");
         assert_eq!(
             hits[0].0, "says-it",

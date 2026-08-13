@@ -45,7 +45,8 @@ pub struct ChatMsg {
 const CHAT_COLUMNS: &str = "id, book_id, title, model, pinned, metadata, created_at, updated_at";
 
 /// The `chat_messages` columns `row_to_msg` reads, named in exactly one place.
-const CHAT_MSG_COLUMNS: &str = "id, chat_id, role, content, context, metadata, created_at, updated_at";
+const CHAT_MSG_COLUMNS: &str =
+    "id, chat_id, role, content, context, metadata, created_at, updated_at";
 
 fn row_to_chat(row: &rusqlite::Row) -> rusqlite::Result<Chat> {
     Ok(Chat {
@@ -519,11 +520,13 @@ mod tests {
         )
         .unwrap();
 
-        let chat: Chat = conn.query_row(
-            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
-            params![id],
-            row_to_chat,
-        ).unwrap();
+        let chat: Chat = conn
+            .query_row(
+                &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
+                params![id],
+                row_to_chat,
+            )
+            .unwrap();
 
         assert_eq!(chat.title, "New chat");
         assert_eq!(chat.book_id, "book1");
@@ -544,11 +547,13 @@ mod tests {
         )
         .unwrap();
 
-        let chat: Chat = conn.query_row(
-            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
-            params![id],
-            row_to_chat,
-        ).unwrap();
+        let chat: Chat = conn
+            .query_row(
+                &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
+                params![id],
+                row_to_chat,
+            )
+            .unwrap();
 
         assert_eq!(chat.title, "My Discussion");
         assert_eq!(chat.model, Some("gpt-4o".to_string()));
@@ -732,11 +737,13 @@ mod tests {
         )
         .unwrap();
 
-        let chat: Chat = conn.query_row(
-            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
-            params!["c1"],
-            row_to_chat,
-        ).unwrap();
+        let chat: Chat = conn
+            .query_row(
+                &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
+                params!["c1"],
+                row_to_chat,
+            )
+            .unwrap();
 
         assert_eq!(chat.title, "Renamed");
     }
@@ -852,11 +859,13 @@ mod tests {
         )
         .unwrap();
 
-        let chat: Chat = conn.query_row(
-            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = 'c1'"),
-            [],
-            row_to_chat,
-        ).unwrap();
+        let chat: Chat = conn
+            .query_row(
+                &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = 'c1'"),
+                [],
+                row_to_chat,
+            )
+            .unwrap();
 
         assert_eq!(chat.metadata, Some(meta.to_string()));
     }

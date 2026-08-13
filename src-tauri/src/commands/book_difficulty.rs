@@ -868,8 +868,8 @@ pub(crate) fn compute_vocab_pass_rates(db: &Db, now: i64) -> AppResult<VocabPass
         None => 0,
     };
     let scorable_lookups: i64 = lookups_by_band.iter().sum();
-    let sufficient = scorable_lookups >= PASS_RATE_MIN_SCORABLE_LOOKUPS
-        && span_days >= PASS_RATE_MIN_SPAN_DAYS;
+    let sufficient =
+        scorable_lookups >= PASS_RATE_MIN_SCORABLE_LOOKUPS && span_days >= PASS_RATE_MIN_SPAN_DAYS;
 
     let mut band_pass_rates: [Option<f64>; 5] = [None; 5];
     for band in 1..=5usize {
@@ -1164,7 +1164,10 @@ mod tests {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(rows, vec![("whale".to_string(), 1, Some("sha-2".to_string()))]);
+        assert_eq!(
+            rows,
+            vec![("whale".to_string(), 1, Some("sha-2".to_string()))]
+        );
     }
 
     #[test]
@@ -1481,7 +1484,10 @@ mod tests {
                 aggregate.band4,
                 aggregate.band5,
             ][band];
-            assert_eq!(summed, aggregate_band, "band {band} must sum to the aggregate");
+            assert_eq!(
+                summed, aggregate_band,
+                "band {band} must sum to the aggregate"
+            );
         }
         let summed_unlisted: i64 = sections.iter().map(|section| section.unlisted).sum();
         assert_eq!(summed_unlisted, aggregate.band_unlisted);
@@ -1604,12 +1610,26 @@ mod tests {
                      encounters_on_lookup_active_screen, first_seen_at, last_seen_at,
                      created_at, updated_at
                  ) VALUES (?1, ?2, '', ?3, ?4, ?5, ?6, ?6, ?6, ?6)",
-                params![id, book_id, word, encounter_count, on_lookup_active, last_seen_at],
+                params![
+                    id,
+                    book_id,
+                    word,
+                    encounter_count,
+                    on_lookup_active,
+                    last_seen_at
+                ],
             )
             .unwrap();
     }
 
-    fn insert_dwell(db: &Db, id: &str, book_id: &str, word_count: i64, dwell_ms: i64, started_at: i64) {
+    fn insert_dwell(
+        db: &Db,
+        id: &str,
+        book_id: &str,
+        word_count: i64,
+        dwell_ms: i64,
+        started_at: i64,
+    ) {
         db.conn
             .lock()
             .unwrap()
@@ -1665,10 +1685,19 @@ mod tests {
         assert_eq!(pace.book_words_per_minute, Some(200.0));
         // The overall figure spans both books, so it differs from the
         // book-scoped one.
-        assert_eq!(pace.overall_words_per_minute, median_words_per_minute(&[
-            ScreenPace { word_count: 1000, dwell_ms: 5 * 60_000 },
-            ScreenPace { word_count: 3000, dwell_ms: 5 * 60_000 },
-        ]));
+        assert_eq!(
+            pace.overall_words_per_minute,
+            median_words_per_minute(&[
+                ScreenPace {
+                    word_count: 1000,
+                    dwell_ms: 5 * 60_000
+                },
+                ScreenPace {
+                    word_count: 3000,
+                    dwell_ms: 5 * 60_000
+                },
+            ])
+        );
     }
 
     #[test]
@@ -1741,7 +1770,13 @@ mod tests {
             );
         }
         // Looked up once, long before the window, then "passed" twice inside it.
-        insert_lookup(&db, "l-old", "book", "canter", now - 5 * PASS_RATE_WINDOW_DAYS * PASS_RATE_DAY_MS);
+        insert_lookup(
+            &db,
+            "l-old",
+            "book",
+            "canter",
+            now - 5 * PASS_RATE_WINDOW_DAYS * PASS_RATE_DAY_MS,
+        );
         insert_exposure(&db, "e1", "book", "canter", 2, 1, now - PASS_RATE_DAY_MS);
 
         let rates = compute_vocab_pass_rates(&db, now).unwrap();

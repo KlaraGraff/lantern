@@ -65,7 +65,12 @@ pub mod live_data {
         if !source.join("secrets.db").exists() {
             return None;
         }
-        for name in ["lantern.db", "lantern.db-wal", "lantern.db-shm", "secrets.db"] {
+        for name in [
+            "lantern.db",
+            "lantern.db-wal",
+            "lantern.db-shm",
+            "secrets.db",
+        ] {
             let from = source.join(name);
             if from.exists() {
                 std::fs::copy(&from, destination.join(name)).ok()?;

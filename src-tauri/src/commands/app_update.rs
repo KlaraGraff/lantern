@@ -111,7 +111,9 @@ fn updater_pubkey(app: &AppHandle) -> AppResult<String> {
 /// decode the plugin does internally before it verifies a fresh download.
 fn verify(bytes: &[u8], signature_b64: &str, pubkey_b64: &str) -> bool {
     fn unwrap_base64(value: &str) -> Option<String> {
-        let decoded = base64::engine::general_purpose::STANDARD.decode(value).ok()?;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(value)
+            .ok()?;
         String::from_utf8(decoded).ok()
     }
 
@@ -144,7 +146,10 @@ fn prune(dir: &Path, keep: Option<&str>) {
             continue;
         }
         if let Err(e) = std::fs::remove_file(entry.path()) {
-            log::warn!("update: cannot remove stale {}: {e}", entry.path().display());
+            log::warn!(
+                "update: cannot remove stale {}: {e}",
+                entry.path().display()
+            );
         }
     }
 }
@@ -207,7 +212,10 @@ pub async fn update_check(app: AppHandle) -> AppResult<UpdateStatus> {
                 // The bytes on disk are not what the server signed. Nothing to
                 // salvage and nothing to warn the reader about — drop it and
                 // let this look like a fresh update.
-                log::warn!("update: staged v{} failed verification, discarding", update.version);
+                log::warn!(
+                    "update: staged v{} failed verification, discarding",
+                    update.version
+                );
                 let _ = std::fs::remove_file(&package);
                 false
             }

@@ -622,7 +622,10 @@ mod tests {
         Db::run_migrations_up_to(&conn, 65).unwrap();
 
         assert_eq!(
-            count(&conn, "SELECT COUNT(*) FROM _tombstones WHERE entity = 'bookmark'"),
+            count(
+                &conn,
+                "SELECT COUNT(*) FROM _tombstones WHERE entity = 'bookmark'"
+            ),
             0,
             "no delete marker may be left under the retired name"
         );
@@ -741,7 +744,10 @@ mod tests {
             &sync,
         )
         .unwrap();
-        assert_eq!(written.id, bare.id, "writing on it is an edit, not a new row");
+        assert_eq!(
+            written.id, bare.id,
+            "writing on it is an edit, not a new row"
+        );
         assert_eq!(written.created_at, bare.created_at);
         assert_eq!(written.content, "and now a sentence about it");
 

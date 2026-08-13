@@ -904,7 +904,9 @@ mod tests {
             id: "v1".into(),
             definition: "an unexpectedly happy turn".into(),
             context_explanation: Some("Here it lands on the narrator, not the ship.".into()),
-            card_snapshot: Some(r#"{"modules":{"word_info":{"summary":"a fortunate accident"}}}"#.into()),
+            card_snapshot: Some(
+                r#"{"modules":{"word_info":{"summary":"a fortunate accident"}}}"#.into(),
+            ),
         }));
         // A regeneration whose card produced neither a context paragraph nor a
         // storable snapshot. Both keys drop off the wire, and the decoder has

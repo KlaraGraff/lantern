@@ -1318,7 +1318,9 @@ pub async fn ai_index_all_books(
     // the check that actually decides — this one can go stale the moment it
     // returns.
     if batch_is_running()? {
-        return Err(AppError::Other("AI_INDEX_BATCH_ALREADY_RUNNING".to_string()));
+        return Err(AppError::Other(
+            "AI_INDEX_BATCH_ALREADY_RUNNING".to_string(),
+        ));
     }
     let db = db.inner().clone();
     let secrets = secrets.inner().clone();
@@ -1353,7 +1355,9 @@ pub async fn ai_index_all_books(
             .as_ref()
             .is_some_and(|run| run.progress.state == IndexRunState::Running)
         {
-            return Err(AppError::Other("AI_INDEX_BATCH_ALREADY_RUNNING".to_string()));
+            return Err(AppError::Other(
+                "AI_INDEX_BATCH_ALREADY_RUNNING".to_string(),
+            ));
         }
         // Whatever the last run left behind is replaced wholesale here, which
         // is what lets the row's "retry the failed ones" press start a fresh
@@ -1535,7 +1539,8 @@ mod tests {
     /// the summaries themselves took.
     #[test]
     fn the_alias_pass_is_the_fifth_step_and_names_itself() {
-        let value = serde_json::to_value(IndexProgress::running(IndexPhase::Aliases, 0, 0)).unwrap();
+        let value =
+            serde_json::to_value(IndexProgress::running(IndexPhase::Aliases, 0, 0)).unwrap();
         assert_eq!(value["phase"], "aliases");
         assert_eq!(value["step"], 5);
         assert_eq!(value["totalSteps"], 5);
@@ -1662,7 +1667,11 @@ mod tests {
 
     #[test]
     fn every_non_ready_index_needs_a_visit() {
-        for status in [IndexStatus::Missing, IndexStatus::Building, IndexStatus::Failed] {
+        for status in [
+            IndexStatus::Missing,
+            IndexStatus::Building,
+            IndexStatus::Failed,
+        ] {
             assert_eq!(
                 book_index_standing(status, true),
                 BookIndexStanding::Pending,
@@ -1734,7 +1743,10 @@ mod tests {
         progress.finish_book(0, verdict);
         let value = serde_json::to_value(&progress).unwrap();
         assert!(value["books"][0].get("chunkCount").is_none());
-        assert_eq!(value["books"][0]["message"], "AI_INDEX_NOT_READY:unsupported");
+        assert_eq!(
+            value["books"][0]["message"],
+            "AI_INDEX_NOT_READY:unsupported"
+        );
     }
 
     /// A retry has to clear the last attempt's count for the same reason it
@@ -1793,7 +1805,10 @@ mod tests {
                 BatchBookState::Pending
             ]
         );
-        assert_eq!(serde_json::to_value(&progress).unwrap()["state"], "cancelled");
+        assert_eq!(
+            serde_json::to_value(&progress).unwrap()["state"],
+            "cancelled"
+        );
     }
 
     /// Retrying clears the previous message before the book runs again, or a
@@ -1857,7 +1872,10 @@ mod tests {
         drop(old_run);
         ai_stop_book_index("same-book".to_string()).unwrap();
         assert!(*new.borrow(), "the run still going must still be stoppable");
-        assert!(!*old.borrow(), "the run that ended must be gone from the registry");
+        assert!(
+            !*old.borrow(),
+            "the run that ended must be gone from the registry"
+        );
     }
 
     /// A book id that could not name a row never reaches the registry.
@@ -1900,7 +1918,11 @@ mod tests {
 
         assert!(failure.is_cancellation());
         assert_eq!(failure.phase, IndexPhase::Summarize);
-        assert_eq!(committed.lock().unwrap().len(), 2, "earlier phases keep their work");
+        assert_eq!(
+            committed.lock().unwrap().len(),
+            2,
+            "earlier phases keep their work"
+        );
 
         // And it reaches the reader as a stop, not as something to apologise
         // for — the single-book run reports through the same terminal event
@@ -1908,7 +1930,10 @@ mod tests {
         let progress = IndexProgress::failed(failure.phase, &failure.error);
         assert_eq!(progress.state, IndexRunState::Cancelled);
         assert_eq!(progress.message, None);
-        assert_eq!(serde_json::to_value(&progress).unwrap()["state"], "cancelled");
+        assert_eq!(
+            serde_json::to_value(&progress).unwrap()["state"],
+            "cancelled"
+        );
     }
 
     /// A stop that arrives while the phase is running has to cut it short too,

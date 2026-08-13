@@ -744,10 +744,7 @@ mod tests {
     fn review_pile_curation_ships_off_by_default() {
         let (_dir, db) = setup();
         let conn = db.reader();
-        assert!(!is_enabled(
-            &conn,
-            crate::commands::review_pile_ai::JOB_ID
-        ));
+        assert!(!is_enabled(&conn, crate::commands::review_pile_ai::JOB_ID));
     }
 
     /// A job nobody has ever touched, whose default is off, has never been

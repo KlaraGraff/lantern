@@ -364,7 +364,8 @@ pub fn list_word_exposures_inner(book_id: &str, db: &Db) -> AppResult<Vec<WordEx
                 chapter: row.get("chapter")?,
                 normalized_word: row.get("normalized_word")?,
                 encounter_count: row.get("encounter_count")?,
-                encounters_on_lookup_active_screen: row.get("encounters_on_lookup_active_screen")?,
+                encounters_on_lookup_active_screen: row
+                    .get("encounters_on_lookup_active_screen")?,
                 first_seen_at: row.get("first_seen_at")?,
                 last_seen_at: row.get("last_seen_at")?,
             })
@@ -683,7 +684,14 @@ mod tests {
 
     // -- §2.2 auto-finish gate: numerator (dedup) and denominator (estimate) --
 
-    fn insert_dwell_at(db: &Db, book_id: &str, cfi: Option<&str>, started_at: i64, word_count: i64, dwell_ms: i64) {
+    fn insert_dwell_at(
+        db: &Db,
+        book_id: &str,
+        cfi: Option<&str>,
+        started_at: i64,
+        word_count: i64,
+        dwell_ms: i64,
+    ) {
         db.conn
             .lock()
             .unwrap()
@@ -724,12 +732,22 @@ mod tests {
     fn count_normal_pace_screens_dedupes_by_cfi() {
         let (_dir, db, _sync) = test_db();
         for i in 0..5 {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + i * 60_000, 200, 60_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/2)"),
+                1_000 + i * 60_000,
+                200,
+                60_000,
+            );
         }
         let conn = db.conn.lock().unwrap();
         let tx = conn.unchecked_transaction().unwrap();
         let count = count_normal_pace_screens(&tx, "book-1").unwrap();
-        assert_eq!(count, 1, "five dwells on the same cfi are one screen, not five");
+        assert_eq!(
+            count, 1,
+            "five dwells on the same cfi are one screen, not five"
+        );
     }
 
     /// Rows with no `cfi` at all cannot be told apart, so they are dropped
@@ -826,14 +844,30 @@ mod tests {
         let (_dir, db, _sync) = test_db();
         // 25 genuine screens at 200 wpm, plus 60 page-turns at 6_000 wpm.
         for i in 0..25 {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + i * 60_000, 200, 60_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/2)"),
+                1_000 + i * 60_000,
+                200,
+                60_000,
+            );
         }
         for i in 0..60 {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/4)"), 2_000_000 + i * 2_000, 200, 2_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/4)"),
+                2_000_000 + i * 2_000,
+                200,
+                2_000,
+            );
         }
         let conn = db.conn.lock().unwrap();
         let tx = conn.unchecked_transaction().unwrap();
-        let median = reader_median_wpm(&tx).unwrap().expect("25 read screens is enough");
+        let median = reader_median_wpm(&tx)
+            .unwrap()
+            .expect("25 read screens is enough");
         assert!(
             (median - 200.0).abs() < 1.0,
             "median should describe the reading, got {median}"
@@ -847,14 +881,30 @@ mod tests {
     fn recent_page_turns_do_not_crowd_reading_out_of_the_window() {
         let (_dir, db, _sync) = test_db();
         for i in 0..30 {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + i * 60_000, 200, 60_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/2)"),
+                1_000 + i * 60_000,
+                200,
+                60_000,
+            );
         }
         for i in 0..600 {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/4)"), 9_000_000 + i * 2_000, 200, 2_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/4)"),
+                9_000_000 + i * 2_000,
+                200,
+                2_000,
+            );
         }
         let conn = db.conn.lock().unwrap();
         let tx = conn.unchecked_transaction().unwrap();
-        let median = reader_median_wpm(&tx).unwrap().expect("the 30 read screens survive the window");
+        let median = reader_median_wpm(&tx)
+            .unwrap()
+            .expect("the 30 read screens survive the window");
         assert!((median - 200.0).abs() < 1.0, "got {median}");
     }
 
@@ -866,7 +916,14 @@ mod tests {
     fn a_thin_sample_reports_no_baseline_at_all() {
         let (_dir, db, _sync) = test_db();
         for i in 0..(MIN_MEDIAN_PACE_SAMPLE - 1) {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + (i as i64) * 60_000, 200, 60_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/2)"),
+                1_000 + (i as i64) * 60_000,
+                200,
+                60_000,
+            );
         }
         let conn = db.conn.lock().unwrap();
         let tx = conn.unchecked_transaction().unwrap();
@@ -880,11 +937,17 @@ mod tests {
     fn a_table_of_only_page_turns_yields_no_baseline() {
         let (_dir, db, _sync) = test_db();
         for i in 0..200 {
-            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/4)"), 1_000 + i * 2_000, 200, 2_000);
+            insert_dwell_at(
+                &db,
+                "book-1",
+                Some("epubcfi(/6/4!/4)"),
+                1_000 + i * 2_000,
+                200,
+                2_000,
+            );
         }
         let conn = db.conn.lock().unwrap();
         let tx = conn.unchecked_transaction().unwrap();
         assert!(reader_median_wpm(&tx).unwrap().is_none());
     }
-
 }

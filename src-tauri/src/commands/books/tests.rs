@@ -1986,7 +1986,14 @@ fn promotion_is_published_even_when_the_progress_event_is_throttled() {
 // A scenario with no such row exercises the "no denominator yet" skip path
 // instead (`estimate_total_book_screens` returns `None`).
 
-fn insert_dwell(db: &Db, book_id: &str, cfi: &str, started_at: i64, word_count: i64, dwell_ms: i64) {
+fn insert_dwell(
+    db: &Db,
+    book_id: &str,
+    cfi: &str,
+    started_at: i64,
+    word_count: i64,
+    dwell_ms: i64,
+) {
     let conn = db.conn.lock().unwrap();
     conn.execute(
         "INSERT INTO reading_screen_dwells
@@ -2036,7 +2043,14 @@ fn auto_finish_marks_a_normal_complete_read() {
     sync.set_should_queue(true);
 
     for i in 0..100 {
-        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     // avg word_count = 200, so total_tokens = 20_000 derives a 100-screen book.
     insert_done_book_difficulty(&db, "b1", 20_000);
@@ -2044,7 +2058,10 @@ fn auto_finish_marks_a_normal_complete_read() {
     let auto_finished =
         do_update_reading_progress("b1", 97, Some("epubcfi(/6/8!)"), &db, &sync).unwrap();
 
-    assert!(auto_finished, "95% progress and 100% normal-pace coverage must clear the gate");
+    assert!(
+        auto_finished,
+        "95% progress and 100% normal-pace coverage must clear the gate"
+    );
     assert_eq!(stored_status(&db, "b1"), "finished");
     let events = queued_events(&db);
     let mut kinds: Vec<&str> = events.iter().map(|(kind, _)| kind.as_str()).collect();
@@ -2085,21 +2102,38 @@ fn rapid_flip_through_to_the_end_does_not_auto_finish() {
     sync.set_should_queue(true);
 
     for i in 0..400 {
-        insert_dwell(&db, "baseline", &format!("baseline-cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "baseline",
+            &format!("baseline-cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     // Flipped through the whole book in ~1s per screen — ~12,000 wpm,
     // roughly 60x this reader's own median. Still 100 distinct cfis, so
     // this book's own average word_count (used for the denominator) reads
     // as 200 regardless of the pace they were read at.
     for i in 0..100 {
-        insert_dwell(&db, "b1", &format!("cfi-{i}"), 24_000_000 + i * 1_000, 200, 1_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("cfi-{i}"),
+            24_000_000 + i * 1_000,
+            200,
+            1_000,
+        );
     }
     insert_done_book_difficulty(&db, "b1", 20_000);
 
     let auto_finished =
         do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
 
-    assert!(!auto_finished, "100% of screens visited but 0% at normal pace must not auto-finish");
+    assert!(
+        !auto_finished,
+        "100% of screens visited but 0% at normal pace must not auto-finish"
+    );
     assert_eq!(stored_status(&db, "b1"), "reading");
 }
 
@@ -2117,7 +2151,14 @@ fn jumping_straight_to_the_last_page_does_not_auto_finish() {
     sync.set_should_queue(true);
 
     for i in 0..5 {
-        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     // avg word_count = 200 from those same 5 screens, so total_tokens =
     // 20_000 still derives a 100-screen book — 5 of 100 is nowhere near 80%.
@@ -2126,7 +2167,10 @@ fn jumping_straight_to_the_last_page_does_not_auto_finish() {
     let auto_finished =
         do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
 
-    assert!(!auto_finished, "5 of 100 screens is nowhere near the 80% coverage floor");
+    assert!(
+        !auto_finished,
+        "5 of 100 screens is nowhere near the 80% coverage floor"
+    );
     assert_eq!(stored_status(&db, "b1"), "reading");
 }
 
@@ -2144,14 +2188,24 @@ fn cross_device_reading_leaves_local_coverage_short() {
     sync.set_should_queue(true);
 
     for i in 0..40 {
-        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     insert_done_book_difficulty(&db, "b1", 20_000);
 
     let auto_finished =
         do_update_reading_progress("b1", 97, Some("epubcfi(/6/8!)"), &db, &sync).unwrap();
 
-    assert!(!auto_finished, "40 of 100 screens locally is well under the 80% floor");
+    assert!(
+        !auto_finished,
+        "40 of 100 screens locally is well under the 80% floor"
+    );
     assert_eq!(stored_status(&db, "b1"), "reading");
 }
 
@@ -2166,7 +2220,14 @@ fn an_already_finished_book_is_not_re_evaluated() {
     sync.set_should_queue(true);
 
     for i in 0..100 {
-        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     insert_done_book_difficulty(&db, "b1", 20_000);
 
@@ -2178,7 +2239,10 @@ fn an_already_finished_book_is_not_re_evaluated() {
         .into_iter()
         .filter(|(kind, _)| kind == "book.status.set")
         .count();
-    assert_eq!(promotions, 0, "an already-finished book must not republish the finished transition");
+    assert_eq!(
+        promotions, 0,
+        "an already-finished book must not republish the finished transition"
+    );
 }
 
 /// Bug 1 regression — "读完第一章然后拖到末尾": chapter 1 was read properly
@@ -2199,7 +2263,14 @@ fn finishing_chapter_one_then_dragging_to_the_end_does_not_auto_finish() {
     sync.set_should_queue(true);
 
     for i in 0..20 {
-        insert_dwell(&db, "b1", &format!("ch1-cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("ch1-cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     // avg word_count = 200; total_tokens = 60_000 derives a 300-screen book —
     // the whole-book scale a chapter-scoped denominator could never see.
@@ -2275,7 +2346,14 @@ fn auto_finish_pair_survives_peer_replay() {
     sync.set_should_queue(true);
 
     for i in 0..100 {
-        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+        insert_dwell(
+            &db,
+            "b1",
+            &format!("cfi-{i}"),
+            1000 + i * 60_000,
+            200,
+            60_000,
+        );
     }
     insert_done_book_difficulty(&db, "b1", 20_000);
 
@@ -2287,8 +2365,14 @@ fn auto_finish_pair_survives_peer_replay() {
     // event was stamped with lives in `_pending_publish.ts`, a separate
     // column, so it's read directly here rather than through that helper.
     let outbox = queued_events_with_ts(&db);
-    let status_event = outbox.iter().find(|(kind, _, _)| kind == "book.status.set").unwrap();
-    let progress_event = outbox.iter().find(|(kind, _, _)| kind == "book.progress.set").unwrap();
+    let status_event = outbox
+        .iter()
+        .find(|(kind, _, _)| kind == "book.status.set")
+        .unwrap();
+    let progress_event = outbox
+        .iter()
+        .find(|(kind, _, _)| kind == "book.progress.set")
+        .unwrap();
 
     // The two events must NOT share a timestamp — that shared timestamp is
     // exactly what let a peer's tiebreak drop one of them. Distinct,
@@ -2301,7 +2385,10 @@ fn auto_finish_pair_survives_peer_replay() {
          tiebreak can drop either half of it"
     );
 
-    assert!(status_ts < progress_ts, "do_mark_finished publishes status, then progress");
+    assert!(
+        status_ts < progress_ts,
+        "do_mark_finished publishes status, then progress"
+    );
 
     // Simulate a peer merging both events the way `replay.rs` actually
     // delivers them — `all_events.sort_by(|a, b| (a.ts, &a.device, &a.id)...)`
@@ -2337,8 +2424,14 @@ fn auto_finish_pair_survives_peer_replay() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(peer_status, "finished", "peer must land on 'finished', not fall back to 'reading'");
-    assert_eq!(peer_progress, 100, "peer must land on progress 100, not lose it to the other event");
+    assert_eq!(
+        peer_status, "finished",
+        "peer must land on 'finished', not fall back to 'reading'"
+    );
+    assert_eq!(
+        peer_progress, 100,
+        "peer must land on progress 100, not lose it to the other event"
+    );
     drop(peer_dir);
 }
 
@@ -2347,7 +2440,13 @@ fn auto_finish_pair_survives_peer_replay() {
 /// reimplemented — the exact WHERE clause is the thing this regression
 /// depends on, so it must be the production one, not a hand-derived
 /// equivalent that could get the tiebreak direction backwards.
-fn apply_book_progress_event(db: &Db, book_id: &str, ts: i64, device: &str, payload: &serde_json::Value) {
+fn apply_book_progress_event(
+    db: &Db,
+    book_id: &str,
+    ts: i64,
+    device: &str,
+    payload: &serde_json::Value,
+) {
     let progress = payload["progress"].as_i64().unwrap();
     let cfi = payload["cfi"].as_str();
     db.conn
@@ -2365,7 +2464,13 @@ fn apply_book_progress_event(db: &Db, book_id: &str, ts: i64, device: &str, payl
 
 /// See `apply_book_progress_event` — the `status` half, copied from
 /// `apply_book_status` in `sync/merge.rs`.
-fn apply_book_status_event(db: &Db, book_id: &str, ts: i64, device: &str, payload: &serde_json::Value) {
+fn apply_book_status_event(
+    db: &Db,
+    book_id: &str,
+    ts: i64,
+    device: &str,
+    payload: &serde_json::Value,
+) {
     let status = payload["status"].as_str().unwrap();
     db.conn
         .lock()

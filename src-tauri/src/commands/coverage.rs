@@ -348,8 +348,8 @@ pub fn load_reader_profile(db: &Db) -> AppResult<ReaderProfile> {
 
     let mut mastered = HashSet::new();
     {
-        let mut statement = conn
-            .prepare("SELECT word FROM vocab_words WHERE mastery IN ('familiar', 'mastered')")?;
+        let mut statement =
+            conn.prepare("SELECT word FROM vocab_words WHERE mastery IN ('familiar', 'mastered')")?;
         let mut rows = statement.query([])?;
         while let Some(row) = rows.next()? {
             let word: String = row.get(0)?;
@@ -1136,10 +1136,8 @@ pub fn load_clear_preview(db: &Db) -> AppResult<VocabProfileClearPreview> {
         auto_mastery_words: one("SELECT COUNT(*) FROM mastery_progress")?,
         exposure_records: one("SELECT COUNT(*) FROM reading_word_exposures")?,
         computed_books: one("SELECT COUNT(*) FROM book_reader_coverage WHERE status = 'done'")?,
-        manual_words: one(
-            "SELECT COUNT(*) FROM vocab_words
-              WHERE mastery_source <> 'auto' AND mastery <> 'new'",
-        )?,
+        manual_words: one("SELECT COUNT(*) FROM vocab_words
+              WHERE mastery_source <> 'auto' AND mastery <> 'new'")?,
         vocab_words: one("SELECT COUNT(*) FROM vocab_words WHERE list_status = 'confirmed'")?,
     })
 }

@@ -176,12 +176,7 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
     })
 }
 
-fn run_loop(
-    rx: mpsc::Receiver<Wake>,
-    stop: Arc<AtomicBool>,
-    db: Db,
-    engine: Arc<ReplayEngine>,
-) {
+fn run_loop(rx: mpsc::Receiver<Wake>, stop: Arc<AtomicBool>, db: Db, engine: Arc<ReplayEngine>) {
     // Outer loop: block until the next event (with a periodic stop
     // check via short timeout). Inner loop: debounce-drain any events
     // that arrive within DEBOUNCE.
