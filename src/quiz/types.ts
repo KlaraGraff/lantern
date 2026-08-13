@@ -175,7 +175,30 @@ export interface AskThread {
 
 // ===== 试卷 =====
 
-export type QuizStatus = 'ready' | 'submitted'
+/**
+ * `generating`：渐进发卷（docs/impls/quiz-progressive-delivery.md）——首篇文章
+ * 就绪时卷子就落库进人手上了，其余篇还在生成/失败待重生成。此状态下交卷被
+ * 前后端双重拒绝；全部篇就绪后翻成 `ready`，行数据与非渐进卷完全同形。
+ */
+export type QuizStatus = 'generating' | 'ready' | 'submitted'
+
+/** 生成计划里一个篇位（词组）的状态；重启后 pending 与 failed 同等对待（都不在跑）。 */
+export type QuizGenerationGroupState = 'pending' | 'failed' | 'done'
+
+/** generation_json 里的一个篇位：拆词时定死的词组 + 当前状态。篇号 = 数组下标。 */
+export interface QuizGenerationGroup {
+  words: QuizWord[]
+  state: QuizGenerationGroupState
+  /** done 时回填：把篇位映射到 content 里的文章 */
+  passageId?: string
+  /** failed 且能识别出 AI 错误码时记录，UI 据此把失败原因说对 */
+  errorCode?: string
+}
+
+/** generation_json 的形状（前端独占读写，见 paper-io.ts 顶注） */
+export interface QuizGenerationPlan {
+  groups: QuizGenerationGroup[]
+}
 
 export interface Quiz {
   /** SQLite 自增主键，新建未落库前为 undefined */
@@ -188,6 +211,8 @@ export interface Quiz {
   readingQuestions: ReadingQuestion[]
   grammarQuestions: GrammarFillQuestion[]
   status: QuizStatus
+  /** 生成计划；只在 status === 'generating' 时存在（rowToQuiz 从 generation_json 解析） */
+  generation?: QuizGenerationPlan
   result?: QuizResult
   /** 评卷页的追问记录，随卷保存 */
   askThreads?: AskThread[]
