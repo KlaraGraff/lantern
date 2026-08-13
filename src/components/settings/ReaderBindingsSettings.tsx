@@ -102,10 +102,16 @@ export default function ReaderBindingsSettings({
     }
     onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, trigger } : item));
   };
-  const nextTrigger = Array.from({ length: 23 }, (_, index) => `key:F${index + 2}`)
-    .find((trigger) => trigger !== previousPageBinding
-      && trigger !== nextPageBinding
-      && !value.some((binding) => binding.trigger === trigger));
+  // A free double/triple-click goes first: it is the one default a phone can
+  // actually trigger without an attached keyboard. F2…F24 remain the
+  // fallback once those are taken — a phone user who reaches that far still
+  // has to reassign the row by hand, same as before this fix.
+  const nextTrigger = [
+    ...clickTriggers.filter((click) => !click.takenByBuiltIn).map((click) => click.trigger),
+    ...Array.from({ length: 23 }, (_, index) => `key:F${index + 2}`),
+  ].find((trigger) => trigger !== previousPageBinding
+    && trigger !== nextPageBinding
+    && !value.some((binding) => binding.trigger === trigger));
 
   return (
     <div className="mt-4 border-t border-border-light pt-4">
@@ -123,7 +129,7 @@ export default function ReaderBindingsSettings({
               />
               <button
                 type="button"
-                onClick={() => setRecording(index)}
+                onClick={() => setRecording(recording === index ? null : index)}
                 className={`flex h-8 min-w-[120px] items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] touch:h-11 ${recording === index ? "border-accent bg-accent-bg text-accent-text" : "border-border text-text-secondary"}`}
               >
                 <Keyboard size={13} />

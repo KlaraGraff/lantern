@@ -173,6 +173,13 @@ export default function ReaderNotesPanel({
   const [toolbar, setToolbar] = useState<{ id: string; x: number; y: number } | null>(null);
   const handledSelectionRef = useRef<string | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  // Backstop for the cancel button, which primarily defends itself by refusing
+  // mousedown's focus change. Set on its pointerdown so that if a blur happens
+  // anyway, that blur can tell "cancel was pressed" apart from "the reader
+  // tapped away to save". A one-shot flag, not a mode: it is consumed by
+  // whichever of onBlur/closeEditor sees it first, and typing disarms it, so an
+  // aborted press that produced no blur cannot go on eating later ones.
+  const discardingRef = useRef(false);
 
   const refreshNotes = useCallback(async () => {
     try {
@@ -290,11 +297,22 @@ export default function ReaderNotesPanel({
   }, [editing]);
 
   const updateDraft = (value: string) => {
+    // Typing is the clearest possible statement that this is not a cancel, so
+    // it disarms the flag — an aborted press that never produced a blur to
+    // consume it cannot then eat the save that follows the next tap away.
+    discardingRef.current = false;
     setDraft(value);
     if (editing) writeDraft(readerNoteDraftKey(bookId, editing.noteId, editing.anchor), value);
   };
 
   const closeEditor = () => {
+    // Every path here means "this text is not being kept" — cancel, Escape, an
+    // empty new note, a deleted row. The stored draft has to go with it:
+    // `openEditor` prefers the draft over the saved note, so a kept one would
+    // hand the discarded text straight back the next time this note opens, and
+    // the first tap away would commit it.
+    if (editing) writeDraft(readerNoteDraftKey(bookId, editing.noteId, editing.anchor), "");
+    discardingRef.current = false;
     setEditing(null);
     setDraft("");
     setSaveFailed(false);
@@ -414,7 +432,17 @@ export default function ReaderNotesPanel({
         value={draft}
         rows={3}
         onChange={(event) => updateDraft(event.target.value)}
-        onBlur={() => void commit()}
+        onBlur={() => {
+          // A press on the cancel button below reaches here first (pointerdown
+          // fires before the focus change that produces this blur). Consume the
+          // flag and skip the commit — the cancel button's own onClick is what
+          // actually discards and closes.
+          if (discardingRef.current) {
+            discardingRef.current = false;
+            return;
+          }
+          void commit();
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") { event.preventDefault(); closeEditor(); }
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void commit(); }
@@ -422,10 +450,26 @@ export default function ReaderNotesPanel({
         placeholder={t("notes.writePlaceholder")}
         className="w-full resize-y rounded-md border border-accent/40 bg-bg-surface p-2 text-[12.5px] leading-5 text-text-primary outline-none focus:border-accent"
       />
-      <p className="mt-1 flex items-center gap-1 text-[10.5px] text-text-muted">
-        {saving && <Loader2 size={11} className="animate-spin motion-reduce:animate-none" />}
-        {saveFailed ? t("notes.saveFailed") : t("notes.editHint")}
-      </p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1 text-[10.5px] text-text-muted">
+          {saving && <Loader2 size={11} className="animate-spin motion-reduce:animate-none" />}
+          {saveFailed ? t("notes.saveFailed") : t("notes.editHint")}
+        </p>
+        <button
+          type="button"
+          // The focus change is what produces the blur, and it is `mousedown`'s
+          // default action — on iOS a synthetic one that arrives after the
+          // pointer events. Refusing it keeps focus in the textarea, so there
+          // is no blur and no commit to race. The flag below is the fallback
+          // for anywhere that ignores the preventDefault.
+          onMouseDown={(event) => event.preventDefault()}
+          onPointerDown={() => { discardingRef.current = true; }}
+          onClick={closeEditor}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium text-text-muted hover:bg-bg-input hover:text-text-primary touch:min-h-11 touch:px-2.5"
+        >
+          {t("common.cancel")}
+        </button>
+      </div>
     </div>
   );
 

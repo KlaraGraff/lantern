@@ -14,6 +14,7 @@ import { useAskThread } from './useAskThread.ts'
 import { explanationTriState, type ExplanationTriState } from './useQuizPaper.ts'
 import type { ExplanationSessionState } from './explanation-session.ts'
 import { aiErrorMessageKey } from '../../utils/aiError.ts'
+import { TOP_INSET } from '../../utils/top-inset.ts'
 import type {
   AskThread,
   GrammarFillQuestion,
@@ -195,7 +196,7 @@ export default function GradeView(props: {
 
   return (
     <div className="flex h-screen flex-col bg-bg-page">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-bg-surface px-4">
+      <div className={`flex min-h-14 shrink-0 items-center gap-3 border-b border-border bg-bg-surface px-4 ${TOP_INSET}`}>
         <button
           type="button"
           onClick={onExit}

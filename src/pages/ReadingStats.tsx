@@ -593,7 +593,7 @@ function Modal({ title, onClose, children }: { title: string; onClose(): void; c
     /* Same halving as the open-book card: 24px of overlay margin plus 20px of
        card padding is 88px of a phone's 390, spent on air in front of a
        dialog that has a paragraph of prose in it. */
-    <div className="fixed inset-0 z-50 grid place-items-center bg-overlay p-4 md:p-6" role="presentation" onMouseDown={(event) => {
+    <div className="fixed inset-0 z-50 grid place-items-center bg-overlay p-4 md:p-6" role="presentation" onPointerDown={(event) => {
       if (event.currentTarget === event.target) onClose();
     }}>
       <section role="dialog" aria-modal="true" aria-labelledby="reading-stats-modal-title" className="w-full max-w-md rounded-xl bg-bg-surface p-4 shadow-popover md:p-5">

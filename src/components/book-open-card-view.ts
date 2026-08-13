@@ -77,13 +77,22 @@ export type OpenCardBodyState =
  * `book_difficulty.status` is also literally `"failed"`, so the scanned
  * check must run before the generic no-conclusion one or every scanned PDF
  * would render as a plain, unexplained failure (§3, not §2c).
+ *
+ * `ocrAvailable` (default `true`, so existing callers/tests are unaffected)
+ * is `platform.hasOcr` in practice: the OCR package/job commands this state's
+ * offer depends on are compiled out on iOS/Android (D-003), so on those
+ * platforms a scanned PDF must not classify as `"scanned"` at all — it falls
+ * through to the plain `"noConclusion"` failure a step below, which already
+ * says the book still reads normally and just has no difficulty figure,
+ * instead of offering a download that can never complete.
  */
 export function classifyOpenCardBody(
   book: Pick<Book, "format">,
   difficulty: BookDifficulty | null,
   passRatesSufficient: boolean,
+  ocrAvailable: boolean = true,
 ): OpenCardBodyState {
-  if (isScannedPdf(book, difficulty)) return "scanned";
+  if (ocrAvailable && isScannedPdf(book, difficulty)) return "scanned";
   if (!difficulty || difficulty.status === "pending") return "neverComputed";
   if (difficulty.status === "running") return "computing";
   if (difficulty.status === "too_short" || difficulty.status === "unsupported" || difficulty.status === "failed") {

@@ -2450,7 +2450,7 @@ export default function Reader() {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-40"
-          onMouseDown={(e) => { e.preventDefault(); setSettingsOpen(false); }}
+          onPointerDown={(e) => { e.preventDefault(); setSettingsOpen(false); }}
         />
       )}
       {/* Header */}
@@ -2508,10 +2508,21 @@ export default function Reader() {
             )}
             {/* Centred by giving the two buttons equal, fixed widths rather than
                 by absolute positioning: a long chapter name then truncates
-                against the buttons instead of running underneath them. */}
-            <span className="min-w-0 flex-1 truncate text-center text-[12px] leading-4 text-text-muted">
+                against the buttons instead of running underneath them.
+
+                It is also the dependable way to raise the controls. The body's
+                middle tap zone still answers, but it loses every tap that lands
+                on a word to the lookup — and on a full page of text most taps
+                do, so aiming for the controls there is a coin flip. This strip
+                is always on screen and has nothing on it to look up. */}
+            <button
+              type="button"
+              onClick={() => setChromeOpen(true)}
+              aria-label={t("reader.showControls")}
+              className="h-10 min-w-0 flex-1 cursor-pointer truncate px-1 text-center text-[12px] leading-4 text-text-muted"
+            >
               {narrowLocationLabel}
-            </span>
+            </button>
             <button
               type="button"
               onClick={toggleAiPanel}

@@ -21,6 +21,7 @@ import { gradeQuiz } from '../../quiz/grading.ts'
 import { judgeGrammar } from '../../quiz/judge.ts'
 import { parseQuizAiProfileId } from '../../quiz/transport.ts'
 import { useSettings } from '../../hooks/useSettings.ts'
+import { TOP_INSET } from '../../utils/top-inset.ts'
 import type { AnswerSheet, Passage, Quiz, QuizResult } from '../../quiz/types.ts'
 import type { GenerationSessionState } from './generation-session.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
@@ -157,7 +158,7 @@ export default function TakeView(props: {
 
   return (
     <div className="flex h-screen flex-col bg-bg-page">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-bg-surface px-4">
+      <div className={`flex min-h-14 shrink-0 items-center gap-3 border-b border-border bg-bg-surface px-4 ${TOP_INSET}`}>
         <button
           type="button"
           onClick={onExit}
@@ -318,7 +319,7 @@ export default function TakeView(props: {
         </div>
       </div>
 
-      <div className="flex h-16 shrink-0 items-center gap-3 border-t border-border bg-bg-surface px-4">
+      <div className="flex min-h-16 shrink-0 items-center gap-3 border-t border-border bg-bg-surface px-4 pb-[max(0.5rem,var(--spacing-safe-bottom))]">
         <button
           type="button"
           disabled={submitting || quiz.status !== 'ready'}

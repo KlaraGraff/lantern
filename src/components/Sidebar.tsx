@@ -202,28 +202,38 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
   // Dismiss context menu on outside click
   useEffect(() => {
     if (!contextMenu) return;
-    const handler = (e: MouseEvent) => {
+    const handler = (e: PointerEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu(null);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("pointerdown", handler);
+    return () => document.removeEventListener("pointerdown", handler);
   }, [contextMenu]);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  const handleResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     resizingRef.current = true;
+    const handle = e.currentTarget;
+    const pointerId = e.pointerId;
     const startX = e.clientX;
     const startWidth = sidebarWidth;
-    const onMouseMove = (ev: MouseEvent) => {
+    const onPointerMove = (ev: PointerEvent) => {
       const newWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startWidth + ev.clientX - startX));
       setSidebarWidth(newWidth);
     };
-    const onMouseUp = () => {
+    const finish = () => {
       resizingRef.current = false;
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      handle.removeEventListener("lostpointercapture", onLostPointerCapture);
+      try {
+        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      } catch {
+        // Pointer capture is best-effort and may already be released by WebKit.
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       setSidebarWidth((w) => {
@@ -231,10 +241,20 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         return w;
       });
     };
+    const onPointerUp = () => finish();
+    const onPointerCancel = () => finish();
+    const onLostPointerCapture = () => finish();
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+    try {
+      handle.setPointerCapture(pointerId);
+    } catch {
+      // Some WebKit surfaces reject capture; the window listeners below are the fallback.
+    }
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    handle.addEventListener("lostpointercapture", onLostPointerCapture);
   }, [sidebarWidth]);
 
   return (
@@ -520,12 +540,13 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           </button>
         </div>
       )}
-      {/* Resize handle — a 4px mouse target, and the drawer has a fixed width,
-          so it has nothing to drag there. */}
+      {/* Resize handle — a 4px mouse target, widened under a finger since
+          every docked sidebar (`!inDrawer`) is what an iPad renders. The
+          drawer has a fixed width, so it has nothing to drag there. */}
       {!inDrawer && (
         <div
-          onMouseDown={handleResizeStart}
-          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent/30 transition-colors"
+          onPointerDown={handleResizeStart}
+          className="absolute top-0 right-0 w-1 touch:w-3 h-full cursor-col-resize touch-none hover:bg-accent/30 transition-colors"
         />
       )}
     </aside>

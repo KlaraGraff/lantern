@@ -84,7 +84,7 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
   );
 
   const handleClickOutside = useCallback(
-    (event: MouseEvent) => {
+    (event: PointerEvent) => {
       const target = event.target as Node;
       if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return;
       onClose();
@@ -106,12 +106,12 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
       event.stopPropagation();
       onClose();
     };
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("scroll", handleScroll, true);
     window.addEventListener("resize", onClose);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("pointerdown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("resize", onClose);
@@ -149,7 +149,11 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
       // The menu lives under document.body, so without this, pressing an option
       // registers as an outside click for ancestor popovers (e.g.
       // ReaderSettings) and closes them before the option's onClick fires.
-      onMouseDown={(event) => event.stopPropagation()}
+      // Pointer, not mouse — the ancestors this guards against now listen for
+      // `pointerdown`, which fires ahead of the synthetic `mousedown` WKWebView
+      // sends after it. Stopping only the later event would leave the ancestor's
+      // listener seeing the pointerdown first and closing before this fires.
+      onPointerDown={(event) => event.stopPropagation()}
       className="motion-pop fixed z-[70] bg-bg-surface border border-border rounded-xl shadow-popover overflow-y-auto"
     >
       {items.map((item, index) => {

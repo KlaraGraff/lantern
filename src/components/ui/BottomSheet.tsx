@@ -91,7 +91,7 @@ export default function BottomSheet({
   return createPortal(
     <div
       className="fixed inset-0 z-[80] bg-overlay"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onPointerDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
         ref={sheetRef}
@@ -101,8 +101,9 @@ export default function BottomSheet({
         aria-describedby={description ? descriptionId : undefined}
         // Stops a tap inside the sheet from reading as an outside click to an
         // ancestor popover it happens to be portaled past (e.g. ReaderSettings) —
-        // the same defensive stopPropagation OptionMenu uses for the same reason.
-        onMouseDown={(event) => event.stopPropagation()}
+        // the same defensive stopPropagation OptionMenu uses for the same reason,
+        // now on `pointerdown` to match what those ancestors listen for.
+        onPointerDown={(event) => event.stopPropagation()}
         className={`absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-[20px] bg-bg-surface pt-2 shadow-context${
           scroll ? "" : " overflow-hidden pb-[calc(var(--spacing-safe-bottom)+8px)]"
         }`}

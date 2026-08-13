@@ -14,6 +14,7 @@
 import { useTranslation } from "react-i18next";
 import { Check, Loader2 } from "lucide-react";
 import Button from "../../components/ui/Button";
+import { TOP_INSET } from "../../utils/top-inset.ts";
 import type { ArticleProgress, GenerationStage } from "./useQuizGeneration.ts";
 
 interface GeneratingScreenProps {
@@ -99,7 +100,7 @@ export default function GeneratingScreen({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
+      <div className={`flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-5 ${TOP_INSET}`}>
         <span className="text-[15px] font-semibold text-text-primary">
           {t("quiz.generating.title")}
         </span>

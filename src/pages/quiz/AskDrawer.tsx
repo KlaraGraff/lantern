@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, MessageCircleQuestion, X } from 'lucide-react'
 import { aiErrorMessageKey, getAiErrorCode } from '../../utils/aiError.ts'
+import { isSendKey } from '../../components/chat-input-keys.ts'
+import { useCoarsePointer } from '../../hooks/useCoarsePointer.ts'
 import type { AskThread } from '../../quiz/types.ts'
 
 const NARROW_QUERY = '(max-width: 900px)'
@@ -37,6 +39,7 @@ export default function AskDrawer(props: {
   const { threads, activeThread, onSelectThread, onClose, onSend, onRetry, sendingThreadId, error } = props
   const { t } = useTranslation()
   const narrow = useDrawerNarrow()
+  const coarsePointer = useCoarsePointer()
   const [input, setInput] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
   const sending = activeThread != null && sendingThreadId === activeThread.id
@@ -145,7 +148,7 @@ export default function AskDrawer(props: {
         </div>
       )}
 
-      <div className="shrink-0 border-t border-border-light p-3">
+      <div className="shrink-0 border-t border-border-light p-3 pb-[calc(var(--spacing-safe-bottom)+0.75rem)]">
         <div className="flex items-end gap-2">
           <textarea
             rows={1}
@@ -153,7 +156,7 @@ export default function AskDrawer(props: {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (isSendKey(e, coarsePointer)) {
                 e.preventDefault()
                 handleSubmit()
               }
@@ -170,7 +173,9 @@ export default function AskDrawer(props: {
             <ArrowUp size={16} />
           </button>
         </div>
-        <p className="mt-2 text-[11px] leading-[1.6] text-text-muted">{t('quiz.paper.ask.hint')}</p>
+        <p className="mt-2 text-[11px] leading-[1.6] text-text-muted">
+          {t(coarsePointer ? 'ai.sendHintTouch' : 'ai.sendHint')}
+        </p>
       </div>
     </div>
   )

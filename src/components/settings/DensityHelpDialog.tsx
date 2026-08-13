@@ -45,7 +45,7 @@ export default function DensityHelpDialog({ initialKind, onClose }: DensityHelpD
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-overlay p-4" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-overlay p-4" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <div
         ref={dialogRef}
         role="dialog"

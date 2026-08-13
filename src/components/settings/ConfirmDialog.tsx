@@ -52,7 +52,7 @@ export default function ConfirmDialog({
   return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay p-4"
-      onMouseDown={(event) => event.target === event.currentTarget && continueEditing()}
+      onPointerDown={(event) => event.target === event.currentTarget && continueEditing()}
     >
       <div
         ref={dialogRef}

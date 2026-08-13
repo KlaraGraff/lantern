@@ -130,7 +130,7 @@ export default function ClearVocabProfileDialog({
   return (
     <div
       className="motion-scrim fixed inset-0 z-[60] flex items-center justify-center bg-overlay px-4"
-      onMouseDown={(event) => {
+      onPointerDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >

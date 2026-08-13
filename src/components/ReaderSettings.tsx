@@ -344,7 +344,7 @@ function ReaderSettings({
 
   useEffect(() => {
     if (!open) return;
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = (e: PointerEvent) => {
       if (
         popoverRef.current &&
         !popoverRef.current.contains(e.target as Node) &&
@@ -354,8 +354,8 @@ function ReaderSettings({
         onClose();
       }
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("pointerdown", handleClick);
+    return () => document.removeEventListener("pointerdown", handleClick);
   }, [open, onClose, anchorRef]);
 
   // Escape, layered outermost first, so one keypress never collapses two

@@ -19,6 +19,7 @@ import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { useTranslation } from "react-i18next";
 import { deriveBookIndexState, type BookIndexState, type IndexDetails } from "./index-state";
 import { anchorTransformOrigin } from "./motion";
+import { platform } from "../services/platform";
 
 /** Fixed width of the collections submenu — it is set on the element too. */
 const SUBMENU_WIDTH = 200;
@@ -84,6 +85,9 @@ export default function BookContextMenu({
   const [indexState, setIndexState] = useState<BookIndexState | null>(null);
 
   useEffect(() => {
+    // The row this feeds is hidden entirely when the platform can't configure
+    // an index (see the button below) — no point reading its state.
+    if (!platform.hasEmbeddingIndex) return;
     let disposed = false;
     invoke<IndexDetails>("ai_index_details", { bookId })
       .then((details) => { if (!disposed) setIndexState(deriveBookIndexState(details)); })
@@ -280,17 +284,19 @@ export default function BookContextMenu({
             {t("bookMenu.editInfo")}
           </span>
         </button>
-        <button
-          onClick={onManageIndex}
-          className="flex h-[31.5px] w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 mx-1 text-left hover:bg-accent-bg"
-        >
-          <Database size={16} className="text-text-muted" />
-          <span className="flex-1 truncate text-[13px] font-medium text-text-primary">
-            {indexState
-              ? t("bookMenu.aiIndexWithState", { state: t(`indexManager.stateShort.${indexState}`) })
-              : t("bookMenu.aiIndex")}
-          </span>
-        </button>
+        {platform.hasEmbeddingIndex && (
+          <button
+            onClick={onManageIndex}
+            className="flex h-[31.5px] w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 mx-1 text-left hover:bg-accent-bg"
+          >
+            <Database size={16} className="text-text-muted" />
+            <span className="flex-1 truncate text-[13px] font-medium text-text-primary">
+              {indexState
+                ? t("bookMenu.aiIndexWithState", { state: t(`indexManager.stateShort.${indexState}`) })
+                : t("bookMenu.aiIndex")}
+            </span>
+          </button>
+        )}
 
         <div className="mx-3 my-1 h-px bg-border/80" />
 

@@ -67,17 +67,17 @@ export default function FootnotePopover({
   // Dismiss on click outside — delay registration to avoid catching the
   // click that opened us.
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
+    const handler = (e: PointerEvent) => {
       if (isOutside(e.target as Node)) {
         onClose();
       }
     };
     const id = requestAnimationFrame(() => {
-      document.addEventListener("mousedown", handler);
+      document.addEventListener("pointerdown", handler);
     });
     return () => {
       cancelAnimationFrame(id);
-      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("pointerdown", handler);
     };
   }, [onClose, isOutside]);
 

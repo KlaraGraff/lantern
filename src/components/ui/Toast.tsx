@@ -32,14 +32,14 @@ export default function Toast({ children, icon, className = "", variant = "row" 
     <div
       role="status"
       aria-live="polite"
-      className={`fixed top-[calc(var(--spacing-safe-top)+1.25rem)] left-1/2 z-[60] -translate-x-1/2 ${className}`}
+      className={`fixed top-[calc(var(--spacing-safe-top)+1.25rem)] left-1/2 z-[60] max-w-[calc(100vw-2rem)] -translate-x-1/2 ${className}`}
     >
       {variant === "panel" ? (
         <div className={`overflow-hidden ${SURFACE}`}>{children}</div>
       ) : (
-        <div className={`flex min-w-[260px] items-center gap-3 py-2.5 pl-4 pr-3 ${SURFACE}`}>
+        <div className={`flex min-w-[260px] max-w-full items-center gap-3 py-2.5 pl-4 pr-3 ${SURFACE}`}>
           {icon ?? <Check size={14} className="shrink-0 text-success-text" />}
-          <span className="flex-1 whitespace-nowrap text-[13px] font-normal tracking-[-0.08px] text-text-secondary">
+          <span className="flex-1 break-words text-[13px] font-normal tracking-[-0.08px] text-text-secondary md:whitespace-nowrap">
             {children}
           </span>
         </div>

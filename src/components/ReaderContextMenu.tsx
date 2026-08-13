@@ -222,7 +222,7 @@ export default function ReaderContextMenu({
 
   useEffect(() => {
     // Moving focus on mount hides WebKit's native reader selection.
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: PointerEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) onClose();
     };
     const handleMenuKey = (key: string, shiftKey = false, modified = false) => {
@@ -254,11 +254,11 @@ export default function ReaderContextMenu({
       const detail = (event as CustomEvent<ReaderContextMenuKeyDetail>).detail;
       if (handleMenuKey(detail.key, detail.shiftKey, detail.modified)) detail.handled = true;
     };
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
     window.addEventListener(READER_CONTEXT_MENU_KEY_EVENT, handleReaderKey);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("pointerdown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener(READER_CONTEXT_MENU_KEY_EVENT, handleReaderKey);
     };

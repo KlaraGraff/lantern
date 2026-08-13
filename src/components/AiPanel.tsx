@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { BookOpen, Check, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
+import { BookOpen, Check, Database, Sparkles, Send, Loader2, Pencil, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
 import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
 import { timeAgo } from "../utils/timeAgo";
@@ -51,11 +51,11 @@ function ScopePicker({ scope, onChange }: { scope: AiChatScope; onChange: (scope
 
   useEffect(() => {
     if (!open) return;
-    const closeOnOutsidePress = (event: MouseEvent) => {
+    const closeOnOutsidePress = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener("mousedown", closeOnOutsidePress);
-    return () => document.removeEventListener("mousedown", closeOnOutsidePress);
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePress);
   }, [open]);
 
   const dismiss = () => {
@@ -381,6 +381,32 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
               ) : (
                 <ChevronDown size={14} className="text-text-muted shrink-0" />
               )}
+            </button>
+          )}
+          {/* Mouse users reach rename through the title's onDoubleClick. On a
+              coarse pointer that gesture is unreachable (see ChatDetailView for
+              why), so the only affordance is this pencil — shown next to the
+              title rather than folded into a long press, which has no visible
+              hint that it exists.
+
+              Held back until the chat exists: the DB record is created lazily
+              on the first send (`handleNewChat`), and `handleTitleSubmit` needs
+              an id, so before then a rename would accept the typed title and
+              silently drop it. A mouse user can stumble into that too, but they
+              still have the picker and the double-click; here the pencil would
+              be the one visible rename control, and it would be lying. */}
+          {coarsePointer && !editingTitle && chatId && (
+            <button
+              type="button"
+              onClick={() => {
+                if (titling) return;
+                setTitleDraft(currentChat?.title || t("ai.newChat"));
+                setEditingTitle(true);
+              }}
+              aria-label={t("chats.rename")}
+              className="tap-44 flex size-6 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+            >
+              <Pencil size={13} />
             </button>
           )}
         </div>

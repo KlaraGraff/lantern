@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { AiChatRoute, ChatMessage, CitedSource, QuotedSource, SectionContextMetadata } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiRetryableError, isAiSettingsError } from "../utils/aiError";
+import { platform } from "../services/platform";
 import AiRetryButton from "./AiRetryButton";
 import { AliasDisclosureLine, AliasResolutionFooter } from "./AliasDisclosure";
 import AiMarkdown from "./ai-markdown/AiMarkdown";
@@ -160,6 +161,9 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
               <button
                 onClick={async () => {
                   await invoke("open_settings_on_main", { section: "services" });
+                  // Single-window platforms are already in the window that just
+                  // opened — see the same guard in ExplainPopover / TranslationPopover.
+                  if (!platform.hasWindow) return;
                   const main = await WebviewWindow.getByLabel("main");
                   await main?.setFocus();
                 }}

@@ -49,6 +49,7 @@ import { getTextBookParagraphStyle, isCjkText } from "./text-book-typography";
 import { resolveLineSpacing } from "./reader-paragraph-settings";
 import { classifyReaderTapInBox, type TapZone } from "../pages/reader/tap-zones";
 import { isNarrowNow } from "../hooks/useIsNarrow";
+import { isCoarsePointer } from "../hooks/useCoarsePointer";
 
 interface TextBookReaderProps {
   bookId: string;
@@ -1376,7 +1377,13 @@ function TextBookReader({
           && containerRef.current?.contains(range.commonAncestorContainer)
           ? snapshotSelectionRange(range)
           : null;
-        scheduleSelectionMenu();
+        // A touch long-press hands the gesture to the OS selection UI and never
+        // reaches our pointer handlers — this `selectionchange` firing is the
+        // only signal a single-word selection happened at all. On a mouse the
+        // default still drops word-kind selections, because a plain click
+        // already opens the learning card for a word and a lone left click
+        // collapsing to a word range should not also pop the menu underneath it.
+        scheduleSelectionMenu(150, isCoarsePointer());
       }
     };
     window.document.addEventListener("selectionchange", handleSelectionChange);

@@ -38,7 +38,7 @@ export default function HardLimitDialog({ softLimit, hardLimit, onBackToEdit, on
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay px-4"
-      onMouseDown={(event) => event.target === event.currentTarget && onBackToEdit()}
+      onPointerDown={(event) => event.target === event.currentTarget && onBackToEdit()}
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" className="w-[460px] max-w-full rounded-xl border border-border bg-bg-surface shadow-card">
         <div className="px-5 pt-[18px]">

@@ -96,6 +96,15 @@ test("a scanned PDF classifies as scanned even though its status is literally fa
   assert.equal(classifyOpenCardBody({ format: "pdf", title: "Some Book" }, scanned, true), "scanned");
 });
 
+test("without OCR the same scanned PDF falls through to no conclusion", () => {
+  // iOS and Android compile every `ocr_*` command out, so offering the scan
+  // would be offering a download that can never start. The fall-through has to
+  // land somewhere honest rather than on "ready", which would put a difficulty
+  // figure on a book that has no text to measure.
+  const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
+  assert.equal(classifyOpenCardBody({ format: "pdf", title: "Some Book" }, scanned, true, false), "noConclusion");
+});
+
 test("no row at all, or a pending row, both read as never computed", () => {
   assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, null, true), "neverComputed");
   assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "pending" }), true), "neverComputed");

@@ -45,9 +45,14 @@ export default function ReaderZoneGuide({ oneHand, onDismiss }: ReaderZoneGuideP
           </div>
         </div>
         <div className={`${column} border-l border-dashed border-white/35`}>
-          <div className="text-lg font-semibold">{t("reader.zoneGuide.menu")}</div>
-          <div className="text-sm opacity-90">{t("reader.zoneGuide.menuHint")}</div>
-          <div className="mt-3.5 text-sm opacity-65">{t("reader.zoneGuide.lookupHint")}</div>
+          {/* The middle column teaches the lookup, not the controls: a tap here
+              lands on a word far more often than it misses one, so promising
+              the controls in this column would be promising the rarer outcome.
+              The controls get the last line, pointing at the strip that always
+              answers. */}
+          <div className="text-lg font-semibold">{t("reader.zoneGuide.lookup")}</div>
+          <div className="text-sm opacity-90">{t("reader.zoneGuide.lookupHint")}</div>
+          <div className="mt-3.5 text-sm opacity-65">{t("reader.zoneGuide.menuHint")}</div>
         </div>
         <div className={`${column} border-l border-dashed border-white/35`}>
           <div className="text-lg font-semibold">{t("reader.zoneGuide.next")}</div>

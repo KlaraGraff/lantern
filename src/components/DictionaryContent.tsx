@@ -711,7 +711,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
             of it — and a dead zone over the ☰ button on an iPhone SE, whose
             inset is 20pt. Same guard as `Home.tsx`. */}
         {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
-        <div className={`${TOP_INSET} flex items-center justify-between mb-6`}>
+        <div className={`${TOP_INSET} flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between`}>
           <div className="flex min-w-0 items-center gap-3">
             {menuButton}
             <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">
@@ -725,7 +725,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
               </span>
             )}
           </div>
-          <div className="flex items-center gap-0">
+          <div className="flex flex-wrap items-center justify-end gap-2 md:flex-nowrap md:justify-normal md:gap-0">
             {contentTab === "vocab" && (
               <div className="flex items-center gap-2 mr-2">
                 <Button

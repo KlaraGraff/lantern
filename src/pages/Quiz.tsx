@@ -20,6 +20,7 @@ import GeneratingScreen from "./quiz/GeneratingScreen.tsx";
 import { useQuizGeneration } from "./quiz/useQuizGeneration.ts";
 import { useIsNarrow } from "../hooks/useIsNarrow.ts";
 import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack.ts";
+import { TOP_INSET } from "../utils/top-inset.ts";
 import { isAiSettingsError } from "../utils/aiError.ts";
 import { useWrongWordPool } from "./quiz/useWrongWordPool.ts";
 import { useQuizHistory } from "./quiz/useQuizHistory.ts";
@@ -105,7 +106,7 @@ export default function Quiz() {
   if (generation.phase === "error") {
     return (
       <div ref={swipeRef} {...swipeHandlers} className="flex h-screen flex-col bg-bg-page">
-        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
+        <div className={`flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-5 ${TOP_INSET}`}>
           <span className="text-[15px] font-semibold text-text-primary">{t("quiz.error.title")}</span>
           {lastAttempt && (
             <span className="text-[12.5px] text-text-muted">
@@ -153,7 +154,7 @@ export default function Quiz() {
 
   return (
     <div ref={swipeRef} {...swipeHandlers} className="flex h-screen flex-col bg-bg-page">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
+      <div className={`flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-4 ${TOP_INSET}`}>
         <button
           type="button"
           onClick={() => navigate(-1)}

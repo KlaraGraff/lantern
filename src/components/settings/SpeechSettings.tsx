@@ -79,13 +79,25 @@ function SettingsRow({
   title,
   subtitle,
   children,
+  stackOnNarrow = false,
 }: {
   title: string;
   subtitle: string;
   children: ReactNode;
+  /** The control needs more room than `ROW_CONTROL_WIDTH` genuinely fits (a
+   * URL field, a model combo) — below `md` the label goes on its own line and
+   * the control takes the full row width instead of being squeezed into
+   * whatever the label left over. */
+  stackOnNarrow?: boolean;
 }) {
   return (
-    <div className="flex min-h-[52px] w-full items-center justify-between gap-4 px-1 py-1.5">
+    <div
+      className={`flex min-h-[52px] w-full gap-4 px-1 py-1.5 ${
+        stackOnNarrow
+          ? "flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-between md:gap-4"
+          : "items-center justify-between"
+      }`}
+    >
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-text-primary">{title}</p>
         <p className="break-words text-[11px] leading-[17px] text-text-placeholder">{subtitle}</p>
@@ -103,6 +115,7 @@ function TextSettingRow({
   placeholder,
   type,
   width = ROW_CONTROL_WIDTH,
+  stackOnNarrow = false,
   onChange,
   onCommit,
 }: {
@@ -112,11 +125,12 @@ function TextSettingRow({
   placeholder?: string;
   type?: string;
   width?: string;
+  stackOnNarrow?: boolean;
   onChange: (value: string) => void;
   onCommit: () => void;
 }) {
   return (
-    <SettingsRow title={title} subtitle={subtitle}>
+    <SettingsRow title={title} subtitle={subtitle} stackOnNarrow={stackOnNarrow}>
       <div className={width}>
         <Input
           value={value}
@@ -319,15 +333,17 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             subtitle={t("settings.speech.custom.baseUrlHint")}
             value={custom.baseUrl}
             placeholder="https://api.openai.com/v1"
-            width="w-[280px] shrink-0"
+            width="w-full md:w-[280px] md:shrink-0"
+            stackOnNarrow
             onChange={(value) => setCustom((current) => ({ ...current, baseUrl: value }))}
             onCommit={() => persist({ [SPEECH_CUSTOM_BASE_URL_KEY]: custom.baseUrl.trim() })}
           />
           <SettingsRow
             title={t("settings.speech.custom.model")}
             subtitle={modelError ?? t("settings.speech.custom.modelHint")}
+            stackOnNarrow
           >
-            <div className="w-[224px] shrink-0">
+            <div className="w-full md:w-[224px] md:shrink-0">
               <ComboField
                 label={t("settings.speech.custom.model")}
                 value={custom.model}

@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { useSettings } from "../hooks/useSettings";
+import { platform } from "../services/platform";
 import {
   aliasAmbiguities,
   aliasBuildError,
@@ -160,6 +161,9 @@ export default function PersonAliasesSection({
   const pickModel = async () => {
     onLeaveForSettings();
     await invoke("open_settings_on_main", { section: "services", view: "models" });
+    // Single-window platforms are already in the window that just opened —
+    // see the same guard in ExplainPopover / TranslationPopover.
+    if (!platform.hasWindow) return;
     const main = await WebviewWindow.getByLabel("main");
     await main?.setFocus();
   };

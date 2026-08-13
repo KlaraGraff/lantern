@@ -10,6 +10,7 @@ import { useBookDifficultySections, useReadingPace, useVocabPassRates } from "..
 import { useOcrPackage } from "../hooks/useOcrPackage";
 import { useOcrJob } from "../hooks/useOcrJob";
 import { OCR_ACTIVE_JOB_STATES, formatOcrBytes } from "../ocr/types";
+import { platform } from "../services/platform";
 import {
   bandShares,
   classifyOpenCardBody,
@@ -95,7 +96,11 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
   const reference = useReferenceBook(book.id);
 
   const passRatesSufficient = passRates.value?.sufficient ?? false;
-  const bodyState = difficultyLoading ? null : classifyOpenCardBody(book, difficulty, passRatesSufficient);
+  // The OCR package/job commands the "scanned" body depends on are compiled
+  // out on iOS/Android (D-003) — gate the classification itself so a scanned
+  // PDF there falls through to the plain no-conclusion failure instead of an
+  // offer that can never complete (see book-open-card-view.ts).
+  const bodyState = difficultyLoading ? null : classifyOpenCardBody(book, difficulty, passRatesSufficient, platform.hasOcr);
   const isScanned = bodyState === "scanned";
 
   const ocrPackage = useOcrPackage(isScanned);

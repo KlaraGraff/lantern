@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Send, Loader2, Trash2, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Send, Loader2, Pencil, Trash2, Sparkles } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
 import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
 import { useOpenBook } from "../hooks/useOpenBook";
@@ -101,23 +101,44 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
                 className="text-[15px] font-semibold text-text-primary bg-transparent outline-none border-b border-accent min-w-0"
               />
             ) : (
-              <span
-                className="text-[15px] font-semibold text-text-primary tracking-[-0.23px] truncate cursor-default"
-                onDoubleClick={() => {
-                  if (titling) return;
-                  setTitleDraft(currentTitle);
-                  setEditingTitle(true);
-                }}
-              >
-                {titling ? (
-                  <span className="flex items-center gap-1.5 text-text-muted">
-                    <Loader2 size={14} className="animate-spin" />
-                    {t("ai.generatingTitle")}
-                  </span>
-                ) : (
-                  currentTitle
+              <div className="flex items-center gap-1 min-w-0">
+                <span
+                  className="text-[15px] font-semibold text-text-primary tracking-[-0.23px] truncate cursor-default"
+                  onDoubleClick={() => {
+                    if (titling) return;
+                    setTitleDraft(currentTitle);
+                    setEditingTitle(true);
+                  }}
+                >
+                  {titling ? (
+                    <span className="flex items-center gap-1.5 text-text-muted">
+                      <Loader2 size={14} className="animate-spin" />
+                      {t("ai.generatingTitle")}
+                    </span>
+                  ) : (
+                    currentTitle
+                  )}
+                </span>
+                {/* This span never gets the double-tap the desktop path relies
+                    on: it isn't a `<button>`, so it misses `touch-action:
+                    manipulation`, and the page stays user-scalable — a double
+                    tap here is claimed by double-tap-to-zoom before it can
+                    reach us. A visible pencil is the only reachable rename
+                    entry point on a coarse pointer. */}
+                {coarsePointer && !titling && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTitleDraft(currentTitle);
+                      setEditingTitle(true);
+                    }}
+                    aria-label={t("chats.rename")}
+                    className="tap-44 flex size-5 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+                  >
+                    <Pencil size={12} />
+                  </button>
                 )}
-              </span>
+              </div>
             )}
             <span className="text-[12px] text-text-muted">
               {chat.book_title || t("common.unknownBook")}

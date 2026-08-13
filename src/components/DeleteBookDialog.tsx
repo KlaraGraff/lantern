@@ -38,7 +38,7 @@ export default function DeleteBookDialog({ title, onCancel, onConfirm }: DeleteB
   };
 
   return (
-    <div className="motion-scrim fixed inset-0 z-[60] flex items-center justify-center bg-overlay px-4" onMouseDown={(event) => {
+    <div className="motion-scrim fixed inset-0 z-[60] flex items-center justify-center bg-overlay px-4" onPointerDown={(event) => {
       if (event.target === event.currentTarget && !busy) onCancel();
     }}>
       <div role="dialog" aria-modal="true" aria-labelledby="delete-book-title" className="motion-dialog w-[480px] max-w-full rounded-lg border border-border bg-bg-surface p-5 shadow-popover">

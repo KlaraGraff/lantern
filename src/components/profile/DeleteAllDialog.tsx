@@ -42,7 +42,7 @@ export default function DeleteAllDialog({ onCancel, onConfirm }: DeleteAllDialog
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay px-4"
-      onMouseDown={(event) => event.target === event.currentTarget && !busy && onCancel()}
+      onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" className="w-[440px] max-w-full rounded-xl border border-border bg-bg-surface shadow-card p-5">
         <h2 className="text-[15.5px] font-semibold text-text-primary">{t("profile.deleteAll.title")}</h2>

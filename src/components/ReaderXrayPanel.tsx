@@ -18,6 +18,7 @@ import type { CitedSource } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiRetryableError } from "../utils/aiError";
 import { createUuid } from "../utils/randomUuid";
 import { isAiConfigured, type AiCredentialLike, type AiProfileLike } from "./onboarding/onboarding-state";
+import { platform } from "../services/platform";
 import type { ReaderInteraction } from "./reader-interaction";
 import {
   canApplyXrayLoad,
@@ -293,6 +294,9 @@ export default function ReaderXrayPanel({
   // listener above re-runs the request once a provider is configured.
   const openAiSettings = useCallback(async () => {
     await invoke("open_settings_on_main", { section: "services" });
+    // Single-window platforms are already in the window that just opened —
+    // see the same guard in ExplainPopover / TranslationPopover.
+    if (!platform.hasWindow) return;
     const main = await WebviewWindow.getByLabel("main");
     await main?.setFocus();
   }, []);
