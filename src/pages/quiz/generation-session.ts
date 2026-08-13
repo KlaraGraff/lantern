@@ -95,7 +95,7 @@ interface SessionGroup {
   }
 }
 
-/** 测试注入点：三条 DB 写路径。真实调用一律省略，落回 Tauri invoke。 */
+/** 测试注入点：DB 写路径。真实调用一律省略，落回 Tauri invoke。 */
 export interface GenerationIo {
   createPaper(args: {
     createdAt: string
@@ -113,12 +113,15 @@ export interface GenerationIo {
     generationJson: string | null
   }): Promise<void>
   updateContent(id: number, contentJson: string): Promise<void>
+  /** 只有「取消恰好撞上建卷 IPC 在途」的补删用它；可选，测试替身可不提供 */
+  deletePaper?(id: number): Promise<void>
 }
 
 const defaultIo: GenerationIo = {
   createPaper: (args) => invoke<number>('create_quiz_paper', args),
   updateGeneration: (args) => invoke('update_quiz_paper_generation', args),
   updateContent: (id, contentJson) => invoke('update_quiz_paper_content', { id, contentJson }),
+  deletePaper: (id) => invoke('delete_quiz_paper', { id }),
 }
 
 interface Session {
@@ -307,6 +310,14 @@ async function persistStructural(session: Session): Promise<void> {
       })
       return
     }
+    if (session.cancelled) {
+      // 取消恰好落在建卷 IPC 的往返窗口里（发出时 paperId 还是 null，取消检查
+      // 拦不住）：行已经落库，补删掉，不给往卷留一张永远停在 generating 的孤儿卷
+      void session.io.deletePaper?.(id).catch((err) => {
+        console.error('generation session failed to delete cancelled paper:', err)
+      })
+      return
+    }
     session.paperId = id
     session.quiz = { ...quiz, id }
     paperSessions.set(id, session)
@@ -425,8 +436,10 @@ export function startGenerationSession(opts: {
   /** 测试注入点，默认 runExplanationSession */
   runExplanations?: typeof runExplanationSession
 }): void {
-  // 出卷屏在生成中不给第二个入口，这里再兜一层
-  if (newPaperSession?.state.running) return
+  // 出卷屏在生成中不给第二个入口，这里再兜一层。但只拦「还没建出卷」的会话：
+  // 建卷后用户已被导航走，会话在 paperSessions 里继续跑剩余篇；此时回到出卷页
+  // 再点生成是合法的新请求（否则按钮在后台生成收尾前是颗无声的死键）
+  if (newPaperSession?.state.running && newPaperSession.state.paperId == null) return
 
   const session = createSession(opts)
   // 自行拆词（与 generateQuiz 内部同一纯函数、同一输入，结果确定性一致）：
@@ -516,6 +529,12 @@ export function regenerateArticles(opts: {
 }): void {
   let session = paperSessions.get(opts.paperId)
   if (session?.state.running) return
+  if (session?.cancelled) {
+    // 已取消的会话不许复用（它的写链全部自查短路，续跑等于空转）；
+    // 丢掉走冷启动重建——和重启后的路径一致
+    paperSessions.delete(opts.paperId)
+    session = undefined
+  }
   if (!session) {
     const plan = opts.quiz.generation
     if (!plan) return
@@ -568,7 +587,16 @@ export function regenerateArticles(opts: {
     const g = session!.groups[i]
     return g != null && g.state !== 'done'
   })
-  if (targets.length === 0) return
+  if (targets.length === 0) {
+    // 点名的组在内存里都已 done，但用户能点到「重新生成」说明 DB 里这篇不是
+    // done——典型场景是某次结构落库吞了错（enqueueWrite 的恢复口径），内存领先
+    // 于 DB。重发一次结构落库把 DB 拉齐，而不是无声返回把卷锁死。
+    if (session.paperId != null) {
+      const fixed = session
+      void enqueueWrite(fixed, () => persistStructural(fixed))
+    }
+    return
+  }
 
   for (const i of targets) {
     session.groups[i].state = 'pending'

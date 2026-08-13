@@ -99,14 +99,14 @@ SQLite 不能改 CHECK 约束，按标准 12 步重建：
 
 ## 六、分步落 main
 
-| 步 | 内容 | 验收 |
-|---|---|---|
-| 1 | 本方案文档 | — |
-| 2 | 迁移 072 + quiz.rs 命令与门 + Rust 单测 | cargo test 绿 |
-| 3 | generate.ts 按篇产出/失败隔离 + TS 测试改写 | vitest 绿 |
-| 4 | generation-session + useQuizGeneration 瘦身 + Quiz.tsx/GeneratingScreen | tsc/vitest/eslint 绿 |
-| 5 | 做题页渐进 UI + useQuizPaper 订阅 + History + i18n | tsc/vitest/eslint 绿 |
-| 6 | AI 互审 + 修复 | 审查通过 |
+| 步 | 内容 | 验收 | 状态 |
+|---|---|---|---|
+| 1 | 本方案文档 | — | 已落 main（6625b22） |
+| 2 | 迁移 072 + quiz.rs 命令与门 + Rust 单测 | cargo test 绿 | 已落 main（5dd2eaf） |
+| 3 | generate.ts 按篇产出/失败隔离 + TS 测试改写 | vitest 绿 | 已落 main（910d25b） |
+| 4 | generation-session + useQuizGeneration 瘦身 + Quiz.tsx/GeneratingScreen | tsc/vitest/eslint 绿 | 已落 main（7cdf2d3） |
+| 5 | 做题页渐进 UI + useQuizPaper 订阅 + History + i18n | tsc/vitest/eslint 绿 | 已落 main（529d3d3；deriveSlots 抽到 take-slots.ts 纯模块并补 6 例单测） |
+| 6 | AI 互审 + 修复 | 审查通过 | 已落 main。审查结论：核心单写者/合并设计经对抗式核查无恙；修复 5 项——①建卷后出卷按钮死键（守卫只拦未建卷的会话）②结构落库吞错后重生成入口无声返回（targets 为空时重发落库拉齐 DB）③取消撞上建卷 IPC 在途留孤儿卷（新增 delete_quiz_paper 命令补删）④英文往卷 chip 在重启后语义不实（改为状态中立文案）⑤未交完横幅对生成中卷报偏低题数（改用不报数的变体文案）。补测试：迁移 072 旧行保全、update_quiz_paper_generation 非法状态、delete 守卫、热路径重生成、建卷后二次出卷、取消补删 |
 
 ## 七、Figma 设计提示（存档用，样张已豁免）
 

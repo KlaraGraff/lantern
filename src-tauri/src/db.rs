@@ -1394,6 +1394,66 @@ mod tests {
     }
 
     #[test]
+    fn test_migration_072_preserves_quiz_paper_rows() {
+        // 072 is a DROP-and-rebuild of the only table holding quiz history —
+        // existing rows must come through verbatim (status untouched,
+        // generation_json NULL) and the new 'generating' status must be legal.
+        let dir = TempDir::new().unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+        Db::run_migrations_up_to(&conn, 71).unwrap();
+        conn.execute(
+            "INSERT INTO quiz_papers (created_at, status, config_json, words_json, content_json, result_json, ask_threads_json)
+             VALUES ('2026-01-01T00:00:00.000Z', 'ready', '{}', '[]', '{\"passages\":[]}', NULL, NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO quiz_papers (created_at, status, config_json, words_json, content_json, result_json, ask_threads_json)
+             VALUES ('2026-01-02T00:00:00.000Z', 'submitted', '{}', '[]', '{\"passages\":[]}', '{\"score\":1}', '[]')",
+            [],
+        )
+        .unwrap();
+
+        Db::run_migrations_up_to(&conn, 72).unwrap();
+
+        let rows: Vec<(String, Option<String>, Option<String>)> = conn
+            .prepare(
+                "SELECT status, result_json, generation_json FROM quiz_papers ORDER BY created_at",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("ready".to_string(), None, None),
+                (
+                    "submitted".to_string(),
+                    Some("{\"score\":1}".to_string()),
+                    None
+                ),
+            ]
+        );
+
+        // The rebuilt CHECK admits the new status…
+        conn.execute(
+            "INSERT INTO quiz_papers (created_at, status, config_json, words_json, content_json, generation_json)
+             VALUES ('2026-01-03T00:00:00.000Z', 'generating', '{}', '[]', '{}', '{\"groups\":[]}')",
+            [],
+        )
+        .unwrap();
+        // …and still rejects garbage.
+        let err = conn.execute(
+            "INSERT INTO quiz_papers (created_at, status, config_json, words_json, content_json)
+             VALUES ('2026-01-04T00:00:00.000Z', 'bogus', '{}', '[]', '{}')",
+            [],
+        );
+        assert!(err.is_err());
+    }
+
+    #[test]
     fn test_migration_032_collapses_blank_highlight_notes_to_null() {
         let dir = TempDir::new().unwrap();
         let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();

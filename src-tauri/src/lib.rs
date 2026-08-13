@@ -1059,6 +1059,7 @@ pub fn run() {
             commands::quiz::list_quiz_papers,
             commands::quiz::update_quiz_paper_content,
             commands::quiz::update_quiz_paper_generation,
+            commands::quiz::delete_quiz_paper,
             commands::quiz::save_quiz_ask_threads,
             commands::quiz::submit_quiz_paper,
             commands::quiz::list_due_wrong_words,

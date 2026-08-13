@@ -96,10 +96,11 @@ interface IoCalls {
   create: any[]
   update: any[]
   content: { id: number; contentJson: string }[]
+  deleted: number[]
 }
 
 function makeIo(): { io: GenerationIo; calls: IoCalls } {
-  const calls: IoCalls = { create: [], update: [], content: [] }
+  const calls: IoCalls = { create: [], update: [], content: [], deleted: [] }
   let nextId = 101
   const io: GenerationIo = {
     createPaper: async (args) => {
@@ -111,6 +112,9 @@ function makeIo(): { io: GenerationIo; calls: IoCalls } {
     },
     updateContent: async (id, contentJson) => {
       calls.content.push({ id, contentJson })
+    },
+    deletePaper: async (id) => {
+      calls.deleted.push(id)
     },
   }
   return { io, calls }
@@ -388,6 +392,166 @@ describe("generation-session · 解析写回与新篇落库的竞态", () => {
       "解析A",
     )
     await waitFor(() => getNewPaperGeneration()?.running === false, "会话收尾")
+  })
+})
+
+describe("generation-session · 建卷后的入口与恢复", () => {
+  it("建卷后（后台还在生成剩余篇）再点生成：起新会话建第二张卷，旧卷照常收尾", async () => {
+    resetGenerationSessions()
+    const { io, calls } = makeIo()
+    const expl = makeExplanations()
+    let releaseAlpha!: () => void
+    const alphaGate = new Promise<void>((r) => {
+      releaseAlpha = r
+    })
+
+    // 第一卷：beta 先就绪建卷（101），alpha 组被门闩压住——会话保持 running
+    startGenerationSession({
+      words: twoGroupWords,
+      config,
+      complete: makeComplete({ alphaGate }),
+      io,
+      runExplanations: expl.run,
+    })
+    await waitFor(() => calls.create.length === 1, "第一卷建卷")
+    assert.equal(getNewPaperGeneration()?.running, true, "剩余篇还在生成")
+
+    // 用户被导航去做题后返回出卷页，再点生成——不许是无声的死键
+    const gammaWords = ["gammaA", "gammaB"]
+    const completeGamma = (async (callOpts: any) => {
+      if (callOpts.schema === generatedPaperStage1Schema)
+        return structured(structuredClone(makeReadingPaper(gammaWords)))
+      if (callOpts.schema === answerCheckSchema)
+        return structured({
+          readingAnswers: gammaWords.map((_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
+      throw new Error("未预期的调用")
+    }) as CompleteStructured
+    startGenerationSession({
+      words: gammaWords.map((word) => ({ word, origin: "today" as const })),
+      config,
+      complete: completeGamma,
+      io,
+      runExplanations: expl.run,
+    })
+
+    await waitFor(() => getNewPaperGeneration()?.paperId === 102, "第二卷建卷并上屏")
+    assert.equal(calls.create.length, 2)
+
+    // 旧卷的 alpha 组放行：写进 101，不受新会话影响
+    releaseAlpha()
+    await waitFor(() => calls.update.some((u) => u.id === 101 && u.status === "ready"), "旧卷收尾")
+  })
+
+  it("结构落库吞错后（内存领先 DB），重生成入口重发落库拉齐，而不是无声返回", async () => {
+    resetGenerationSessions()
+    const { io, calls } = makeIo()
+    const expl = makeExplanations()
+    let releaseAlpha!: () => void
+    const alphaGate = new Promise<void>((r) => {
+      releaseAlpha = r
+    })
+    // beta 先就绪建卷成功；alpha 补齐时的 UPDATE 模拟 db locked 失败（被写链吞掉）
+    let failUpdates = true
+    const updateOk = io.updateGeneration
+    io.updateGeneration = async (args) => {
+      if (failUpdates) throw new Error("db locked")
+      return updateOk(args)
+    }
+
+    startGenerationSession({
+      words: twoGroupWords,
+      config,
+      complete: makeComplete({ alphaGate }),
+      io,
+      runExplanations: expl.run,
+    })
+    await waitFor(() => calls.create.length === 1, "建卷")
+    releaseAlpha()
+    await waitFor(() => getNewPaperGeneration()?.running === false, "会话收尾")
+    assert.equal(calls.update.length, 0, "UPDATE 被吞：DB 还停在只有 beta 篇的 generating 态")
+
+    // 用户在做题页看到组1 failed，点「重新生成这一篇」。内存里它其实已 done——
+    // 必须触发一次重发落库，而不是 targets 为空就无声返回把卷锁死
+    failUpdates = false
+    const staleQuiz: Quiz = {
+      id: 101,
+      createdAt: "2026-08-13T00:00:00.000Z",
+      config,
+      words: [],
+      passages: [],
+      readingQuestions: [],
+      grammarQuestions: [],
+      status: "generating",
+    }
+    regenerateArticles({
+      paperId: 101,
+      quiz: staleQuiz,
+      groupIndexes: [0],
+      io,
+      runExplanations: expl.run,
+    })
+
+    await waitFor(() => calls.update.some((u) => u.status === "ready"), "重发落库拉齐")
+    const last = calls.update.at(-1)!
+    assert.equal(last.id, 101)
+    assert.equal(last.generationJson, null)
+    assert.deepEqual(
+      parseContent(last.contentJson).passages.map((p) => p.title),
+      ["Demo-alphaA", "Demo-betaA"],
+    )
+  })
+
+  it("取消恰好撞上建卷 IPC 在途：行落库后补删，不给往卷留孤儿卷", async () => {
+    resetGenerationSessions()
+    const { io, calls } = makeIo()
+    const expl = makeExplanations()
+    let releaseCreate!: () => void
+    const createGate = new Promise<void>((r) => {
+      releaseCreate = r
+    })
+    let createStarted!: () => void
+    const createStartedGate = new Promise<void>((r) => {
+      createStarted = r
+    })
+    const createOk = io.createPaper
+    io.createPaper = async (args) => {
+      createStarted()
+      await createGate
+      return createOk(args)
+    }
+
+    const groupWords = ["gammaA", "gammaB"]
+    const complete = (async (callOpts: any) => {
+      if (callOpts.schema === generatedPaperStage1Schema)
+        return structured(structuredClone(makeReadingPaper(groupWords)))
+      if (callOpts.schema === answerCheckSchema)
+        return structured({
+          readingAnswers: groupWords.map((_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
+      throw new Error("未预期的调用")
+    }) as CompleteStructured
+    startGenerationSession({
+      words: groupWords.map((word) => ({ word, origin: "today" as const })),
+      config,
+      complete,
+      io,
+      runExplanations: expl.run,
+    })
+
+    // create 已发出（IPC 在途）时用户取消——paperId 还是 null，取消放行
+    await createStartedGate
+    cancelGenerationSession()
+    assert.equal(getNewPaperGeneration(), null)
+
+    releaseCreate()
+    await waitFor(() => calls.deleted.length === 1, "孤儿卷补删")
+    assert.equal(calls.deleted[0], 101)
+    assert.equal(getPaperGeneration(101), undefined, "取消的会话不登记")
+    assert.equal(calls.update.length, 0)
+    assert.equal(expl.calls.length, 0, "取消后解析不再排队")
   })
 })
 

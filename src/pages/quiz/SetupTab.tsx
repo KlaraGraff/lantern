@@ -122,10 +122,15 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex-1 min-w-0">
             <div className="text-[14px] font-medium text-text-primary">
-              {t("quiz.setup.unfinishedBanner.title", {
-                date: formatQuizDate(latestUnfinished.createdAt, locale),
-                count: latestUnfinished.readingQuestions.length + latestUnfinished.grammarQuestions.length,
-              })}
+              {latestUnfinished.status === "generating"
+                ? // 生成中卷的题数只算已落库的篇，报出来会偏低——这条横幅不报数
+                  t("quiz.setup.unfinishedBanner.titleGenerating", {
+                    date: formatQuizDate(latestUnfinished.createdAt, locale),
+                  })
+                : t("quiz.setup.unfinishedBanner.title", {
+                    date: formatQuizDate(latestUnfinished.createdAt, locale),
+                    count: latestUnfinished.readingQuestions.length + latestUnfinished.grammarQuestions.length,
+                  })}
             </div>
             <div className="mt-1 text-[12.5px] text-text-muted">{t("quiz.setup.unfinishedBanner.body")}</div>
           </div>

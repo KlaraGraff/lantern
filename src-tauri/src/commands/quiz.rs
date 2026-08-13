@@ -460,6 +460,41 @@ pub fn update_quiz_paper_content(
     Ok(())
 }
 
+/// Deletes an unsubmitted paper. Sole caller today is the generation session's
+/// cancel path: when cancel lands while the `create_quiz_paper` IPC is already
+/// in flight, the row commits anyway — this removes the orphan so History
+/// doesn't accumulate stuck 'generating' papers the user explicitly cancelled.
+/// Refuses submitted papers: submit settles the wrong-word pool and FSRS from
+/// the paper, so a submitted row is user history, not a transient artifact.
+pub(crate) fn delete_quiz_paper_inner(id: i64, db: &Db) -> AppResult<()> {
+    let conn = writer(db)?;
+    let changed = conn.execute(
+        "DELETE FROM quiz_papers WHERE id = ?1 AND status != 'submitted'",
+        params![id],
+    )?;
+    if changed == 0 {
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM quiz_papers WHERE id = ?1",
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        return Err(AppError::Other(if exists {
+            "QUIZ_PAPER_ALREADY_SUBMITTED".to_string()
+        } else {
+            "QUIZ_PAPER_NOT_FOUND".to_string()
+        }));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_quiz_paper(id: i64, db: State<'_, Db>) -> AppResult<()> {
+    delete_quiz_paper_inner(id, &db)
+}
+
 /// Ask-thread ("追问") state is small and always overwritten wholesale, same
 /// as the TS original (`saveAskThreads`) — no incremental append needed.
 #[tauri::command]
@@ -1313,6 +1348,56 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("QUIZ_STATUS_INVALID"));
+    }
+
+    #[test]
+    fn generation_update_rejects_invalid_status() {
+        let (_dir, db, _sync) = setup_db();
+        let id = create_paper(&db, "2026-01-01T00:00:00.000Z", false);
+        // 'submitted' is only reachable through submit_quiz_paper — the
+        // generation writeback must never be able to fabricate it.
+        let err = update_quiz_paper_generation_inner(
+            id,
+            "{}".into(),
+            "[]".into(),
+            "submitted".into(),
+            None,
+            &db,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("QUIZ_STATUS_INVALID"));
+    }
+
+    #[test]
+    fn delete_removes_unsubmitted_paper() {
+        let (_dir, db, _sync) = setup_db();
+        let id = create_quiz_paper_inner(
+            "2026-01-01T00:00:00.000Z".into(),
+            "generating".into(),
+            "{}".into(),
+            "[]".into(),
+            "{\"passages\":[]}".into(),
+            Some("{\"groups\":[]}".into()),
+            &db,
+        )
+        .unwrap();
+
+        delete_quiz_paper_inner(id, &db).unwrap();
+        assert!(fetch_paper(&db.reader(), id).unwrap().is_none());
+    }
+
+    #[test]
+    fn delete_refuses_submitted_and_missing_papers() {
+        let (_dir, db, sync) = setup_db();
+        let id = create_paper(&db, "2026-01-01T00:00:00.000Z", false);
+        submit_quiz_paper_inner(id, wrong_result_json("subsidy", "B"), &db, &sync).unwrap();
+
+        let err = delete_quiz_paper_inner(id, &db).unwrap_err();
+        assert!(err.to_string().contains("QUIZ_PAPER_ALREADY_SUBMITTED"));
+        assert!(fetch_paper(&db.reader(), id).unwrap().is_some());
+
+        let err = delete_quiz_paper_inner(999, &db).unwrap_err();
+        assert!(err.to_string().contains("QUIZ_PAPER_NOT_FOUND"));
     }
 
     #[test]
