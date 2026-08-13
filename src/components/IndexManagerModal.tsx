@@ -61,6 +61,7 @@ export default function IndexManagerModal({
   const [running, setRunning] = useState(false);
   const [batch, setBatch] = useState<BatchIndexProgress | null>(null);
   const [confirmRechunk, setConfirmRechunk] = useState(false);
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const hasEditedSummary = Boolean(details?.overview?.userEdited || details?.sections.some((section) => section.userEdited));
 
   const load = useCallback(async () => {
@@ -396,7 +397,34 @@ export default function IndexManagerModal({
                         {t("indexManager.rewriteSummaries.action")}
                       </Button>
                     </div>
-                    {hasEditedSummary && (
+                    {/* Confirmed in the panel, the same way re-chunking above
+                        is. `window.confirm` is a no-op inside WKWebView: it
+                        returns falsy without ever showing a sheet, so on iOS
+                        this button silently did nothing at all. */}
+                    {hasEditedSummary && (confirmOverwrite ? (
+                      <div className="rounded-md border border-danger-border bg-danger-bg p-3">
+                        <h5 className="mb-1.5 text-[12.5px] font-semibold text-danger-text">{t("indexManager.overwriteEdited")}</h5>
+                        <p className="mb-3 text-[12px] leading-[1.7] text-text-secondary">{t("indexManager.overwriteConfirm")}</p>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="ghost" disabled={locked} onClick={() => setConfirmOverwrite(false)}>{t("common.cancel")}</Button>
+                          <button
+                            type="button"
+                            disabled={locked}
+                            onClick={() => {
+                              setConfirmOverwrite(false);
+                              void run("overwrite", () => invoke("ai_regenerate_book_summaries", {
+                                bookId,
+                                requestId: createUuid(),
+                                overwriteEdited: true,
+                              }));
+                            }}
+                            className="h-8 rounded-md bg-danger px-2.5 text-[12.5px] font-medium text-white disabled:opacity-50"
+                          >
+                            {t("indexManager.overwriteEditedAction")}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="flex items-start justify-between gap-4">
                         <div className="text-[12.5px] text-text-primary">
                           {t("indexManager.overwriteEdited")}
@@ -406,20 +434,13 @@ export default function IndexManagerModal({
                           size="sm"
                           variant="secondary"
                           disabled={locked}
-                          onClick={() => {
-                            if (!window.confirm(t("indexManager.overwriteConfirm"))) return;
-                            void run("overwrite", () => invoke("ai_regenerate_book_summaries", {
-                              bookId,
-                              requestId: createUuid(),
-                              overwriteEdited: true,
-                            }));
-                          }}
+                          onClick={() => setConfirmOverwrite(true)}
                         >
                           {busy === "overwrite" ? <Loader2 size={13} className="animate-spin" /> : null}
                           {t("indexManager.overwriteEditedAction")}
                         </Button>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </details>
               )}
