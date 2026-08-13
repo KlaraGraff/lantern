@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useHighlights } from "../hooks/useBookmarks";
 import { useAutoHighlights } from "../hooks/useAutoHighlights";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { loadFoliateModules, type CfiModule } from "../pages/reader/foliate-modules";
 import { savedHighlightColor } from "./mark-palette";
 import HighlightToolbar from "./HighlightToolbar";
@@ -157,6 +158,7 @@ export default function ReaderNotesPanel({
   onExport,
 }: ReaderNotesPanelProps) {
   const { t } = useTranslation();
+  const coarsePointer = useCoarsePointer();
   const { highlights, refresh: refreshHighlights, remove: removeHighlight, updateColor } = useHighlights(bookId);
   const { autoHighlights, undoable, dismiss, undo, promote } = useAutoHighlights(bookId);
   const [notes, setNotes] = useState<ReaderNote[]>([]);
@@ -453,7 +455,9 @@ export default function ReaderNotesPanel({
       <div className="mt-1 flex items-center justify-between gap-2">
         <p className="flex items-center gap-1 text-[10.5px] text-text-muted">
           {saving && <Loader2 size={11} className="animate-spin motion-reduce:animate-none" />}
-          {saveFailed ? t("notes.saveFailed") : t("notes.editHint")}
+          {/* A phone has neither a click nor an Esc key. Same split as
+              `ai.sendHint` — the gesture is the same, only its name changes. */}
+          {saveFailed ? t("notes.saveFailed") : t(coarsePointer ? "notes.editHintTouch" : "notes.editHint")}
         </p>
         <button
           type="button"

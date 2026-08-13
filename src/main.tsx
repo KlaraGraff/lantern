@@ -8,6 +8,7 @@ import { installReaderDiagnostics } from "./utils/readerDiagnostics";
 import { installBuiltinFontFaces, installCjkFontFaces } from "./components/builtin-fonts";
 import { applyAppZoom, readAppZoom } from "./services/app-zoom-window";
 import { installFocusZoomGuard } from "./services/focus-zoom-guard";
+import { installKeyboardViewport } from "./services/keyboard-viewport";
 
 // Install global fault sinks before anything else runs. On macOS 12 / Safari
 // 15.1 a missing runtime API can throw at module top-level or inside the PDF
@@ -18,6 +19,11 @@ installReaderDiagnostics();
 // covered — an autofocused field in a panel that opens on load would otherwise
 // zoom the page before any listener existed. Inert off a coarse pointer.
 installFocusZoomGuard();
+
+// Also before React mounts: the shells read `--app-viewport-height` on their
+// first paint, and a route that opens with a field already focused would
+// otherwise lay itself out one keyboard too tall.
+installKeyboardViewport();
 
 // Polyfill Map.getOrInsertComputed for PDF.js v5.5+ (Stage 3 proposal, not yet in WebKit)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

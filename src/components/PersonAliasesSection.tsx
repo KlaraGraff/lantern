@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { useSettings } from "../hooks/useSettings";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { platform } from "../services/platform";
 import {
   aliasAmbiguities,
@@ -87,6 +88,7 @@ export default function PersonAliasesSection({
   onLeaveForSettings(): void;
 }) {
   const { t } = useTranslation();
+  const coarsePointer = useCoarsePointer();
   const { settings, loading: settingsLoading } = useSettings();
   const [groups, setGroups] = useState<AliasGroupView[] | null>(null);
   const [availability, setAvailability] = useState<VectorAvailability | null>(null);
@@ -783,7 +785,10 @@ export default function PersonAliasesSection({
                         className="w-[130px] rounded-full border border-accent bg-bg-surface px-2.5 py-0.5 text-[11px] text-text-primary outline-none"
                       />
                       <span className="text-[10.5px] text-text-muted">
-                        {t("indexManager.aliases.addAliasHint")}
+                        {/* No Esc key on a phone — but `onBlur` already
+                            cancels, so tapping away is the same gesture
+                            under a different name. */}
+                        {t(coarsePointer ? "indexManager.aliases.addAliasHintTouch" : "indexManager.aliases.addAliasHint")}
                       </span>
                     </>
                   ) : (
@@ -792,7 +797,11 @@ export default function PersonAliasesSection({
                       aria-label={t("indexManager.aliases.addAliasAria", { canonical: row.canonical })}
                       disabled={busy != null}
                       onClick={() => openAddAlias(row.canonical)}
-                      className="inline-flex items-center rounded-full border border-dashed border-border px-2 py-0.5 text-text-muted hover:bg-bg-input disabled:opacity-30"
+                      // A 10px glyph in a 0.5 padding box is a 21pt target. It
+                      // sits alone at the end of the chip row, so it can grow
+                      // without stealing taps from the chips beside it — which
+                      // is why the per-chip ✕ is left as it is.
+                      className="inline-flex items-center rounded-full border border-dashed border-border px-2 py-0.5 text-text-muted hover:bg-bg-input disabled:opacity-30 touch:min-h-9 touch:px-3"
                     >
                       <Plus size={10} />
                     </button>

@@ -74,7 +74,11 @@ export default function AskDrawer(props: {
     <div
       className={
         narrow
-          ? 'fixed inset-x-0 bottom-0 z-50 flex h-[70vh] flex-col rounded-t-xl border-t border-border bg-bg-surface shadow-context'
+          // `bottom` pays the keyboard inset itself: `fixed` resolves against
+          // the layout viewport, which iOS leaves at full height while the keys
+          // are up, so a sheet pinned to 0 sits behind them however short its
+          // ancestors get. See `services/keyboard-viewport.ts`.
+          ? 'fixed inset-x-0 bottom-[var(--spacing-keyboard-inset,0px)] z-50 flex h-[70vh] flex-col rounded-t-xl border-t border-border bg-bg-surface shadow-context'
           : 'fixed inset-y-0 right-0 z-50 flex w-[340px] flex-col border-l border-border bg-bg-surface shadow-context'
       }
     >

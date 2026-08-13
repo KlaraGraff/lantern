@@ -276,9 +276,12 @@
  * `base` they lose to any utility, which is the right way round. */
 @layer base {
   /* Every route renders inside an `h-screen` shell, so the document scroller
-   * has nothing to scroll on any screen. All this can suppress, therefore, is
-   * the rubber-band on a page that never moves — which on iOS reads as the
-   * whole app coming loose from the glass. Scoped to the root on purpose: the
+   * has nothing to scroll — with one exception this rule does not cover: iOS
+   * scrolls the document itself to reveal a focused field, which is why
+   * `services/keyboard-viewport.ts` has to put that offset back by hand. What
+   * this suppresses is the rubber-band on a page that never moves — which on
+   * iOS reads as the whole app coming loose from the glass. Scoped to the root
+   * on purpose: the
    * scrollers that do carry content (settings panes, the TOC, the reader) keep
    * their own momentum and bounce, because there the elasticity is feedback
    * rather than a glitch. */
@@ -334,6 +337,45 @@
   textarea,
   select {
     font-size: 16px;
+  }
+}
+
+/* Unlayered for the same reason as the font floor above: it has to beat the
+ * utility it is re-pointing, and `pointer: coarse` keeps it away from every
+ * mouse-driven window.
+ *
+ * `100vh` and `100dvh` both measure the layout viewport, which iOS does not
+ * shorten for the software keyboard — see `services/keyboard-viewport.ts` for
+ * the measurement and what goes wrong. `--app-viewport-height` is that file's
+ * running report of the window the user can actually see, so a shell wearing
+ * one of these utilities lays itself out above the keys instead of behind
+ * them. With no keyboard up the variable equals the layout viewport and these
+ * three rules are their own no-op; the `100dvh` fallback covers the moment
+ * before the first measurement lands and any browser without
+ * `visualViewport`. */
+@media (pointer: coarse) {
+  .h-screen,
+  .h-dvh {
+    height: var(--app-viewport-height, 100dvh);
+  }
+  .min-h-screen {
+    min-height: var(--app-viewport-height, 100dvh);
+  }
+
+  /* Full-screen overlays don't wear a height utility at all — `inset-0` sizes
+   * them off the containing block, which for `position: fixed` is the layout
+   * viewport, and that is the one thing the keyboard does not shorten. Measured
+   * on the Settings modal: the shell stayed 956 tall behind a 543pt window, so
+   * its own `overflow-y-auto` scrollport ran on behind the keys and judged a
+   * field at y=744 to be "already in view" — nothing scrolled, and the field
+   * stayed under the keyboard. Clamping the overlay is what gives that scroller
+   * an edge to work against.
+   *
+   * `max-height` rather than `height`: the overlays that centre a dialog rely
+   * on `inset-0` for their width too, and a ceiling leaves every layout that
+   * was already shorter than the window exactly as it was. */
+  .fixed.inset-0 {
+    max-height: var(--app-viewport-height, 100dvh);
   }
 }
 
