@@ -13,6 +13,8 @@ import {
 import { useTranslation } from "react-i18next";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { savedHighlightColor } from "./mark-palette";
 import { TOP_INSET } from "../utils/top-inset";
@@ -209,12 +211,17 @@ export default function AnnotationsContent({ menuButton }: { menuButton?: ReactN
         new Date(item.updated_at).toISOString(),
       ]),
     ];
-    const href = URL.createObjectURL(new Blob([`\uFEFF${rows.map((row) => row.map(escape).join(",")).join("\n")}`], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = "lantern-annotations.csv";
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    const csv = `\uFEFF${rows.map((row) => row.map(escape).join(",")).join("\n")}`;
+    try {
+      const path = await save({
+        defaultPath: "lantern-annotations.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+      await writeTextFile(path, csv);
+    } catch {
+      // No error channel on this panel \u2014 keep the prior no-op-on-failure behaviour.
+    }
   };
 
   const bookOptions = useMemo(() => [

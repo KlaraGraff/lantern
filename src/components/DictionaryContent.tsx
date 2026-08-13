@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import {
@@ -447,29 +447,29 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
     await updateMastery(entry.primary.id, mastery, mastery === "learning" ? now + 24 * 60 * 60 * 1000 : null);
     if (entry.rows.length > 1) await refreshWords();
   }, [now, refreshWords, updateMastery]);
-  const downloadCsv = (filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) => {
+  const downloadCsv = async (filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) => {
     const escape = (value: string | number | null | undefined) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const lines = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))];
-    const href = URL.createObjectURL(new Blob([`\uFEFF${lines.join("\n")}`], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = filename;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    const path = await save({
+      defaultPath: filename,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    if (!path) return;
+    await writeTextFile(path, `\uFEFF${lines.join("\n")}`);
   };
   const exportVocabBackup = async (format: BackupFormat) => {
     setExporting(true);
     try {
       const backup = await invoke<VocabBackup>("export_vocab_backup");
       if (format === "json") {
-        const href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
-        const link = document.createElement("a");
-        link.href = href;
-        link.download = "lantern-vocabulary.json";
-        link.click();
-        window.setTimeout(() => URL.revokeObjectURL(href), 0);
+        const path = await save({
+          defaultPath: "lantern-vocabulary.json",
+          filters: [{ name: "JSON", extensions: ["json"] }],
+        });
+        if (!path) return;
+        await writeTextFile(path, JSON.stringify(backup, null, 2));
       } else {
-        downloadCsv(
+        await downloadCsv(
           "lantern-vocabulary.csv",
           VOCAB_BACKUP_CSV_HEADERS,
           backup.words.map((word) => [
@@ -503,7 +503,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
         allRecords.push(...page.records);
         cursor = page.next_cursor;
       } while (cursor !== null);
-      downloadCsv(
+      await downloadCsv(
         "lantern-lookup-history.csv",
         ["lookup", "definition", "context_explanation", "context", "chapter", "book", "first_looked_up_at", "last_looked_up_at", "lookup_count"],
         allRecords.map((record) => [
