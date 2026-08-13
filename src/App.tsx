@@ -34,6 +34,10 @@ const isMainWindow = getCurrentWebviewWindow().label === "main";
 // Home's own chunk instead.
 const Reader = lazy(() => import("./pages/Reader"));
 const BookDetails = lazy(() => import("./pages/BookDetails"));
+// 学习板块的三个全屏页（词卷 / 试卷 / 翻卡）同理只在导航到时才加载。
+const Quiz = lazy(() => import("./pages/Quiz"));
+const QuizPaper = lazy(() => import("./pages/QuizPaper"));
+const FlashcardReview = lazy(() => import("./pages/FlashcardReview"));
 
 // Chunks load from the local filesystem here, so this is normally on screen
 // for less than a frame. It exists only so that frame is a plain rect in the
@@ -41,6 +45,7 @@ const BookDetails = lazy(() => import("./pages/BookDetails"));
 // behind the router — same colour each route already paints once it mounts.
 const ReaderFallback = () => <div className="h-screen bg-bg-page" />;
 const BookDetailsFallback = () => <div className="h-screen bg-bg-page" />;
+const StudyPageFallback = () => <div className="h-screen bg-bg-page" />;
 
 function applyTheme(theme: string) {
   const root = document.documentElement;
@@ -144,6 +149,18 @@ function AppContent() {
           <Route
             path="/book/:id"
             element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
+          />
+          <Route
+            path="/quiz"
+            element={<Suspense fallback={<StudyPageFallback />}><Quiz /></Suspense>}
+          />
+          <Route
+            path="/quiz/paper/:paperId"
+            element={<Suspense fallback={<StudyPageFallback />}><QuizPaper /></Suspense>}
+          />
+          <Route
+            path="/flashcards"
+            element={<Suspense fallback={<StudyPageFallback />}><FlashcardReview /></Suspense>}
           />
         </Routes>
       </ErrorBoundary>
