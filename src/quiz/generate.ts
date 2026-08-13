@@ -85,8 +85,12 @@ export interface GenerationTrace {
  * 生成编排。迁自 labs/cijuan/src/llm/generate.ts，按两阶段生成改写
  * （docs/impls/cijuan-merge.md §二.6 —— 本步骤最大的非搬运改动）：
  *
- * - `generateQuiz` 只做阶段一：拆词 → 各组并发出题 → 明答校验 + 遮词自检（并行）→
- *   两者失败题合并重出（一轮止损）→ 返回可作答的卷（无解析字段）。
+ * - `generateQuiz` 只做阶段一：拆词 → **每篇文章一条独立流水线**（写稿 →
+ *   明答校验 + 遮词自检并行 → 失败题合并重出一轮）→ 汇总发卷（无解析字段）。
+ *   流水线之间互不等待：一篇写完立刻进它自己的校验，不设阶段屏障——总耗时
+ *   等于最慢的一条流水线，而不是「每阶段最慢者」之和。在飞请求数：写稿期
+ *   等于篇数，校验期每篇最多 2 路（明答 + 遮词并行），与旧版校验阶段的
+ *   「篇数 + 1 路」同量级。
  * - `generateExplanations` 独立导出，供 UI 层在发卷后台调用：按 passageId 重新分组、
  *   以「续写同一对话」的形态逐组请求解析，失败不抛出、返回缺失的 passageId 清单
  *   （UI 用它渲染「点击补生成」）。这个函数只吃 `Quiz` 本身——不依赖阶段一调用时的
@@ -95,18 +99,30 @@ export interface GenerationTrace {
  *   （见 toStage1Paper），不需要额外持久化一份「生成会话」状态。
  */
 
-/** 生成进度，对应加载页的四步：拆词 → 撰写 → 校验（明答+遮词） → 重出（如有） → 发卷 */
-export type GenerateStep = 'splitting' | 'writing' | 'checking' | 'regenerating' | 'done'
+/** 一篇文章的流水线阶段：写稿 → 校验（明答+遮词） → 重出（如有） → 完成 */
+export type ArticleStep = 'writing' | 'checking' | 'regenerating' | 'done'
 
-export type ProgressFn = (step: GenerateStep) => void
+/**
+ * 生成进度（按篇流水线改版）：全卷不再有统一的「当前阶段」——同一时刻第 1 篇
+ * 可能在校验、第 2 篇还在写稿——进度以事件流上报，UI 侧聚合成按篇状态。
+ * `split` 事件把篇数与各篇词数一次性交给 UI，此后 `article` 事件的 index
+ * 都落在这个数组范围内。
+ */
+export type GenerateProgress =
+  | { type: 'splitting' }
+  | { type: 'split'; articles: { wordCount: number }[] }
+  | { type: 'article'; index: number; step: ArticleStep }
+  | { type: 'done' }
+
+export type ProgressFn = (progress: GenerateProgress) => void
 
 let idCounter = 0
 const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++idCounter}`
 
 /**
- * 阶段一：拆词 → 每组词一次调用（一篇文章+它的题）并发生成 → 明答校验 + 遮词自检
- * （并行）→ 合并失败题重出一轮。按组分次调用而不是整卷一次：词多时单次输出会顶到
- * max_tokens 被截断，且分次可并发。
+ * 阶段一：拆词 → 每组词一条独立流水线（一篇文章+它的题）→ 汇总。按组分次调用
+ * 而不是整卷一次：词多时单次输出会顶到 max_tokens 被截断，且分次可并发。
+ * 流水线内部（写稿 → 校验 → 重出）见 runArticlePipeline。
  */
 export async function generateQuiz(opts: {
   words: QuizWord[]
@@ -123,77 +139,44 @@ export async function generateQuiz(opts: {
   const progress = opts.onProgress ?? (() => {})
   const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
 
-  progress('splitting')
+  progress({ type: 'splitting' })
   const groups = splitWords(words)
+  progress({ type: 'split', articles: groups.map((g) => ({ wordCount: g.length })) })
 
-  progress('writing')
+  // 单篇写稿失败仍然让整卷失败（Promise.all 原语义不变）：写稿是卷子正文的
+  // 唯一来源，缺一篇就不是用户配置的那张卷。校验/重出的失败才按篇降级
+  // （见 runArticlePipeline 内部的 try/catch）。
+  //
+  // abort 是各流水线共享的中止标志：任何一篇写稿失败即置位。Promise.all 一
+  // reject 结果就已定局（错误上屏、卷子不发），但其余流水线不会因此停下——
+  // 没有这道闸，它们各自写完后还会照常发起校验/重出，给一张注定作废的卷
+  // 多烧最多每篇 3 次计费调用。置位后各流水线在进校验/重出前自查并早退。
+  const abort = { aborted: false }
   const results = await Promise.all(
-    groups.map((group) =>
-      complete({
-        messages: [
-          {
-            role: 'user',
-            content: buildGeneratePrompt({
-              words: group.map((w) => w.word),
-              difficulty: config.difficulty,
-              types: config.types,
-            }),
-          },
-        ],
-        schema: generatedPaperStage1Schema,
-        maxTokens: 16000,
-        // 让明答校验（阶段一收卷前的质检）续写这次对话时能命中前缀缓存
-        cache: true,
+    groups.map((group, index) =>
+      runArticlePipeline({
+        group,
+        config,
+        complete,
         profileId,
+        abort,
+        onStep: (step) => progress({ type: 'article', index, step }),
       }),
     ),
   )
 
+  // 汇总：Promise.all 保序，passages 与题目仍按拆词分组的顺序拼接，
+  // 与旧版「按 results 顺序 push」的卷面顺序逐题一致
   const passages: Passage[] = []
-  let readingQuestions: ReadingQuestion[] = []
-  let grammarQuestions: GrammarFillQuestion[] = []
+  const readingQuestions: ReadingQuestion[] = []
+  const grammarQuestions: GrammarFillQuestion[] = []
   const traces: GenerationTrace[] = []
-
-  for (const result of results) {
-    const paper = result.data
-    // 每次调用只该有一篇文章；模型多给的丢弃，题目全部挂到本组文章上
-    const p = paper.passages[0]
-    if (!p) continue
-    const passage: Passage = {
-      id: nextId('psg'),
-      title: p.title,
-      paragraphs: p.paragraphs,
-      targetWords: p.targetWords,
-    }
-    passages.push(passage)
-    traces.push({
-      passageId: passage.id,
-      stage1UserMessage: result.requestMessage,
-      stage1RawResponse: result.rawResponse,
-    })
-    for (const q of paper.readingQuestions) {
-      readingQuestions.push({
-        id: nextId('rq'),
-        type: 'reading',
-        passageId: passage.id,
-        targetWord: q.targetWord,
-        stem: q.stem,
-        options: q.options.map((o) => ({ label: o.label, text: o.text })),
-        answer: q.answer,
-        source: { passageId: passage.id, paragraph: q.sourceParagraph, quote: q.sourceQuote },
-      })
-    }
-    for (const q of paper.grammarQuestions) {
-      grammarQuestions.push({
-        id: nextId('gq'),
-        type: 'grammarFill',
-        passageId: passage.id,
-        targetWord: q.targetWord,
-        sentence: q.sentence,
-        hint: q.hint,
-        answer: q.answer,
-      })
-    }
+  for (const r of results) {
+    if (!r.passage || !r.trace) continue
+    passages.push(r.passage)
+    traces.push(r.trace)
+    readingQuestions.push(...r.readingQuestions)
+    grammarQuestions.push(...r.grammarQuestions)
   }
 
   // 覆盖校验：没被任何题考到的词从本卷词表剔除——否则池中的重现词会被
@@ -203,35 +186,7 @@ export async function generateQuiz(opts: {
   )
   const coveredWords = words.filter((w) => covered.has(w.word.toLowerCase()))
 
-  if (readingQuestions.length > 0 || grammarQuestions.length > 0) {
-    progress('checking')
-    const [answerCheck, maskedFailedIdx] = await Promise.all([
-      runAnswerCheck({ readingQuestions, grammarQuestions, traces, complete, profileId }),
-      config.maskedCheck && readingQuestions.length > 0
-        ? runMaskedCheck({ passages, readingQuestions, complete, profileId })
-        : Promise.resolve(new Set<number>()),
-    ])
-    const readingFailedIdx = new Set([...answerCheck.readingFailed, ...maskedFailedIdx])
-    const grammarFailedIdx = answerCheck.grammarFailed
-
-    if (readingFailedIdx.size > 0 || grammarFailedIdx.size > 0) {
-      progress('regenerating')
-      const redone = await redoFailedQuestions({
-        passages,
-        readingQuestions,
-        grammarQuestions,
-        readingFailedIdx,
-        grammarFailedIdx,
-        config,
-        complete,
-        profileId,
-      })
-      readingQuestions = redone.readingQuestions
-      grammarQuestions = redone.grammarQuestions
-    }
-  }
-
-  progress('done')
+  progress({ type: 'done' })
   return {
     quiz: {
       createdAt: new Date().toISOString(),
@@ -246,19 +201,129 @@ export async function generateQuiz(opts: {
   }
 }
 
+/** 一条流水线的产出；写稿没给出文章时（模型异常输出）passage/trace 为 null，本篇整组丢弃 */
+interface ArticleResult {
+  passage: Passage | null
+  trace: GenerationTrace | null
+  readingQuestions: ReadingQuestion[]
+  grammarQuestions: GrammarFillQuestion[]
+}
+
 /**
- * 明答校验（新增质检，docs/impls/cijuan-merge.md §二.6）：按 passageId 分组，
- * 续写各组阶段一的原始对话——user 轮回放 trace.stage1UserMessage 逐字节原文
- * （命中 prompt cache），assistant 轮回放 trace.stage1RawResponse 的「去答案版」
- * （见下方 stripStage1Answers，问题 1 修复：不能让模型看见自己两轮前写的答案，
- * 否则「重做一遍」名存实亡）——追加一条「重做一遍」指令，不遮词、不告知既定答案，
- * 与答案键不一致的题记为失败。
+ * 一篇文章的完整流水线：写稿 → 明答校验 + 遮词自检（并行）→ 失败题合并重出
+ * （一轮止损）。各篇互不等待，一篇写完立刻进它自己的校验。
  *
- * 每组独立请求、独立失败：某一组调用/解析异常只降级为「这组本轮不参与该质检」
- * （console.warn 后跳过），不拖累其它组，也不让整卷因质检门故障而报废——质检门
- * 失效的正确后果是退回原版「无质检」的行为，不是把一张已经花钱生成好的卷子
- * 直接丢弃。
+ * 缓存硬约束（DeepSeek 前缀缓存，命中约一折计价）：明答校验与阶段二解析靠把
+ * 「写稿请求 + 模型原始回答」逐字节原样放在消息开头命中缓存。因此写稿提示词
+ * 里不许出现任何会变的内容（时间戳/随机数/序号）——它只由词表与配置决定；
+ * 题目 id（nextId 带时间戳）只存在于领域对象里，从不进提示词。
  */
+async function runArticlePipeline(opts: {
+  group: QuizWord[]
+  config: QuizConfig
+  complete: CompleteStructured
+  profileId?: string
+  /** 各流水线共享的中止标志（见 generateQuiz）：任一篇写稿失败后不再发起新调用 */
+  abort: { aborted: boolean }
+  onStep: (step: ArticleStep) => void
+}): Promise<ArticleResult> {
+  const { group, config, complete, profileId, abort, onStep } = opts
+
+  onStep('writing')
+  let result
+  try {
+    result = await complete({
+      messages: [
+        {
+          role: 'user',
+          content: buildGeneratePrompt({
+            words: group.map((w) => w.word),
+            difficulty: config.difficulty,
+            types: config.types,
+          }),
+        },
+      ],
+      schema: generatedPaperStage1Schema,
+      maxTokens: 16000,
+      // 让明答校验（本篇收卷前的质检）续写这次对话时能命中前缀缓存
+      cache: true,
+      profileId,
+    })
+  } catch (err) {
+    abort.aborted = true
+    throw err
+  }
+
+  const paper = result.data
+  // 每次调用只该有一篇文章；模型多给的丢弃，题目全部挂到本组文章上
+  const p = paper.passages[0]
+  if (!p) {
+    onStep('done')
+    return { passage: null, trace: null, readingQuestions: [], grammarQuestions: [] }
+  }
+  const passage: Passage = {
+    id: nextId('psg'),
+    title: p.title,
+    paragraphs: p.paragraphs,
+    targetWords: p.targetWords,
+  }
+  const trace: GenerationTrace = {
+    passageId: passage.id,
+    stage1UserMessage: result.requestMessage,
+    stage1RawResponse: result.rawResponse,
+  }
+  let readingQuestions: ReadingQuestion[] = paper.readingQuestions.map((q) => ({
+    id: nextId('rq'),
+    type: 'reading',
+    passageId: passage.id,
+    targetWord: q.targetWord,
+    stem: q.stem,
+    options: q.options.map((o) => ({ label: o.label, text: o.text })),
+    answer: q.answer,
+    source: { passageId: passage.id, paragraph: q.sourceParagraph, quote: q.sourceQuote },
+  }))
+  let grammarQuestions: GrammarFillQuestion[] = paper.grammarQuestions.map((q) => ({
+    id: nextId('gq'),
+    type: 'grammarFill',
+    passageId: passage.id,
+    targetWord: q.targetWord,
+    sentence: q.sentence,
+    hint: q.hint,
+    answer: q.answer,
+  }))
+
+  if (!abort.aborted && (readingQuestions.length > 0 || grammarQuestions.length > 0)) {
+    onStep('checking')
+    const [answerCheck, maskedFailedIdx] = await Promise.all([
+      runAnswerCheck({ readingQuestions, grammarQuestions, trace, complete, profileId }),
+      config.maskedCheck && readingQuestions.length > 0
+        ? runMaskedCheck({ passage, readingQuestions, complete, profileId })
+        : Promise.resolve(new Set<number>()),
+    ])
+    const readingFailedIdx = new Set([...answerCheck.readingFailed, ...maskedFailedIdx])
+    const grammarFailedIdx = answerCheck.grammarFailed
+
+    if (!abort.aborted && (readingFailedIdx.size > 0 || grammarFailedIdx.size > 0)) {
+      onStep('regenerating')
+      const redone = await redoFailedQuestions({
+        passage,
+        readingQuestions,
+        grammarQuestions,
+        readingFailedIdx,
+        grammarFailedIdx,
+        config,
+        complete,
+        profileId,
+      })
+      readingQuestions = redone.readingQuestions
+      grammarQuestions = redone.grammarQuestions
+    }
+  }
+
+  onStep('done')
+  return { passage, trace, readingQuestions, grammarQuestions }
+}
+
 /**
  * 明答校验续写用的「去答案版」assistant 回合：从阶段一原始回复里删掉每道题的
  * answer 字段，再重新序列化。不这样做的话，续写对话里模型会看到自己两轮前
@@ -270,7 +335,7 @@ export async function generateQuiz(opts: {
  *
  * 解析失败在理论上不可能发生（这段文本就是阶段一自己的回复，已经过 zod 校验
  * 才能进到这里）；万一发生，直接抛出，交给调用方 runAnswerCheck 已有的
- * try/catch 降级路径处理（console.warn 后这一组本轮跳过质检，不阻塞整卷）。
+ * try/catch 降级路径处理（console.warn 后本篇本轮跳过质检，不阻塞流水线）。
  */
 function stripStage1Answers(rawResponse: string): string {
   const parsed = JSON.parse(extractJson(rawResponse))
@@ -286,83 +351,80 @@ function stripStage1Answers(rawResponse: string): string {
   })
 }
 
+/**
+ * 明答校验（按篇质检，docs/impls/cijuan-merge.md §二.6）：续写本篇阶段一的原始
+ * 对话——user 轮回放 trace.stage1UserMessage 逐字节原文（命中 prompt cache），
+ * assistant 轮回放 trace.stage1RawResponse 的「去答案版」（见上方
+ * stripStage1Answers：不能让模型看见自己两轮前写的答案，否则「重做一遍」
+ * 名存实亡）——追加一条「重做一遍」指令，不遮词、不告知既定答案，与答案键
+ * 不一致的题记为失败。返回的下标就是本篇题目数组的下标，直接与遮词自检合并。
+ *
+ * 调用/解析异常降级为空失败集（console.warn 后跳过），不让本篇因质检门故障
+ * 而报废——质检门失效的正确后果是退回原版「无质检」的行为，不是把一篇已经
+ * 花钱生成好的文章和题目直接丢弃。
+ */
 async function runAnswerCheck(opts: {
   readingQuestions: ReadingQuestion[]
   grammarQuestions: GrammarFillQuestion[]
-  traces: GenerationTrace[]
+  trace: GenerationTrace
   complete: CompleteStructured
   profileId?: string
 }): Promise<{ readingFailed: Set<number>; grammarFailed: Set<number> }> {
-  const { readingQuestions, grammarQuestions, traces, complete, profileId } = opts
-  // 组内 questionIndex 是「这一组过滤后的子数组」下标，不是整卷全局下标——
-  // 用 id 把每道题映射回它在全局 readingQuestions/grammarQuestions 里的下标
-  const readingGlobalIndex = new Map(readingQuestions.map((q, i) => [q.id, i]))
-  const grammarGlobalIndex = new Map(grammarQuestions.map((q, i) => [q.id, i]))
+  const { readingQuestions, grammarQuestions, trace, complete, profileId } = opts
   const readingFailed = new Set<number>()
   const grammarFailed = new Set<number>()
 
-  await Promise.all(
-    traces.map(async (trace) => {
-      const groupReading = readingQuestions.filter((q) => q.passageId === trace.passageId)
-      const groupGrammar = grammarQuestions.filter((q) => q.passageId === trace.passageId)
-      if (groupReading.length === 0 && groupGrammar.length === 0) return
+  try {
+    const strippedAssistant = stripStage1Answers(trace.stage1RawResponse)
+    const { data: check } = await complete({
+      messages: [
+        { role: 'user', content: trace.stage1UserMessage },
+        { role: 'assistant', content: strippedAssistant },
+        {
+          role: 'user',
+          content: buildAnswerCheckPrompt({ readingQuestions, grammarQuestions }),
+        },
+      ],
+      schema: answerCheckSchema,
+      maxTokens: 8000,
+      cache: true,
+      profileId,
+    })
 
-      try {
-        const strippedAssistant = stripStage1Answers(trace.stage1RawResponse)
-        const { data: check } = await complete({
-          messages: [
-            { role: 'user', content: trace.stage1UserMessage },
-            { role: 'assistant', content: strippedAssistant },
-            {
-              role: 'user',
-              content: buildAnswerCheckPrompt({
-                readingQuestions: groupReading,
-                grammarQuestions: groupGrammar,
-              }),
-            },
-          ],
-          schema: answerCheckSchema,
-          maxTokens: 8000,
-          cache: true,
-          profileId,
-        })
-
-        for (const v of check.readingAnswers) {
-          const q = groupReading[v.questionIndex]
-          if (!q || q.answer === v.answer) continue
-          const globalIdx = readingGlobalIndex.get(q.id)
-          if (globalIdx !== undefined) readingFailed.add(globalIdx)
-        }
-        for (const v of check.grammarAnswers) {
-          const q = groupGrammar[v.questionIndex]
-          if (!q || normalizeAnswer(q.answer) === normalizeAnswer(v.answer)) continue
-          const globalIdx = grammarGlobalIndex.get(q.id)
-          if (globalIdx !== undefined) grammarFailed.add(globalIdx)
-        }
-      } catch (err) {
-        console.warn('明答校验调用失败（该组跳过），本轮该组不参与这项质检', err)
+    for (const v of check.readingAnswers) {
+      const q = readingQuestions[v.questionIndex]
+      if (q && q.answer !== v.answer) readingFailed.add(v.questionIndex)
+    }
+    for (const v of check.grammarAnswers) {
+      const q = grammarQuestions[v.questionIndex]
+      if (q && normalizeAnswer(q.answer) !== normalizeAnswer(v.answer)) {
+        grammarFailed.add(v.questionIndex)
       }
-    }),
-  )
+    }
+  } catch (err) {
+    console.warn('明答校验调用失败，本篇本轮不参与这项质检', err)
+  }
 
   return { readingFailed, grammarFailed }
 }
 
 /**
- * 遮词自检：遮住目标词让模型重做。模型仍能有把握答对（confident 且答案一致）的题
- * = 没考到词 → 记为失败，交给顶层与明答校验的失败集合合并后统一重出。
+ * 遮词自检（按篇质检）：遮住目标词让模型重做本篇的阅读题。模型仍能有把握答对
+ * （confident 且答案一致）的题 = 没考到词 → 记为失败，交给流水线与明答校验的
+ * 失败集合合并后统一重出。原版是整卷一次调用；按篇拆开后提示词只含本篇的
+ * 文章与题目——这个调用本就不带 cache（遮改后的文本与阶段一前缀不同），
+ * 与缓存前缀无关，拆小只是让它跟着本篇流水线走、不等别篇。
  * 调用失败同样降级为空失败集（见 runAnswerCheck 顶部注释，两个质检门待遇一致）。
  */
 async function runMaskedCheck(opts: {
-  passages: Passage[]
+  passage: Passage
   readingQuestions: ReadingQuestion[]
   complete: CompleteStructured
   profileId?: string
 }): Promise<Set<number>> {
-  const { passages, readingQuestions, complete, profileId } = opts
+  const { passage, readingQuestions, complete, profileId } = opts
   try {
-    const byId = new Map(passages.map((p) => [p.id, p]))
-    const items = readingQuestions.map((q) => ({ passage: byId.get(q.passageId)!, question: q }))
+    const items = readingQuestions.map((question) => ({ passage, question }))
 
     const { data: check } = await complete({
       messages: [{ role: 'user', content: buildMaskedCheckPrompt(items) }],
@@ -377,17 +439,19 @@ async function runMaskedCheck(opts: {
         .map((v) => v.questionIndex),
     )
   } catch (err) {
-    console.warn('遮词自检调用失败，本轮跳过该质检门', err)
+    console.warn('遮词自检调用失败，本篇本轮跳过该质检门', err)
     return new Set<number>()
   }
 }
 
 /**
- * 重出一轮（明答校验 + 遮词自检失败题的合并结果，止损原则不变：只重出一轮，
- * 重出失败则保留原题，宁可这道题考点弱一点也不阻塞整卷）。
+ * 重出一轮（本篇明答校验 + 遮词自检失败题的合并结果，止损原则不变：只重出一轮，
+ * 重出失败则保留原题，宁可这道题考点弱一点也不阻塞本篇流水线）。
+ * 按篇拆开后重出提示词只带本篇文章；这个调用不带 cache（重出是全新对话，
+ * 前缀与阶段一不同），与缓存前缀无关。
  */
 async function redoFailedQuestions(opts: {
-  passages: Passage[]
+  passage: Passage
   readingQuestions: ReadingQuestion[]
   grammarQuestions: GrammarFillQuestion[]
   readingFailedIdx: Set<number>
@@ -397,7 +461,7 @@ async function redoFailedQuestions(opts: {
   profileId?: string
 }): Promise<{ readingQuestions: ReadingQuestion[]; grammarQuestions: GrammarFillQuestion[] }> {
   const {
-    passages,
+    passage,
     readingQuestions,
     grammarQuestions,
     readingFailedIdx,
@@ -419,7 +483,7 @@ async function redoFailedQuestions(opts: {
             difficulty: config.difficulty,
             types: config.types,
             regenerate: {
-              passages,
+              passages: [passage],
               failedReadingQuestions: readingOrder.map((i) => readingQuestions[i]),
               failedGrammarQuestions: grammarOrder.map((i) => grammarQuestions[i]),
             },
@@ -434,8 +498,6 @@ async function redoFailedQuestions(opts: {
     // 消费式映射：按 targetWord（小写）分桶，而不是按位置对位——重出提示里阅读、
     // 语法两个列表各自从 1 重新编号，模型换序时位置对位会把 A 词的题面配上 B 词的
     // 答案，错词池会记错词。找不到同词条目就保留原题（一轮止损原则不变）。
-    const byId = new Map(passages.map((p) => [p.id, p]))
-
     const redoReadingByWord = new Map<string, GeneratedPaperStage1['readingQuestions']>()
     for (const r of redo.readingQuestions) {
       const key = r.targetWord.toLowerCase()
@@ -456,10 +518,8 @@ async function redoFailedQuestions(opts: {
       const bucket = redoReadingByWord.get(q.targetWord.toLowerCase())
       const r = bucket?.shift()
       if (!r) return q
-      // 重出必然是同一篇文章——忽略模型回的 passageIndex（阶段一提示词教过
-      // 「重出时 passageIndex 一律填 0」，多篇卷场景下这个值会指错文章）
-      const passage = byId.get(q.passageId)
-      if (!passage) return q
+      // 重出必然是本篇文章——忽略模型回的 passageIndex（阶段一提示词教过
+      // 「重出时 passageIndex 一律填 0」，这里本就只有这一篇）
       return {
         ...q,
         stem: r.stem,

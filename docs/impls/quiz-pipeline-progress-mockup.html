@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词卷生成中屏 · 按篇流水线进度 · 样张</title>
+<style>
+  :root{
+    --bg-page:#f4f4f5; --bg-surface:#ffffff; --bg-muted:#fafafa; --bg-input:#f3f3f5;
+    --text-primary:#18181b; --text-secondary:#52525c; --text-muted:#71717b;
+    --border:#e4e4e7;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --accent-text:#7c3aed;
+    --success-text:#00a63e; --success-bg:#f0fdf4; --success-border:#b9f8cf;
+    --shadow-card:0px 4px 6px -1px rgba(0,0,0,.1), 0px 2px 4px -2px rgba(0,0,0,.1);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg-page:#151518; --bg-surface:#18191d; --bg-muted:#1f2023; --bg-input:#25262c;
+      --text-primary:#f4f4f5; --text-secondary:#c9c9d1; --text-muted:#9a9aa4;
+      --border:#34343d;
+      --accent:#8b5cf6; --accent-bg:#302647; --accent-text:#a78bfa;
+      --success-text:#4ade80; --success-bg:#122a1c; --success-border:#1d4f31;
+      --shadow-card:0 4px 12px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg-page);color:var(--text-primary);
+    font:14px/1.65 "Inter",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    letter-spacing:-.15px;-webkit-font-smoothing:antialiased;
+    padding:0 20px 120px;
+  }
+  .wrap{max-width:1200px;margin:0 auto}
+  b,strong{font-weight:600}
+  h1{font-size:24px;font-weight:600;margin:40px 0 12px}
+  .lede{font-size:14px;color:var(--text-secondary);line-height:1.85;max-width:84ch}
+  .lede+.lede{margin-top:10px}
+  .lede b{color:var(--text-primary)}
+  h2.sec{font-size:18px;font-weight:600;margin:56px 0 6px}
+  .why{font-size:13.5px;color:var(--text-secondary);line-height:1.85;margin-bottom:20px;max-width:84ch}
+  .why b{color:var(--text-primary)}
+
+  /* ── 屏幕框 ── */
+  .screens{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .screen{width:640px;max-width:100%;border:1px solid var(--border);border-radius:12px;
+    background:var(--bg-surface);box-shadow:var(--shadow-card);overflow:hidden;flex:none}
+  .screen-label{font-size:12px;color:var(--text-muted);margin:0 0 8px 2px}
+  .screen-col{flex:none;width:640px;max-width:100%}
+
+  /* 顶栏 */
+  .topbar-ui{display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--border);padding:0 20px}
+  .topbar-ui .tt{font-size:15px;font-weight:600}
+  .topbar-ui .ts{font-size:12.5px;color:var(--text-muted)}
+  .topbar-ui .sp{flex:1}
+  .btn-ghost{font-size:13px;color:var(--text-secondary);border:none;background:none;
+    padding:6px 12px;border-radius:8px;cursor:pointer}
+  .btn-ghost:hover{background:var(--bg-input)}
+
+  /* 步骤列表 */
+  .body-ui{padding:40px 24px 36px;display:flex;justify-content:center}
+  .inner{width:100%;max-width:520px}
+  .steps{display:flex;flex-direction:column;gap:16px}
+  .step{display:flex;align-items:flex-start;gap:12px}
+  .badge{margin-top:2px;flex:none;width:24px;height:24px;border-radius:9999px;border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;color:var(--text-muted)}
+  .badge.done{border-color:var(--success-border);background:var(--success-bg);color:var(--success-text)}
+  .badge.doing{border-color:transparent;background:var(--accent-bg);color:var(--accent-text)}
+  .badge .dot{width:6px;height:6px;border-radius:9999px;background:currentColor}
+  .badge svg{display:block}
+  .spin{width:13px;height:13px;border-radius:9999px;border:2px solid currentColor;border-top-color:transparent;
+    animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .step .main{font-size:14px;font-weight:500}
+  .step .main.muted{color:var(--text-muted);font-weight:400}
+  .step .sub{margin-top:2px;font-size:12.5px;line-height:1.6;color:var(--text-muted)}
+
+  /* 篇行组：左侧细线把「按篇」的行归成一组 */
+  .articles{margin:4px 0 4px 11px;padding-left:24px;border-left:1px dashed var(--border);
+    display:flex;flex-direction:column;gap:14px}
+  .articles .step .badge{width:22px;height:22px}
+  .pipeline-note{margin:2px 0 2px 11px;padding-left:24px;font-size:12px;line-height:1.7;color:var(--text-muted)}
+
+  .bar{margin-top:32px;height:6px;border-radius:9999px;background:var(--bg-input);overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:9999px;background:var(--accent)}
+  .foot-note{margin-top:12px;text-align:center;font-size:12.5px;color:var(--text-muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>词卷生成中屏 · 按篇流水线进度（样张）</h1>
+<p class="lede">出卷编排从「整批推进」改成<b>每篇文章一条独立流水线</b>之后，「全卷现在处于哪一步」不再存在——同一时刻第 1 篇可能在校验、第 2 篇还在撰写。生成中屏随之从「五步全局清单」改成：<b>拆词一行 + 每篇一行（各自转各自的阶段） + 发卷一行</b>。</p>
+<p class="lede">每篇一行的收益：进度不再被最慢的一篇「拖着全卷显示」，哪篇快哪篇慢一眼可见；行内小字只报阶段名，校验机制的两句科普收拢成篇行组下方的一行说明，不逐篇重复。进度条改为各篇阶段完成度的平均值，仍是节拍指示、不承诺百分比。</p>
+
+<h2 class="sec">状态 A · 拆词完成，各篇同时开写</h2>
+<p class="why">拆词几乎瞬时完成，用户实际看到的第一个画面就是它：每篇一行、全部在「撰写文章与题目」。篇行主文案 = 序号 + 该篇覆盖的词数（文章标题此时还不存在，写完也不回填——这屏的信息是进度，不是内容预告）。</p>
+<div class="screen">
+  <div class="topbar-ui"><span class="tt">正在出卷</span><span class="ts">13 个词 · 大学英语六级（CET-6）</span><span class="sp"></span><button class="btn-ghost">取消</button></div>
+  <div class="body-ui"><div class="inner">
+    <div class="steps">
+      <div class="step">
+        <span class="badge done"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <div><div class="main">拆词</div><div class="sub">词组算一个词，虚词剔掉 · 拆成 2 篇</div></div>
+      </div>
+      <div class="articles">
+        <div class="step">
+          <span class="badge doing"><span class="spin"></span></span>
+          <div><div class="main">第 1 篇 · 7 个词</div><div class="sub">撰写文章与题目</div></div>
+        </div>
+        <div class="step">
+          <span class="badge doing"><span class="spin"></span></span>
+          <div><div class="main">第 2 篇 · 6 个词</div><div class="sub">撰写文章与题目</div></div>
+        </div>
+      </div>
+      <div class="pipeline-note">每篇写完立刻各自校验：明答校验带原文把题重做一遍，答案对不上的作废；遮词自检遮住目标词再做，仍答得对说明没考到词，同样作废。没过检的题重出一轮。</div>
+      <div class="step">
+        <span class="badge"><span class="dot"></span></span>
+        <div><div class="main muted">发卷</div><div class="sub">这一步亮起就可以开始做题；讲解会在你做题时于后台补齐</div></div>
+      </div>
+    </div>
+    <div class="bar"><i style="width:24%"></i></div>
+    <div class="foot-note">可以切走做别的，出好了留在这里</div>
+  </div></div>
+</div>
+
+<h2 class="sec">状态 B · 各篇交错推进（新编排的典型画面）</h2>
+<p class="why">这是旧版画不出来的状态：第 2 篇已经完成，第 1 篇还在校验，第 3 篇有题没过检、正在重出。旧版此刻只能显示「校验中」，且第 2 篇的领先完全不可见。</p>
+<div class="screen">
+  <div class="topbar-ui"><span class="tt">正在出卷</span><span class="ts">31 个词 · 考研英语一</span><span class="sp"></span><button class="btn-ghost">取消</button></div>
+  <div class="body-ui"><div class="inner">
+    <div class="steps">
+      <div class="step">
+        <span class="badge done"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <div><div class="main">拆词</div><div class="sub">词组算一个词，虚词剔掉 · 拆成 3 篇</div></div>
+      </div>
+      <div class="articles">
+        <div class="step">
+          <span class="badge doing"><span class="spin"></span></span>
+          <div><div class="main">第 1 篇 · 11 个词</div><div class="sub">校验：明答 + 遮词</div></div>
+        </div>
+        <div class="step">
+          <span class="badge done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <div><div class="main">第 2 篇 · 10 个词</div><div class="sub">完成</div></div>
+        </div>
+        <div class="step">
+          <span class="badge doing"><span class="spin"></span></span>
+          <div><div class="main">第 3 篇 · 10 个词</div><div class="sub">重出没通过校验的题</div></div>
+        </div>
+      </div>
+      <div class="pipeline-note">每篇写完立刻各自校验：明答校验带原文把题重做一遍，答案对不上的作废；遮词自检遮住目标词再做，仍答得对说明没考到词，同样作废。没过检的题重出一轮。</div>
+      <div class="step">
+        <span class="badge"><span class="dot"></span></span>
+        <div><div class="main muted">发卷</div><div class="sub">这一步亮起就可以开始做题；讲解会在你做题时于后台补齐</div></div>
+      </div>
+    </div>
+    <div class="bar"><i style="width:71%"></i></div>
+    <div class="foot-note">可以切走做别的，出好了留在这里</div>
+  </div></div>
+</div>
+
+<h2 class="sec">状态 C · 全部完成，发卷点亮</h2>
+<p class="why">导航去做题页前的一瞬。全部行打勾、进度条满格——语义与旧版一致：「发卷」亮起 = 可以开始做题，讲解仍在后台补写。</p>
+<div class="screen">
+  <div class="topbar-ui"><span class="tt">正在出卷</span><span class="ts">13 个词 · 大学英语六级（CET-6）</span><span class="sp"></span><button class="btn-ghost">取消</button></div>
+  <div class="body-ui"><div class="inner">
+    <div class="steps">
+      <div class="step">
+        <span class="badge done"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <div><div class="main">拆词</div><div class="sub">词组算一个词，虚词剔掉 · 拆成 2 篇</div></div>
+      </div>
+      <div class="articles">
+        <div class="step">
+          <span class="badge done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <div><div class="main">第 1 篇 · 7 个词</div><div class="sub">完成</div></div>
+        </div>
+        <div class="step">
+          <span class="badge done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <div><div class="main">第 2 篇 · 6 个词</div><div class="sub">完成</div></div>
+        </div>
+      </div>
+      <div class="pipeline-note">每篇写完立刻各自校验：明答校验带原文把题重做一遍，答案对不上的作废；遮词自检遮住目标词再做，仍答得对说明没考到词，同样作废。没过检的题重出一轮。</div>
+      <div class="step">
+        <span class="badge done"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <div><div class="main">发卷</div><div class="sub">这一步亮起就可以开始做题；讲解会在你做题时于后台补齐</div></div>
+      </div>
+    </div>
+    <div class="bar"><i style="width:100%"></i></div>
+    <div class="foot-note">可以切走做别的，出好了留在这里</div>
+  </div></div>
+</div>
+
+<h2 class="sec">单篇卷（≤12 词）长什么样</h2>
+<p class="why">词少拆不出第二篇时，列表就是「拆词 → 第 1 篇 → 发卷」三行，视觉上与旧版五步清单差别不大——按篇结构对单篇也成立，不需要单独分支。</p>
+
+</div>
+</body>
+</html>

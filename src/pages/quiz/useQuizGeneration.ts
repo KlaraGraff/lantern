@@ -17,7 +17,7 @@ import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { generateQuiz, type GenerateStep } from "../../quiz/generate.ts";
+import { generateQuiz, type ArticleStep } from "../../quiz/generate.ts";
 import { cancelRequest, parseQuizAiProfileId } from "../../quiz/transport.ts";
 import type { QuizConfig, QuizWord } from "../../quiz/types.ts";
 import { quizContentJson } from "./paper-io.ts";
@@ -27,12 +27,26 @@ import { aiErrorMessageKey, getAiErrorCode, type AiErrorCode } from "../../utils
 
 export type QuizGenerationPhase = "idle" | "generating" | "error";
 
+/** 生成中屏的宏观阶段：拆词中 → 各篇流水线推进中 → 发卷（随即导航离开） */
+export type GenerationStage = "splitting" | "articles" | "done";
+
+/**
+ * 生成中屏的按篇状态行。`pending` 只存在于 split 事件建行到该篇第一个
+ * article 事件之间——各篇流水线在拆词后同步启动，正常情况下用户看不到它，
+ * 但保留这个初值能让「事件乱序/丢失」时 UI 不至于显示错误的阶段。
+ */
+export interface ArticleProgress {
+  wordCount: number;
+  step: ArticleStep | "pending";
+}
+
 export function useQuizGeneration() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { settings } = useSettings();
   const [phase, setPhase] = useState<QuizGenerationPhase>("idle");
-  const [step, setStep] = useState<GenerateStep>("splitting");
+  const [stage, setStage] = useState<GenerationStage>("splitting");
+  const [articles, setArticles] = useState<ArticleProgress[]>([]);
   const [error, setError] = useState<string | null>(null);
   // 识别出的 AI 错误码（如 AI_PROFILE_NOT_AVAILABLE）；错误页据此决定
   // 「删掉部分词缩小范围」这类建议是否适用——设置类错误跟词表多少无关。
@@ -46,7 +60,8 @@ export function useQuizGeneration() {
       registryRef.current = new Set();
       setError(null);
       setErrorCode(null);
-      setStep("splitting");
+      setStage("splitting");
+      setArticles([]);
       setPhase("generating");
       const profileId = parseQuizAiProfileId(settings["quiz_ai_profile_id"]);
 
@@ -54,8 +69,23 @@ export function useQuizGeneration() {
         const { quiz, traces } = await generateQuiz({
           words,
           config,
-          onProgress: (s) => {
-            if (!cancelledRef.current) setStep(s);
+          // 把 generate.ts 的进度事件流聚合成生成中屏要的状态：
+          // split 一次性建行（此后行数不变），article 事件推进对应行的阶段
+          onProgress: (p) => {
+            if (cancelledRef.current) return;
+            if (p.type === "splitting") {
+              setStage("splitting");
+              setArticles([]);
+            } else if (p.type === "split") {
+              setStage("articles");
+              setArticles(p.articles.map((a) => ({ wordCount: a.wordCount, step: "pending" })));
+            } else if (p.type === "article") {
+              setArticles((prev) =>
+                prev.map((a, i) => (i === p.index ? { ...a, step: p.step } : a)),
+              );
+            } else {
+              setStage("done");
+            }
           },
           requestRegistry: registryRef.current,
           profileId,
@@ -78,6 +108,14 @@ export function useQuizGeneration() {
         navigate(`/quiz/paper/${id}`);
       } catch (err) {
         if (cancelledRef.current) return;
+        // 某篇写稿失败 → generateQuiz 整体 reject，卷子已注定不发。其余流水线
+        // 里仍在飞的请求（registry 里剩下的 id）此刻只会白烧计费流——照
+        // cancel() 的路数逐个通知后端掐断（generate.ts 侧的 abort 标志管
+        // 「不再发起新调用」，这里管「掐掉已在飞的」，两头都要堵）。
+        for (const requestId of registryRef.current) {
+          cancelRequest(requestId).catch(() => {});
+        }
+        registryRef.current.clear();
         console.error("Quiz generation failed:", err);
         const message = err instanceof Error ? err.message : String(err);
         // 后端错误串带的是给程序看的 token；注册表认得的一律换成 i18n 文案再上屏
@@ -107,5 +145,5 @@ export function useQuizGeneration() {
     setErrorCode(null);
   }, []);
 
-  return { phase, step, error, errorCode, generate, cancel, dismissError };
+  return { phase, stage, articles, error, errorCode, generate, cancel, dismissError };
 }

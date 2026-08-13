@@ -75,7 +75,8 @@ export default function Quiz() {
     return (
       <div className="h-screen bg-bg-page">
         <GeneratingScreen
-          step={generation.step}
+          stage={generation.stage}
+          articles={generation.articles}
           wordCount={lastAttempt?.words.length ?? 0}
           difficultyLabel={lastAttempt ? t(`quiz.difficulty.${lastAttempt.config.difficulty}`) : ""}
           onCancel={generation.cancel}

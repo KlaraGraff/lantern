@@ -1,37 +1,92 @@
 /**
- * 生成中屏（docs/impls/cijuan-merge-mockup.html §C）。
+ * 生成中屏（按篇流水线改版，样张 docs/impls/quiz-pipeline-progress-mockup.html）。
  *
- * 五步：拆词 → 撰写文章与题目 → 校验（明答+遮词并行，合并成一步展示，
- * 小字分别讲清两件事）→ 重出没通过校验的题（通常跳过，用小字说明）→ 发卷。
+ * 出卷编排是每篇文章一条独立流水线（写稿 → 校验 → 重出，见 generate.ts），
+ * 全卷不再有统一的「当前阶段」，进度清单相应改成三段：
+ * 拆词一行 → 每篇一行（各自显示所处阶段）→ 发卷一行。
+ * 校验机制的说明收拢成篇行组下方的一行小字，不逐篇重复。
  * 「发卷」独立成一步是有意的——两阶段生成把讲解挪到发卷之后的后台去写，
  * 这一步点亮意味着可以开始做题了，不是「全部生成完了」。
  *
- * 进度条是节拍指示，不承诺精确百分比、不显示倒计时——生成时长本就因词数、
- * 是否触发重出而变化，编造一个数字比不给更误导人。
+ * 进度条是节拍指示（各篇阶段完成度的平均值），不承诺精确百分比、不显示
+ * 倒计时——生成时长本就因词数、是否触发重出而变化，编造数字比不给更误导人。
  */
 import { useTranslation } from "react-i18next";
 import { Check, Loader2 } from "lucide-react";
 import Button from "../../components/ui/Button";
-import type { GenerateStep } from "../../quiz/generate.ts";
-
-const STEP_ORDER: GenerateStep[] = ["splitting", "writing", "checking", "regenerating", "done"];
+import type { ArticleProgress, GenerationStage } from "./useQuizGeneration.ts";
 
 interface GeneratingScreenProps {
-  step: GenerateStep;
+  stage: GenerationStage;
+  articles: ArticleProgress[];
   wordCount: number;
   difficultyLabel: string;
   onCancel: () => void;
 }
 
+type BadgeStatus = "done" | "doing" | "pending";
+
+/** 各阶段折算的完成度，只喂进度条；取值只需单调递增，不代表真实耗时占比 */
+const ARTICLE_FRACTION: Record<ArticleProgress["step"], number> = {
+  pending: 0.05,
+  writing: 0.3,
+  checking: 0.7,
+  regenerating: 0.9,
+  done: 1,
+};
+
+function StepBadge({ status, small }: { status: BadgeStatus; small?: boolean }) {
+  return (
+    <span
+      className={`mt-0.5 flex ${small ? "size-[22px]" : "size-6"} shrink-0 items-center justify-center rounded-full border ${
+        status === "done"
+          ? "border-success-border bg-success-bg text-success-text"
+          : status === "doing"
+            ? "border-transparent bg-accent-bg text-accent-text"
+            : "border-border text-text-muted"
+      }`}
+    >
+      {status === "done" && <Check size={13} strokeWidth={3} />}
+      {status === "doing" && <Loader2 size={13} className="animate-spin" />}
+      {status === "pending" && <span className="size-1.5 rounded-full bg-current" />}
+    </span>
+  );
+}
+
 export default function GeneratingScreen({
-  step,
+  stage,
+  articles,
   wordCount,
   difficultyLabel,
   onCancel,
 }: GeneratingScreenProps) {
   const { t } = useTranslation();
-  const currentIndex = STEP_ORDER.indexOf(step);
-  const progressPct = Math.round(((currentIndex + 1) / STEP_ORDER.length) * 100);
+
+  const progressPct =
+    stage === "done"
+      ? 100
+      : articles.length === 0
+        ? 4
+        : Math.round(
+            6 +
+              (88 * articles.reduce((sum, a) => sum + ARTICLE_FRACTION[a.step], 0)) /
+                articles.length,
+          );
+
+  const articleSubKey = (step: ArticleProgress["step"]): string => {
+    switch (step) {
+      case "checking":
+        return "quiz.generating.step.checking";
+      case "regenerating":
+        return "quiz.generating.step.regenerating";
+      case "done":
+        return "quiz.generating.article.done";
+      // pending 只在 split 建行到流水线首个事件之间瞬时存在，按「即将写稿」显示
+      case "pending":
+      case "writing":
+        return "quiz.generating.step.writing";
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -51,38 +106,63 @@ export default function GeneratingScreen({
       <div className="flex flex-1 items-center justify-center overflow-y-auto px-6 py-10">
         <div className="w-full max-w-[520px]">
           <div className="flex flex-col gap-4">
-            {STEP_ORDER.map((s, i) => {
-              const status = i < currentIndex ? "done" : i === currentIndex ? "doing" : "pending";
-              return (
-                <div key={s} className="flex items-start gap-3">
-                  <span
-                    className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                      status === "done"
-                        ? "border-success-border bg-success-bg text-success-text"
-                        : status === "doing"
-                          ? "border-transparent bg-accent-bg text-accent-text"
-                          : "border-border text-text-muted"
-                    }`}
-                  >
-                    {status === "done" && <Check size={13} strokeWidth={3} />}
-                    {status === "doing" && <Loader2 size={13} className="animate-spin" />}
-                    {status === "pending" && <span className="size-1.5 rounded-full bg-current" />}
-                  </span>
-                  <div className="min-w-0">
-                    <div
-                      className={`text-[14px] ${
-                        status === "pending" ? "text-text-muted" : "text-text-primary font-medium"
-                      }`}
-                    >
-                      {t(`quiz.generating.step.${s}`)}
-                    </div>
-                    <div className="mt-0.5 text-[12.5px] leading-[1.6] text-text-muted">
-                      {t(`quiz.generating.step.${s}.note`)}
-                    </div>
-                  </div>
+            <div className="flex items-start gap-3">
+              <StepBadge status={stage === "splitting" ? "doing" : "done"} />
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium text-text-primary">
+                  {t("quiz.generating.step.splitting")}
                 </div>
-              );
-            })}
+                <div className="mt-0.5 text-[12.5px] leading-[1.6] text-text-muted">
+                  {t("quiz.generating.step.splitting.note")}
+                  {articles.length > 0 &&
+                    ` · ${t("quiz.generating.split.count", { count: articles.length })}`}
+                </div>
+              </div>
+            </div>
+
+            {articles.length > 0 && (
+              <>
+                <div className="ml-[11px] flex flex-col gap-3.5 border-l border-dashed border-border pl-6">
+                  {articles.map((a, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <StepBadge
+                        small
+                        status={
+                          a.step === "done" ? "done" : a.step === "pending" ? "pending" : "doing"
+                        }
+                      />
+                      <div className="min-w-0">
+                        <div className="text-[14px] font-medium text-text-primary">
+                          {t("quiz.generating.article", { num: i + 1, count: a.wordCount })}
+                        </div>
+                        <div className="mt-0.5 text-[12.5px] leading-[1.6] text-text-muted">
+                          {t(articleSubKey(a.step))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="ml-[11px] pl-6 text-[12px] leading-[1.7] text-text-muted">
+                  {t("quiz.generating.pipeline.note")}
+                </div>
+              </>
+            )}
+
+            <div className="flex items-start gap-3">
+              <StepBadge status={stage === "done" ? "done" : "pending"} />
+              <div className="min-w-0">
+                <div
+                  className={`text-[14px] ${
+                    stage === "done" ? "text-text-primary font-medium" : "text-text-muted"
+                  }`}
+                >
+                  {t("quiz.generating.step.done")}
+                </div>
+                <div className="mt-0.5 text-[12.5px] leading-[1.6] text-text-muted">
+                  {t("quiz.generating.step.done.note")}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="mt-8 h-1.5 overflow-hidden rounded-full bg-bg-input">

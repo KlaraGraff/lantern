@@ -1,5 +1,5 @@
 import type { Quiz, QuizConfig, QuizWord } from './types.ts'
-import type { GenerateStep, ProgressFn } from './generate.ts'
+import type { ArticleStep, ProgressFn } from './generate.ts'
 
 /**
  * 演示模式：不调 API，用内置样卷把「出题 → 作答 → 判分 → 错词入池」整条链路跑通。
@@ -30,11 +30,17 @@ export async function generateMockQuiz(opts: {
 }): Promise<Quiz> {
   const progress = opts.onProgress ?? (() => {})
   const wait = () => new Promise((r) => setTimeout(r, STEP_DELAY_MS))
-  const steps: GenerateStep[] = ['splitting', 'writing', 'checking', 'done']
+  // 与真实编排同形的事件流：拆词 → 两篇（对应样卷的两篇文章）各自 写稿 → 校验 → 完成
+  progress({ type: 'splitting' })
+  await wait()
+  progress({ type: 'split', articles: [{ wordCount: 5 }, { wordCount: 4 }] })
+  const steps: ArticleStep[] = ['writing', 'checking', 'done']
   for (const s of steps) {
-    progress(s)
+    progress({ type: 'article', index: 0, step: s })
+    progress({ type: 'article', index: 1, step: s })
     if (s !== 'done') await wait()
   }
+  progress({ type: 'done' })
   return {
     ...structuredClone(MOCK_QUIZ),
     createdAt: new Date().toISOString(),

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { CompleteStructured } from "../src/quiz/generate.ts";
+import type { CompleteStructured, GenerateProgress } from "../src/quiz/generate.ts";
 import { generateExplanations, generateQuiz, regroupForExplanations } from "../src/quiz/generate.ts";
 import {
   answerCheckSchema,
@@ -74,9 +74,29 @@ const stage1Paper = {
   grammarQuestions: [{ targetWord: "advocate", sentence: "sentence0", hint: "advocate", answer: "have advocated" }],
 }
 
+/** 只出阅读题的一篇文章：每个目标词一道题、标准答案一律 A，stem-<词> 便于断言定位 */
+function makeReadingPaper(targetWords: string[]) {
+  return {
+    passages: [{ title: `Demo-${targetWords[0]}`, paragraphs: ["p1"], targetWords }],
+    readingQuestions: targetWords.map((w) => ({
+      passageIndex: 0,
+      targetWord: w,
+      stem: `stem-${w}`,
+      options: [
+        { label: "A", text: "right" },
+        { label: "B", text: "wrong" },
+      ],
+      answer: "A",
+      sourceParagraph: 1,
+      sourceQuote: "p1",
+    })),
+    grammarQuestions: [],
+  }
+}
+
 describe("generateQuiz · 明答校验 + 遮词自检全部通过", () => {
   it("不触发重出，直接按阶段一出题结果发卷，并返回可续写的 trace", async () => {
-    const steps: string[] = []
+    const events: GenerateProgress[] = []
     const complete: CompleteStructured = (async (opts: any) => {
       if (opts.schema === generatedPaperStage1Schema) return structured(structuredClone(stage1Paper))
       if (opts.schema === answerCheckSchema) {
@@ -95,13 +115,21 @@ describe("generateQuiz · 明答校验 + 遮词自检全部通过", () => {
       throw new Error(`未预期的 schema 调用：${JSON.stringify(opts.messages[0]?.content).slice(0, 50)}`)
     }) as CompleteStructured
 
-    const { quiz, traces } = await generateQuiz({ words, config, onProgress: (s) => steps.push(s), complete })
+    const { quiz, traces } = await generateQuiz({ words, config, onProgress: (e) => events.push(e), complete })
 
     assert.equal(quiz.readingQuestions.length, 2)
     assert.equal(quiz.readingQuestions[0].stem, "stem0")
     assert.equal(quiz.grammarQuestions[0].sentence, "sentence0")
-    assert.ok(!steps.includes("regenerating"), "校验全过不该进入重出步骤")
-    assert.deepEqual(steps, ["splitting", "writing", "checking", "done"])
+    // 流水线化后的事件流：拆词 → 报出分篇词数 → 这一篇 写稿/校验/完成 → 发卷；
+    // 校验全过，序列里不该出现 regenerating（deepEqual 顺带守住这一点）
+    assert.deepEqual(events, [
+      { type: "splitting" },
+      { type: "split", articles: [{ wordCount: 2 }] },
+      { type: "article", index: 0, step: "writing" },
+      { type: "article", index: 0, step: "checking" },
+      { type: "article", index: 0, step: "done" },
+      { type: "done" },
+    ])
 
     // traces 只在内存里，一组一条，键为该组文章的 passageId
     assert.equal(traces.length, 1)
@@ -139,7 +167,7 @@ describe("generateQuiz · 明答校验 + 遮词自检全部通过", () => {
 
 describe("generateQuiz · 明答校验与遮词自检失败题合并重出", () => {
   it("两边失败集合按题目下标去重合并，各自类型分别重出，止损一轮", async () => {
-    const steps: string[] = []
+    const events: GenerateProgress[] = []
     // 顺带捕获每次调用的 profileId：这是唯一驱动到重出调用的用例，出题模型
     // 硬指定必须连重出这一跳也带上（generate.ts redoFailedQuestions 内的调用）
     const capturedProfileIds: (string | undefined)[] = []
@@ -192,12 +220,15 @@ describe("generateQuiz · 明答校验与遮词自检失败题合并重出", () 
     const { quiz } = await generateQuiz({
       words,
       config,
-      onProgress: (s) => steps.push(s),
+      onProgress: (e) => events.push(e),
       complete,
       profileId: "profile-pinned",
     })
 
-    assert.ok(steps.includes("regenerating"), "两边任一失败都该触发重出")
+    assert.ok(
+      events.some((e) => e.type === "article" && e.step === "regenerating"),
+      "两边任一失败都该触发重出",
+    )
     // 出题、明答校验、遮词自检、重出四跳全部带上同一个 profileId，重出不许漏
     assert.ok(capturedProfileIds.length >= 4, "本用例应至少驱动 4 次底层调用（含重出）")
     assert.ok(
@@ -288,55 +319,41 @@ describe("generateQuiz · 明答校验与遮词自检失败题合并重出", () 
   })
 })
 
-describe("generateQuiz · 多组时组内索引正确重映射为全局索引", () => {
-  it("13 词拆成 [7,6] 两组：明答校验的组内失败下标（经 question id 映射）与遮词自检的全局失败下标合并后，仍精确对应到正确的全局题目", async () => {
-    // 覆盖 generate.ts runAnswerCheck 里 group-local questionIndex → 全局下标的
-    // 重映射（约 :228-268）：每组续写各自的对话，answerCheck 返回的 questionIndex
-    // 是「这一组过滤后的子数组」下标，必须先按 question id 换算回整卷全局下标，
-    // 才能和遮词自检本就是全局索引的失败集合正确合并、去重。
+describe("generateQuiz · 多篇卷：逐篇校验/重出后仍按原顺序拼回整卷", () => {
+  it("13 词拆成 [7,6] 两篇：各篇明答校验与遮词自检的篇内失败下标合并去重、各自重出，拼卷后精确覆盖正确的全局题位", async () => {
+    // 流水线化之前，遮词自检与重出是全卷单次调用，明答校验的组内下标要重映射为
+    // 全局下标；现在三道工序全部逐篇进行，天然都是篇内下标。本用例守住的是
+    // 「篇内失败判定（两门合并去重）→ 篇内重出写回 → 按组序拼卷」的端到端正确性：
+    // 每篇的失败题必须落回它在整卷里的原始题位，不许串篇、不许错位。
     const group1Words = ["alphaA", "alphaB", "alphaC", "alphaD", "alphaE", "alphaF", "alphaG"]
     const group2Words = ["betaA", "betaB", "betaC", "betaD", "betaE", "betaF"]
     const allTargetWords = [...group1Words, ...group2Words]
     const manyWords = allTargetWords.map((word) => ({ word, origin: "today" as const }))
-    // 只出阅读题：语法题的失败判定只走明答校验，与本用例要验证的「组内→全局」
-    // 重映射（明答校验 + 遮词自检合并）无关，关掉能让用例更聚焦
+    // 只出阅读题：语法题的失败判定只走明答校验，与本用例要验证的两门合并无关
     const readingConfig: QuizConfig = { ...config, types: ["reading"] }
 
-    const makePaper = (targetWords: string[]) => ({
-      passages: [{ title: `Demo-${targetWords[0]}`, paragraphs: ["p1"], targetWords }],
-      readingQuestions: targetWords.map((w) => ({
-        passageIndex: 0,
-        targetWord: w,
-        stem: `stem-${w}`,
-        options: [
-          { label: "A", text: "right" },
-          { label: "B", text: "wrong" },
-        ],
-        answer: "A",
-        sourceParagraph: 1,
-        sourceQuote: "p1",
-      })),
-      grammarQuestions: [],
-    })
-    const group1Paper = makePaper(group1Words)
-    const group2Paper = makePaper(group2Words)
+    const group1Paper = makeReadingPaper(group1Words)
+    const group2Paper = makeReadingPaper(group2Words)
 
-    // 全局失败下标（并集去重后）应为 {2,5,8,10}：
-    // - group1（全局 0~6）：明答校验组内 idx2 失败 → 全局 2（alphaC）
-    // - 遮词自检：全局 idx5 失败 → 全局 5（alphaF，group1 内，与明答校验不重叠）
-    // - group2（全局 7~12）：明答校验组内 idx1 失败 → 全局 8（betaB）
-    // - 遮词自检：全局 idx8 失败 → 与上面 betaB 重叠，验证去重后仍是同一个全局下标
-    // - 遮词自检：全局 idx10 失败 → 全局 10（betaD，group2 内，与明答校验不重叠）
+    // 期望被重出覆盖的全局题位为 {2,5,8,10}：
+    // - 第 1 篇（全局 0~6）：明答校验篇内 idx2 失败 → 全局 2（alphaC）；
+    //   遮词自检篇内 idx5 失败 → 全局 5（alphaF，与明答校验不重叠）
+    // - 第 2 篇（全局 7~12）：明答校验篇内 idx1 失败 → 全局 8（betaB）；
+    //   遮词自检篇内 idx1 失败 → 与 betaB 重叠，验证篇内去重后只重出一道；
+    //   遮词自检篇内 idx3 失败 → 全局 10（betaD）
     const failedGlobalIdx = [2, 5, 8, 10]
-    const failedWords = failedGlobalIdx.map((i) => allTargetWords[i])
 
     const complete: CompleteStructured = (async (opts: any) => {
       const firstContent = String(opts.messages[0]?.content ?? "")
       if (opts.schema === generatedPaperStage1Schema) {
         if (firstContent.includes("没有通过质检")) {
+          // 重出改为逐篇调用：靠提示词里的文章标题分辨是哪一篇，各自只返回本篇的失败题
+          const failedForGroup = firstContent.includes("Demo-alphaA")
+            ? ["alphaC", "alphaF"]
+            : ["betaB", "betaD"]
           return structured({
             passages: [],
-            readingQuestions: failedWords.map((w) => ({
+            readingQuestions: failedForGroup.map((w) => ({
               passageIndex: 0,
               targetWord: w,
               stem: `redone-${w}`,
@@ -354,23 +371,36 @@ describe("generateQuiz · 多组时组内索引正确重映射为全局索引", 
         return structured(structuredClone(group2Paper), "req-group2", JSON.stringify(group2Paper))
       }
       if (opts.schema === answerCheckSchema) {
-        // 靠回放的 stage1UserMessage（messages[0]）区分是哪一组的续写
+        // 靠回放的 stage1UserMessage（messages[0]）区分是哪一篇的续写
         if (firstContent === "req-group1") {
-          // group1 组内 7 题（local idx 0~6），组内 idx2（alphaC）失败 → 应映射为全局 2
+          // 第 1 篇 7 题（篇内 idx 0~6），篇内 idx2（alphaC）失败
           return structured({
             readingAnswers: group1Words.map((_, i) => ({ questionIndex: i, answer: i === 2 ? "B" : "A" })),
             grammarAnswers: [],
           })
         }
-        // group2 组内 6 题（local idx 0~5），组内 idx1（betaB）失败 → 应映射为全局 8
+        // 第 2 篇 6 题（篇内 idx 0~5），篇内 idx1（betaB）失败
         return structured({
           readingAnswers: group2Words.map((_, i) => ({ questionIndex: i, answer: i === 1 ? "B" : "A" })),
           grammarAnswers: [],
         })
       }
       if (opts.schema === maskedCheckVerdictSchema) {
+        // 遮词自检同样逐篇调用，questionIndex 是篇内下标。提示词里各题的目标词
+        // 已被遮成 ████，词面认不出是哪一篇——只能靠题数分辨：第 1 篇 7 题
+        // （存在「## 题 6」），第 2 篇只有 6 题。
+        if (firstContent.includes("## 题 6")) {
+          // 第 1 篇：篇内 idx5（alphaF）遮词后仍自信答对 → 失败
+          return structured({
+            verdicts: [{ questionIndex: 5, answeredWithoutWord: "A", confident: true }],
+          })
+        }
+        // 第 2 篇：篇内 idx1（betaB，与明答校验重叠）与 idx3（betaD）失败
         return structured({
-          verdicts: [5, 8, 10].map((i) => ({ questionIndex: i, answeredWithoutWord: "A", confident: true })),
+          verdicts: [
+            { questionIndex: 1, answeredWithoutWord: "A", confident: true },
+            { questionIndex: 3, answeredWithoutWord: "A", confident: true },
+          ],
         })
       }
       throw new Error(`未预期的调用：${firstContent.slice(0, 50)}`)
@@ -392,7 +422,7 @@ describe("generateQuiz · 多组时组内索引正确重映射为全局索引", 
 
 describe("generateQuiz · 质检门调用失败时降级为空失败集（不丢弃已生成的卷子）", () => {
   it("明答校验与遮词自检都抛错时，仍正常发卷、不触发重出", async () => {
-    const steps: string[] = []
+    const events: GenerateProgress[] = []
     const complete: CompleteStructured = (async (opts: any) => {
       if (opts.schema === generatedPaperStage1Schema) return structured(structuredClone(stage1Paper))
       if (opts.schema === answerCheckSchema) throw new Error("模拟明答校验调用失败（网络异常）")
@@ -400,11 +430,14 @@ describe("generateQuiz · 质检门调用失败时降级为空失败集（不丢
       throw new Error("未预期的调用")
     }) as CompleteStructured
 
-    const { quiz } = await generateQuiz({ words, config, onProgress: (s) => steps.push(s), complete })
+    const { quiz } = await generateQuiz({ words, config, onProgress: (e) => events.push(e), complete })
 
     assert.equal(quiz.readingQuestions.length, 2)
     assert.equal(quiz.readingQuestions[0].stem, "stem0") // 未被重出覆盖：质检门失效退回无质检行为
-    assert.ok(!steps.includes("regenerating"), "两个质检门都失效时不该误判出失败题触发重出")
+    assert.ok(
+      !events.some((e) => e.type === "article" && e.step === "regenerating"),
+      "两个质检门都失效时不该误判出失败题触发重出",
+    )
   })
 })
 
@@ -925,6 +958,115 @@ describe("generateQuiz · requestRegistry 取消句柄注册表（docs/impls/cij
       capturedRequestIds.every((id) => id === undefined),
       "不传 registry 时 generate.ts 自己不应该生成 requestId",
     )
+  })
+})
+
+describe("generateQuiz · 每篇独立流水线（并发行为）", () => {
+  it("一篇写完立刻进入自己的校验，不等另一篇写稿完成（无全卷阶段屏障）", async () => {
+    // 编排目标：第 1 篇的明答校验必须在第 2 篇写稿完成之前就发起。
+    // 做法：用门闩把第 2 篇的写稿挡住，直到观察到第 1 篇的明答校验调用才放行——
+    // 流水线编排下这一定发生；若回归成「所有写稿完成才开始校验」的屏障式，
+    // 第 1 篇的校验永远等不到、门闩只能靠 2 秒兜底放行，断言随即失败
+    // （兜底保证回归时测试报错而不是挂死）。
+    const group1Words = ["alphaA", "alphaB", "alphaC", "alphaD", "alphaE", "alphaF", "alphaG"]
+    const group2Words = ["betaA", "betaB", "betaC", "betaD", "betaE", "betaF"]
+    const manyWords = [...group1Words, ...group2Words].map((word) => ({ word, origin: "today" as const }))
+    const group1Paper = makeReadingPaper(group1Words)
+    const group2Paper = makeReadingPaper(group2Words)
+
+    let releaseGroup2!: () => void
+    const group2Gate = new Promise<void>((resolve) => {
+      releaseGroup2 = resolve
+    })
+    let group2WriteFinished = false
+    let checkStartedBeforeGroup2Write: boolean | null = null
+
+    const complete: CompleteStructured = (async (opts: any) => {
+      const firstContent = String(opts.messages[0]?.content ?? "")
+      if (opts.schema === generatedPaperStage1Schema) {
+        if (firstContent.includes("alphaA")) {
+          return structured(structuredClone(group1Paper), "req-group1", JSON.stringify(group1Paper))
+        }
+        await group2Gate
+        group2WriteFinished = true
+        return structured(structuredClone(group2Paper), "req-group2", JSON.stringify(group2Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        if (firstContent === "req-group1" && checkStartedBeforeGroup2Write === null) {
+          checkStartedBeforeGroup2Write = !group2WriteFinished
+          releaseGroup2()
+        }
+        const count = firstContent === "req-group1" ? group1Words.length : group2Words.length
+        // 全部答对：本用例只看并发时序，不掺失败/重出
+        return structured({
+          readingAnswers: Array.from({ length: count }, (_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
+      }
+      throw new Error(`未预期的调用：${firstContent.slice(0, 50)}`)
+    }) as CompleteStructured
+
+    const failsafe = setTimeout(releaseGroup2, 2000)
+    try {
+      const { quiz } = await generateQuiz({
+        words: manyWords,
+        // maskedCheck 关掉：遮词自检与时序断言无关，少一类调用少一分干扰
+        config: { ...config, types: ["reading"], maskedCheck: false },
+        complete,
+      })
+      assert.equal(quiz.readingQuestions.length, 13)
+    } finally {
+      clearTimeout(failsafe)
+    }
+
+    assert.equal(
+      checkStartedBeforeGroup2Write,
+      true,
+      "第 1 篇的明答校验应在第 2 篇写稿完成之前发起（流水线，无全卷屏障）",
+    )
+  })
+
+  it("某篇写稿失败后，其余篇写完不再发起校验/重出（共享中止标志，不给注定作废的卷烧调用）", async () => {
+    // 第 1 篇写稿直接失败 → generateQuiz reject、卷子定局；第 2 篇写稿被门闩
+    // 挡到 reject 之后才返回——此时它必须看到中止标志、跳过自己的明答校验。
+    const group1Words = ["alphaA", "alphaB", "alphaC", "alphaD", "alphaE", "alphaF", "alphaG"]
+    const group2Words = ["betaA", "betaB", "betaC", "betaD", "betaE", "betaF"]
+    const manyWords = [...group1Words, ...group2Words].map((word) => ({ word, origin: "today" as const }))
+    const group2Paper = makeReadingPaper(group2Words)
+
+    let releaseGroup2!: () => void
+    const group2Gate = new Promise<void>((resolve) => {
+      releaseGroup2 = resolve
+    })
+    let answerCheckCalls = 0
+
+    const complete: CompleteStructured = (async (opts: any) => {
+      const firstContent = String(opts.messages[0]?.content ?? "")
+      if (opts.schema === generatedPaperStage1Schema) {
+        if (firstContent.includes("alphaA")) throw new Error("模拟第 1 篇写稿失败")
+        await group2Gate
+        return structured(structuredClone(group2Paper), "req-group2", JSON.stringify(group2Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        answerCheckCalls++
+        return structured({ readingAnswers: [], grammarAnswers: [] })
+      }
+      throw new Error(`未预期的调用：${firstContent.slice(0, 50)}`)
+    }) as CompleteStructured
+
+    await assert.rejects(() =>
+      generateQuiz({
+        words: manyWords,
+        config: { ...config, types: ["reading"], maskedCheck: false },
+        complete,
+      }),
+    )
+    // reject 已定局，此刻才放行第 2 篇的写稿，再等两拍让它的流水线余下部分走完
+    releaseGroup2()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(answerCheckCalls, 0, "整卷已 reject 后，第 2 篇不该再发起明答校验")
   })
 })
 
