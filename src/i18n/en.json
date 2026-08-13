@@ -2449,7 +2449,7 @@
   "bookDifficulty.word.easier": "lighter",
   "bookDifficulty.word.similar": "about the same",
   "bookDifficulty.word.harder": "noticeably harder",
-  "bookDifficulty.word.unclear": "not something this can call",
+  "bookDifficulty.word.unclear": "not something Lantern can judge",
   "bookDifficulty.line.easier": "The vocabulary in this book runs {{verdict}} than what you usually read.",
   "bookDifficulty.line.similar": "The vocabulary in this book is {{verdict}} as what you usually read.",
   "bookDifficulty.line.harder": "The vocabulary in this book runs {{verdict}} than what you usually read, so expect to stop and look things up.",
