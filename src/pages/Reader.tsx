@@ -122,6 +122,7 @@ import type { TapZone } from "./reader/tap-zones";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import { isCoarsePointer } from "../hooks/useCoarsePointer";
+import type { PanelSelectionSource } from "../hooks/usePanelTextSelection";
 import {
   fileStatusExplainsFailure,
   toReaderOpenError,
@@ -706,6 +707,8 @@ export default function Reader() {
   const pendingSelectionMenuRef = useRef<number | null>(null);
   const readerInteractionGenerationRef = useRef(0);
   const forceClickSuppressedUntilRef = useRef(0);
+  /** A panel word lookup just answered this gesture — see `lookupWordInPanel`. */
+  const panelLookupSuppressUntilRef = useRef(0);
   const annotationClickDocumentRef = useRef<Document | null>(null);
   const {
     markState,
@@ -881,14 +884,28 @@ export default function Reader() {
     if (!interaction) return;
     event.preventDefault();
     setContextMenu(null);
+    // A double-tap selects the word as well as reporting itself as a
+    // double-click, so the touch selection path is about to see a settled
+    // selection and ask for a menu over the card this just opened. Under a
+    // mouse the ordering settles it — `mouseup` schedules, `dblclick` arrives
+    // after and cancels — but the touch path's own settle delay puts it last,
+    // so it needs telling. Long enough to cover that delay and the opener's
+    // debounce, far short of the 500 ms a deliberate long press takes to
+    // start a new selection.
+    panelLookupSuppressUntilRef.current = Date.now() + 400;
     openLearningCard(withInheritedContext(interaction, origin));
   }, [cancelPendingSelectionMenu, openLearningCard]);
 
+  // Takes only the element the gesture belongs to, not a full mouse event:
+  // under a finger there is no mouse event to take. `usePanelTextSelection`
+  // calls this from `selectionchange` with the surface it watches, and a real
+  // `MouseEvent` from the desktop path still satisfies the same shape.
   const openPanelSelectionMenu = useCallback((
-    event: ReactMouseEvent<HTMLElement>,
+    source: PanelSelectionSource,
     origin?: ReaderInteraction,
   ) => {
-    const root = event.currentTarget;
+    if (Date.now() < panelLookupSuppressUntilRef.current) return;
+    const root = source.currentTarget;
     cancelPendingSelectionMenu();
     pendingSelectionMenuRef.current = window.setTimeout(() => {
       pendingSelectionMenuRef.current = null;

@@ -813,6 +813,23 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
    * is part of the prose, and cutting it out of the selection would make the
    * paragraph around it uncopyable in one gesture. */
 
+  /* The prose the rule above deliberately left alone — but only the stretches
+   * of it that now answer a long press with Lantern's own menu (查词 / 翻译 /
+   * 标记 / 提问), through `usePanelTextSelection`. Without this the reader gets
+   * both: iOS raises 拷贝 / 查询 / 翻译 over the menu Lantern opened for the
+   * same gesture, and the OS sheet is on top.
+   *
+   * `user-select` is untouched, which is the whole point of scoping this to an
+   * attribute instead of widening the control rule: the text stays selectable,
+   * the handles still drag, and dragging them is what opens our menu. Only the
+   * OS callout goes. The attribute is set by the hook rather than written into
+   * each component, so a surface can never be stripped of the native menu
+   * without having gained ours — same reasoning as the book's own chapter
+   * documents, which get this one rule injected in `useReaderInteractions.ts`. */
+  [data-panel-selection] {
+    -webkit-touch-callout: none;
+  }
+
   /* The other half of the same race, and the half the rule above cannot win.
    * `-webkit-touch-callout` suppresses the「存储图像」sheet and does inherit
    * into a cover `<img>`; `-webkit-user-drag` is a separate mechanism, does

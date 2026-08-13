@@ -5,6 +5,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, History, Loader2, RotateCw, Settings, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { platform } from "../../services/platform";
+import { usePanelTextSelection, type PanelSelectionSource } from "../../hooks/usePanelTextSelection";
 import { isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../../utils/aiError";
 import {
   getLearningCardTargetWidth,
@@ -64,7 +65,7 @@ interface LearningCardViewProps {
   onRetry?: () => void;
   onRefresh?: () => void;
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
-  onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onSelectText?: (source: PanelSelectionSource) => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onNoteCancel?: () => void;
@@ -139,6 +140,7 @@ export default function LearningCardView({
   const { t } = useTranslation();
   const titleId = useId();
   const reasoningRef = useRef<HTMLDivElement>(null);
+  const { rootRef: bodyRef, selectionProps } = usePanelTextSelection<HTMLDivElement>(onSelectText);
   // Open while the thinking is the only thing happening, closed once the answer
   // takes over — until the reader says otherwise, and then it is their call.
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
@@ -223,10 +225,11 @@ export default function LearningCardView({
       )}
 
       <div
+        ref={bodyRef}
         className="min-h-0 flex-1 overflow-y-auto"
         data-card-scroll
         onDoubleClick={onLookupWord}
-        onMouseUp={onSelectText}
+        {...selectionProps}
       >
         {error && !partial ? (
           <div className="flex min-h-32 flex-col items-center justify-center gap-2 px-5 py-6 text-center" role="alert">

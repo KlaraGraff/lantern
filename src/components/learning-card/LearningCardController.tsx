@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { useCoarsePointer } from "../../hooks/useCoarsePointer";
+import type { PanelSelectionSource } from "../../hooks/usePanelTextSelection";
 import { createUuid } from "../../utils/randomUuid";
 import type { AiErrorCode } from "../../utils/aiError";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
@@ -61,7 +62,7 @@ interface LearningCardControllerProps {
   onClose: () => void;
   onFocus?: () => void;
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
-  onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onSelectText?: (source: PanelSelectionSource) => void;
   onAskAi: (quote: string, location?: string, analysis?: string) => void;
   onViewAllNotes?: () => void;
   onLookupSuccess?: (interaction: ReaderInteraction) => void;

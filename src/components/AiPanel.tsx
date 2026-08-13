@@ -9,6 +9,7 @@ import MessageBubble from "./MessageBubble";
 import type { AiChatScope, CitedSource, ContextKind, QuotedSource } from "../hooks/useAiChat";
 import IndexManagerModal from "./IndexManagerModal";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { usePanelTextSelection, type PanelSelectionSource } from "../hooks/usePanelTextSelection";
 import { isSendKey } from "./chat-input-keys";
 
 interface AiPanelProps {
@@ -31,7 +32,7 @@ interface AiPanelProps {
   onNavigateToQuote?: (quote: QuotedSource) => void;
   /** Answers are lookup surfaces too: double-click a word, or select a phrase. */
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
-  onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onSelectText?: (source: PanelSelectionSource) => void;
 }
 
 const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
@@ -191,6 +192,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
     scrollerRef: messagesScrollRef, listRef: messageListRef, questionAnchorRef,
     tailSpacerRef, lastQuestionIndex, pinLatestQuestion,
   } = usePinnedQuestionScroll(chatId, messages);
+  const { selectionProps } = usePanelTextSelection(onSelectText, messagesScrollRef);
 
   const currentChat = chats.find((c) => c.id === chatId);
 
@@ -465,7 +467,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
         className="flex-1 overflow-auto px-3 py-4"
         onClick={() => pickerOpen && setPickerOpen(false)}
         onDoubleClick={onLookupWord}
-        onMouseUp={onSelectText}
+        {...selectionProps}
       >
         {messages.length === 0 ? (
           /* Empty state */
