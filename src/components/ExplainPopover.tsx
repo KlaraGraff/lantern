@@ -616,13 +616,13 @@ export default function ExplainPopover({
             disabled={streaming}
             title={t("explain.reexplain")}
             aria-label={t("explain.reexplain")}
-            className="size-6 flex items-center justify-center rounded hover:bg-bg-surface/60 cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
+            className="tap-44 size-6 flex items-center justify-center rounded hover:bg-bg-surface/60 cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
           >
             <RotateCcw size={14} className="text-text-muted" />
           </button>
           <button
             onClick={onClose}
-            className="size-6 flex items-center justify-center rounded hover:bg-bg-surface/60 cursor-pointer"
+            className="tap-44 size-6 flex items-center justify-center rounded hover:bg-bg-surface/60 cursor-pointer"
           >
             <X size={14} className="text-text-muted" />
           </button>

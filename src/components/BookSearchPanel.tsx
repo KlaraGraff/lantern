@@ -195,7 +195,7 @@ export default function BookSearchPanel({
         <h2 className="hidden md:block text-[15px] font-semibold text-text-primary leading-5">
           {t("reader.search.title")}
         </h2>
-        <div className="flex items-center gap-1.5 h-[30px] px-2 rounded-lg bg-bg-input border border-border">
+        <div className="flex items-center gap-1.5 h-[30px] touch:h-11 px-2 rounded-lg bg-bg-input border border-border">
           <Search size={13} className="text-text-muted shrink-0" />
           <input
             ref={inputRef}
@@ -217,7 +217,7 @@ export default function BookSearchPanel({
               key={candidate}
               type="button"
               onClick={() => setScope(candidate)}
-              className={`flex-1 h-[26px] rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
+              className={`flex-1 h-[26px] touch:h-9 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
                 scope === candidate
                   ? "bg-accent-bg text-accent-text"
                   : "text-text-muted hover:bg-bg-input"

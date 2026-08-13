@@ -83,7 +83,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBack}
-            className="size-7 rounded-lg flex items-center justify-center hover:bg-bg-input cursor-pointer shrink-0"
+            className="tap-44 size-7 rounded-lg flex items-center justify-center hover:bg-bg-input cursor-pointer shrink-0"
           >
             <ArrowLeft size={18} className="text-text-muted" />
           </button>
@@ -134,7 +134,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
           </button>
           <button
             onClick={() => setDeleteConfirm(true)}
-            className="size-7 rounded-lg flex items-center justify-center hover:bg-bg-input cursor-pointer"
+            className="tap-44 size-7 rounded-lg flex items-center justify-center hover:bg-bg-input cursor-pointer"
           >
             <Trash2 size={16} className="text-text-muted" />
           </button>

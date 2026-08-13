@@ -832,6 +832,26 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
     -webkit-user-drag: none;
   }
 
+  /* A 24px icon button that lives inside a fixed-height pill, a popover header
+   * or a one-line row cannot simply grow to 44px: the container grows with it,
+   * and a 13px glyph ends up floating in a box twice its size. This hands the
+   * button a transparent hit area that overflows its own box instead, so the
+   * finger gets 44px of height and the layout does not move.
+   *
+   * Vertical growth is generous, horizontal growth is 2px on purpose. Siblings
+   * in these clusters sit 4-10px apart, and two overlapping targets are worse
+   * than one small target — the later sibling paints on top, so every tap near
+   * a boundary would fire the control to its right. Where a row of controls is
+   * genuinely spaced out, use `touch:size-11` and let the box grow. */
+  .tap-44 {
+    position: relative;
+  }
+  .tap-44::before {
+    content: "";
+    position: absolute;
+    inset: -10px -2px;
+  }
+
   /* A field nested inside one of those — a search box in a labelled row, the
    * note editor inside a card — still has to hand the reader a caret and a
    * selection. Same specificity, written second, so it wins. */

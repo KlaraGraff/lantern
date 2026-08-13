@@ -108,13 +108,24 @@ export default function HighlightToolbar({
           <div
             key={name}
             onClick={() => onChangeColor(name)}
-            className={`w-[14px] h-[14px] rounded-full cursor-pointer transition-transform shrink-0 ${
-              name === color
-                ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-surface scale-110"
-                : "hover:scale-110"
-            }`}
-            style={{ backgroundColor: hex }}
-          />
+            /* The dot stays 14px; a transparent pseudo-element carries the
+               touch target. It grows to a full 44px vertically but only into
+               half the gap horizontally: five swatches at 44px wide do not fit
+               a 220px toolbar that also holds the note and delete buttons, and
+               overlapping targets would be worse than small ones — the later
+               sibling paints on top, so every tap near a boundary would pick
+               the colour to its right. */
+            className="relative flex shrink-0 cursor-pointer items-center justify-center touch:before:absolute touch:before:content-[''] touch:before:-inset-x-[3px] touch:before:-inset-y-[15px]"
+          >
+            <div
+              className={`w-[14px] h-[14px] rounded-full transition-transform ${
+                name === color
+                  ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-surface scale-110"
+                  : "hover:scale-110"
+              }`}
+              style={{ backgroundColor: hex }}
+            />
+          </div>
         ))}
         <div className="flex-1" />
         <button

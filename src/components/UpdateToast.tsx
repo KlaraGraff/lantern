@@ -108,7 +108,7 @@ export default function UpdateToast() {
       onClick={dismiss}
       aria-label={t("update.toast.dismiss")}
       title={t("update.toast.dismiss")}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-secondary"
+      className="tap-44 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-secondary"
     >
       <X size={14} />
     </button>

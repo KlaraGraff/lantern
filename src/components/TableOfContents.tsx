@@ -260,7 +260,17 @@ function TableOfContents({
                     onClick={() => toggleRow(chapter.page)}
                     aria-label={t(isExpanded ? "reader.tocCollapseSection" : "reader.tocExpandSection")}
                     aria-expanded={isExpanded}
-                    className="mt-0.5 mr-1 flex size-4 shrink-0 items-center justify-center rounded text-text-muted hover:bg-bg-input"
+                    /* The box stays 16px — growing it to 44 would push every
+                       titled row that has children 28px right of the ones that
+                       don't, and inflate the row past its 36px height. A
+                       transparent pseudo-element carries the target instead:
+                       the full row height vertically, and leftward into the
+                       indent, but only 2px toward the title. Rows are 36px
+                       apart, so a 44px-tall target would bleed 4px into the
+                       neighbours — and since the row below paints later, the
+                       bottom edge of every row would toggle the wrong
+                       chapter. */
+                    className="relative mt-0.5 mr-1 flex size-4 shrink-0 items-center justify-center rounded text-text-muted hover:bg-bg-input touch:before:absolute touch:before:content-[''] touch:before:-inset-y-[10px] touch:before:-left-[12px] touch:before:-right-[2px]"
                   >
                     <ChevronRight size={14} className={isExpanded ? "rotate-90 transition-transform" : "transition-transform"} />
                   </button>

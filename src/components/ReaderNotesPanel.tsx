@@ -721,7 +721,7 @@ function MarkRowView({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 touch:opacity-100">
         {row.kind === "auto" ? (
           <>
             <button type="button" onClick={onKeepAuto} className="cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium text-accent-text hover:bg-accent-bg">

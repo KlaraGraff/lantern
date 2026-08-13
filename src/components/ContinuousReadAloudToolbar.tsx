@@ -66,7 +66,7 @@ interface Props {
  * the play key sideways at exactly the moment (first sentence, last sentence)
  * the user is reaching for it without looking.
  */
-const SMALL_KEY = "grid size-[30px] shrink-0 cursor-pointer place-items-center rounded-full text-text-muted transition-colors hover:bg-bg-input hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-muted";
+const SMALL_KEY = "grid size-[30px] touch:size-11 shrink-0 cursor-pointer place-items-center rounded-full text-text-muted transition-colors hover:bg-bg-input hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-muted";
 
 /** The one control a listener reaches for. Filled, 46px, never disabled. */
 const BIG_KEY = "grid size-[46px] shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-white shadow-[0_4px_12px_rgba(124,58,237,0.22)] transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2";

@@ -441,7 +441,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
                         deleteChat(chat.id);
                         if (chats.length <= 1) setPickerOpen(false);
                       }}
-                      className="opacity-0 group-hover:opacity-100 shrink-0 p-1 rounded hover:bg-bg-muted cursor-pointer transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 touch:opacity-100 shrink-0 p-1 rounded hover:bg-bg-muted cursor-pointer transition-opacity"
                     >
                       <Trash2 size={13} className="text-text-muted" />
                     </button>

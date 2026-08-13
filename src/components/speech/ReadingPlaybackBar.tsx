@@ -81,7 +81,7 @@ export default function ReadingPlaybackBar() {
         onClick={paused ? resumeSpeech : pauseSpeech}
         title={paused ? t("speech.playback.resume") : t("speech.playback.pause")}
         aria-label={paused ? t("speech.playback.resume") : t("speech.playback.pause")}
-        className="flex size-6 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-bg-input hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="tap-44 flex size-6 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-bg-input hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         {paused
           ? <Play size={11} fill="currentColor" />
@@ -92,7 +92,7 @@ export default function ReadingPlaybackBar() {
         onClick={cancelSpeech}
         title={t("speech.playback.stop")}
         aria-label={t("speech.playback.stop")}
-        className="flex size-6 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-bg-input hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="tap-44 flex size-6 cursor-pointer items-center justify-center rounded-full text-text-muted transition-colors hover:bg-bg-input hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <Square size={11} fill="currentColor" />
       </button>

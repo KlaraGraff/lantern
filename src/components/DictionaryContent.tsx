@@ -941,7 +941,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
               onClick={toggleSelectVisible}
               title={t("vocab.bulk.selectVisible")}
               aria-label={t("vocab.bulk.selectVisible")}
-              className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-input cursor-pointer"
+              className="tap-44 size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-input cursor-pointer"
             >
               {sorted.length > 0 && sorted.every((word) => selectedWordIds.has(word.id)) ? <CheckSquare size={14} /> : <Square size={14} />}
             </button>
@@ -1075,7 +1075,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                         title={t("vocab.deleteHistory")}
                         aria-label={t("vocab.deleteHistory")}
                         onClick={() => removeHistoryRecord(record.id)}
-                        className="size-6 flex items-center justify-center rounded text-text-muted hover:bg-bg-input hover:text-danger-text cursor-pointer"
+                        className="tap-44 size-6 flex items-center justify-center rounded text-text-muted hover:bg-bg-input hover:text-danger-text cursor-pointer"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1290,7 +1290,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                                 type="button"
                                 onClick={(event) => { event.stopPropagation(); navigate(`/flashcards?word=${encodeURIComponent(entry.key)}`); }}
                                 title={t("vocab.review")}
-                                className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
+                                className="tap-44 size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
                               >
                                 <RotateCcw size={14} />
                               </button>
@@ -1300,7 +1300,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                                 type="button"
                                 onClick={(event) => { event.stopPropagation(); void setEntryMastery(entry, "mastered"); }}
                                 title={t("vocab.markMastered")}
-                                className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-success-text cursor-pointer"
+                                className="tap-44 size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-success-text cursor-pointer"
                               >
                                 <CheckCircle2 size={14} />
                               </button>
@@ -1310,7 +1310,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                                 type="button"
                                 onClick={(event) => { event.stopPropagation(); void setEntryMastery(entry, "learning"); }}
                                 title={t("vocab.startLearning")}
-                                className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
+                                className="tap-44 size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
                               >
                                 <GraduationCap size={14} />
                               </button>

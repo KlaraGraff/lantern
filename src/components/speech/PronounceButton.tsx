@@ -37,7 +37,7 @@ export default function PronounceButton({
         onClick={play}
         title={playLabel}
         aria-label={playLabel}
-        className={`flex items-center justify-center rounded-md transition-colors ${
+        className={`tap-44 flex items-center justify-center rounded-md transition-colors ${
           size === "md" ? "size-7" : "size-6"
         } ${
           status === "error"
@@ -58,7 +58,7 @@ export default function PronounceButton({
         // two-letter chip there reads as a lit-up control demanding attention
         // rather than as the quiet accent label it is. The hover fill is the
         // affordance instead.
-        className={`flex items-center justify-center rounded px-1 font-medium leading-none transition-colors ${
+        className={`tap-44 flex items-center justify-center rounded px-1 font-medium leading-none transition-colors ${
           size === "md" ? "h-[18px] text-[11px]" : "h-4 text-[10px]"
         } text-text-muted hover:bg-bg-surface/70 hover:text-accent-text`}
       >

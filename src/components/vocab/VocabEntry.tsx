@@ -96,7 +96,7 @@ export default function VocabEntry({
           onClick={handleCopy}
           title={t("vocab.entry.copy")}
           aria-label={t("vocab.entry.copy")}
-          className="flex size-6 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text"
+          className="tap-44 flex size-6 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text"
         >
           {copied ? <Check size={13} /> : <Copy size={13} />}
         </button>

@@ -790,7 +790,7 @@ export default function Home() {
           </div>
           <button
             onClick={() => setImportError(null)}
-            className="shrink-0 size-6 flex items-center justify-center rounded-lg hover:bg-bg-input cursor-pointer transition-colors"
+            className="tap-44 shrink-0 size-6 flex items-center justify-center rounded-lg hover:bg-bg-input cursor-pointer transition-colors"
           >
             <X size={14} className="text-text-muted" />
           </button>
