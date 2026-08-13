@@ -48,7 +48,6 @@ import {
 import { getTextBookParagraphStyle, isCjkText } from "./text-book-typography";
 import { resolveLineSpacing } from "./reader-paragraph-settings";
 import { classifyReaderTapInBox, type TapZone } from "../pages/reader/tap-zones";
-import { clickCountGraceMs } from "../pages/reader/click-grace";
 import { isNarrowNow } from "../hooks/useIsNarrow";
 
 interface TextBookReaderProps {
@@ -617,7 +616,6 @@ function TextBookReader({
   const loadInFlightRef = useRef<Promise<void> | null>(null);
   const loadedGenerationRef = useRef<number | null>(null);
   const flashTimerRef = useRef<number | null>(null);
-  const wordClickTimerRef = useRef<number | null>(null);
   const selectionMenuTimerRef = useRef<number | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const pointerCaptureTargetRef = useRef<HTMLElement | null>(null);
@@ -1016,7 +1014,6 @@ function TextBookReader({
     onRegisterNavigation((location, flash) => navigateToLocation(location, flash) !== null);
     return () => {
       if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
-      if (wordClickTimerRef.current !== null) window.clearTimeout(wordClickTimerRef.current);
     };
   }, [navigateToLocation, onRegisterNavigation]);
 
@@ -1229,13 +1226,6 @@ function TextBookReader({
       };
   }, [documentBlocks]);
 
-  const cancelWordClick = useCallback(() => {
-    if (wordClickTimerRef.current !== null) {
-      window.clearTimeout(wordClickTimerRef.current);
-      wordClickTimerRef.current = null;
-    }
-  }, []);
-
   const cancelSelectionMenu = useCallback(() => {
     if (selectionMenuTimerRef.current !== null) {
       window.clearTimeout(selectionMenuTimerRef.current);
@@ -1244,29 +1234,39 @@ function TextBookReader({
   }, []);
 
   const handleTextClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    cancelWordClick();
     if (Date.now() < forceClickSuppressedUntilRef.current) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (isInteractiveReaderTarget(event.target) || (event.target as Element | null)?.closest?.("mark")) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;
-    // Below the breakpoint the page is three tap zones and a plain tap no
-    // longer opens a word card — the same trade the foliate reader makes in
-    // `useReaderInteractions`, and for the same reason: a phone has no margins
-    // to click and no keyboard to page with, so the page itself has to carry
-    // paging and "show me the controls".
+    // Below the breakpoint a tap that lands on a word opens it, and only a
+    // tap that misses every word falls back to the three tap zones — the same
+    // trade the foliate reader makes in `useReaderInteractions`, for the same
+    // reason: the lookup is the primary reading gesture on a phone, and any
+    // wait between finger and response reads as lag. Both answers fire
+    // immediately; the accepted cost is that a page-turn tap aimed at the
+    // text looks a word up instead, leaving paging the blank space, the
+    // margins, and the swipe.
     //
     // Placed after everything that already claimed the click (a link, an
-    // annotation, a live selection) and before the word lookup, which is the
-    // only thing it replaces. Long press and double-click never reach here.
+    // annotation, a live selection). Long press never reaches here.
     if (isNarrowNow() && onTapZone) {
       if (chromeOpenRef?.current) {
         // With the chrome up, every tap means "put it away", and it goes away
-        // now rather than after the double-click grace: no second tap could
-        // change the answer, and a visible 240ms lag on a dismiss reads as a
-        // control that did not register the press.
+        // now: no second tap could change the answer, and a visible lag on a
+        // dismiss reads as a control that did not register the press.
         onTapZone("menu");
         return;
+      }
+      const wordRange = wordRangeAtPoint(window.document, event.clientX, event.clientY);
+      if (wordRange && containerRef.current?.contains(wordRange.startContainer)) {
+        const wordInteraction = interactionFromRange(wordRange, "word-menu");
+        if (wordInteraction?.normalizedText) {
+          replaceDocumentSelection(window.document, wordRange);
+          doubleClickSelectionRef.current = snapshotSelectionRange(wordRange);
+          onInteraction(wordInteraction);
+          return;
+        }
       }
       const box = containerRef.current?.getBoundingClientRect();
       const zone = classifyReaderTapInBox(
@@ -1274,14 +1274,7 @@ function TextBookReader({
         box ?? { left: 0, width: 0 },
         oneHandModeRef?.current ?? false,
       );
-      // The same timer slot the word lookup uses, on purpose: `handleTextDouble
-      // Click` cancels it unconditionally on its first line, so a double-click
-      // to look a word up cancels the page turn it was on its way to causing.
-      // No new mechanism, and no way for the two to disagree.
-      wordClickTimerRef.current = window.setTimeout(() => {
-        wordClickTimerRef.current = null;
-        onTapZone(zone);
-      }, clickCountGraceMs(1, false));
+      onTapZone(zone);
       return;
     }
     const selectionRange = rangeFromSelectionSnapshotAtPoint(
@@ -1303,17 +1296,19 @@ function TextBookReader({
       selectionRange ? "selection-menu" : "word-menu",
     );
     if (!interaction?.normalizedText) return;
-    wordClickTimerRef.current = window.setTimeout(() => {
-      wordClickTimerRef.current = null;
-      onInteraction(interaction);
-    // A single click never loses the gesture to a third press, so the flag is
-    // moot at count 1 — but the number stays wherever the foliate reader's does.
-    }, clickCountGraceMs(1, false));
-  }, [cancelWordClick, chromeOpenRef, interactionFromRange, onInteraction, oneHandModeRef, onTapZone]);
+    // Immediate, not deferred behind the double-click grace — the tap is the
+    // lookup gesture and the card must answer it; a double-click that follows
+    // repaints the card mid-flight, the accepted cost of a first click that
+    // never waits. Mirrors the foliate reader.
+    onInteraction(interaction);
+  }, [chromeOpenRef, interactionFromRange, onInteraction, oneHandModeRef, onTapZone]);
 
   const handleTextDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    cancelWordClick();
     cancelSelectionMenu();
+    // Below the breakpoint each of the two taps already got its own immediate
+    // answer from the click handler — a third answer here would only reopen
+    // the same card over itself.
+    if (isNarrowNow()) return;
     if (event.button !== 0 || isInteractiveReaderTarget(event.target)) return;
     // Quick lookup always targets the word under the cursor; sentences and
     // phrases go through the selection menu. See useReaderInteractions.
@@ -1329,7 +1324,7 @@ function TextBookReader({
     replaceDocumentSelection(window.document, range);
     doubleClickSelectionRef.current = snapshotSelectionRange(range);
     onInteraction(interaction);
-  }, [cancelSelectionMenu, cancelWordClick, doubleClickQuickLookup, interactionFromRange, onInteraction, onReaderBinding]);
+  }, [cancelSelectionMenu, doubleClickQuickLookup, interactionFromRange, onInteraction, onReaderBinding]);
 
   useEffect(() => {
     if (!onReaderBinding) return;
@@ -1361,7 +1356,6 @@ function TextBookReader({
   }, [cancelSelectionMenu, interactionFromRange, onInteraction]);
 
   const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    cancelWordClick();
     cancelSelectionMenu();
     const range = selectedRange(window.document);
     if (!range || !containerRef.current?.contains(range.commonAncestorContainer)) return;
@@ -1369,7 +1363,7 @@ function TextBookReader({
     if (!interaction) return;
     event.preventDefault();
     onInteraction(interaction);
-  }, [cancelSelectionMenu, cancelWordClick, interactionFromRange, onInteraction]);
+  }, [cancelSelectionMenu, interactionFromRange, onInteraction]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
@@ -1397,14 +1391,13 @@ function TextBookReader({
     if (!container) return;
     const preserveSystemForceClick = () => {
       forceClickSuppressedUntilRef.current = Date.now() + 600;
-      cancelWordClick();
       cancelSelectionMenu();
     };
     container.addEventListener("webkitmouseforcedown", preserveSystemForceClick);
     return () => {
       container.removeEventListener("webkitmouseforcedown", preserveSystemForceClick);
     };
-  }, [cancelSelectionMenu, cancelWordClick]);
+  }, [cancelSelectionMenu]);
 
   const finalizePointerSelection = useCallback((pointerId?: number, openMenu = true) => {
     const activePointerId = activePointerIdRef.current;

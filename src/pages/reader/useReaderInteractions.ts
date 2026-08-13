@@ -667,13 +667,20 @@ export function useReaderInteractions({
       if (isInteractiveReaderTarget(event.target)) return;
       const selection = doc.getSelection?.();
       if (selection && !selection.isCollapsed) return;
-      // Below the breakpoint the page is three tap zones, and a plain tap no
-      // longer opens a word. Placed after everything that already claimed the
-      // click — an annotation, the synthetic click trailing a long press, a
-      // link, a live selection — but *before* the two word-lookup guards below:
-      // a book with no selectable text (fb2/cbz, or mobi on a platform without
-      // conversion) and a scanned PDF have no word to look up, yet the tap
-      // zones are their only way to summon the chrome at all on a phone.
+      // Below the breakpoint a tap that lands on a word opens it, and only a
+      // tap that misses every word falls back to the three tap zones. Both
+      // answers fire immediately — no double-click grace: the lookup is the
+      // primary reading gesture on a phone, and any wait between finger and
+      // response reads as lag. The cost, accepted as a product call, is that a
+      // page-turn tap aimed at the text looks a word up instead; paging keeps
+      // the blank space, the margins, and the swipe.
+      //
+      // Placed after everything that already claimed the click — an
+      // annotation, the synthetic click trailing a long press, a link, a live
+      // selection. A book with no selectable text (fb2/cbz, or mobi on a
+      // platform without conversion, or a scanned PDF) skips the word test:
+      // there is no word to open, and the tap zones are its only way to
+      // summon the chrome at all on a phone.
       //
       // `clientX` is in the iframe's coordinate system, and in paginated flow
       // that iframe is the whole chapter laid out side by side — not the page
@@ -683,12 +690,26 @@ export function useReaderInteractions({
       // the zone guide draws its columns over.
       if (isNarrowNow()) {
         if (chromeOpenRef.current) {
-          // With the chrome up, every tap means "put it away", and it goes away
-          // now rather than after the double-click grace: no second tap could
-          // change the answer, and a visible 240ms lag on a dismiss reads as a
-          // control that did not register the press.
+          // With the chrome up, every tap means "put it away", and it goes
+          // away now: no second tap could change the answer, and a visible lag
+          // on a dismiss reads as a control that did not register the press.
           onTapZone("menu");
           return;
+        }
+        if (supportsSelection) {
+          const wordRange = wordRangeAtPoint(
+            doc,
+            event.clientX,
+            event.clientY,
+            doc.documentElement.lang || undefined,
+          );
+          const wordInteraction = wordRange ? interactionForRange(wordRange, false) : null;
+          if (wordRange && wordInteraction) {
+            replaceDocumentSelection(doc, wordRange);
+            selectionSnapshot = snapshotSelectionRange(wordRange);
+            openLearningInteraction(wordInteraction);
+            return;
+          }
         }
         const frameRect = doc.defaultView?.frameElement?.getBoundingClientRect();
         const zone = frameRect
@@ -698,14 +719,7 @@ export function useReaderInteractions({
             oneHandModeRef.current,
           )
           : "menu";
-        // The same timer slot the word lookup used, on purpose: the `dblclick`
-        // handler's first line already cancels it unconditionally, so a
-        // double-click to look a word up cancels the page turn it was on its
-        // way to causing. No new mechanism, and no way for the two to disagree.
-        pendingWordClickRef.current = window.setTimeout(() => {
-          pendingWordClickRef.current = null;
-          onTapZone(zone);
-        }, clickCountGraceMs(1, tripleClickQuickSelectRef.current));
+        onTapZone(zone);
         return;
       }
       if (!supportsSelection) return;
@@ -732,14 +746,19 @@ export function useReaderInteractions({
       selectionSnapshot = snapshotSelectionRange(range);
       const interaction = interactionForRange(range, Boolean(selectionRange));
       if (!interaction) return;
-      pendingWordClickRef.current = window.setTimeout(() => {
-        pendingWordClickRef.current = null;
-        openLearningInteraction(interaction);
-      }, clickCountGraceMs(1, tripleClickQuickSelectRef.current));
+      // Immediate, not deferred behind the double-click grace — the tap is
+      // the lookup gesture and the card must answer it. A double- or
+      // triple-click that follows repaints the card mid-flight; that flicker
+      // is the accepted cost of a first click that never waits.
+      openLearningInteraction(interaction);
     });
     doc.addEventListener("dblclick", (event: MouseEvent) => {
       cancelPendingWordClick();
       cancelPendingSelectionMenu();
+      // Below the breakpoint each of the two taps already got its own
+      // immediate answer from the click handler — a third answer here would
+      // only reopen the same card over itself.
+      if (isNarrowNow()) return;
       if (!supportsSelection || isInteractiveReaderTarget(event.target)) return;
       if (showMissingPdfTextIntent()) {
         event.preventDefault();
