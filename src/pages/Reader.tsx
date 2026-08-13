@@ -1731,18 +1731,41 @@ export default function Reader() {
     setSidePanel("ai");
   };
 
+  // The query string this reader arrived with, read once at mount.
+  //
+  // It used to be re-read from `window.location.search` inside each effect
+  // below, and the first of them clears the URL — so on a phone, where the
+  // reader is the main window and that clear actually runs, `cfi` was gone
+  // before the effect that jumps to it ever looked. Every "open in reader"
+  // that carried both a chat and a sentence therefore landed on whatever page
+  // was last read. Snapshotting takes effect ordering out of it entirely.
+  const [arrivalQuery] = useState(() => new URLSearchParams(window.location.search));
+  // ...and each half of it is spent once. The snapshot outlives the URL, so
+  // without this an unrelated later render would replay the arrival — jumping
+  // the reader away from wherever they had since moved to.
+  const arrivalSpent = useRef({ chat: false, source: false });
+
   // Handle navigation state from ChatsPage ("Open in Reader")
   // Supports both location.state (main window) and URL search params (standalone window)
   useEffect(() => {
     const state = location.state as { openChat?: boolean; chatId?: string } | null;
-    const searchParams = new URLSearchParams(window.location.search);
-    const openChat = state?.openChat || searchParams.get("openChat") === "true";
-    const chatId = state?.chatId || searchParams.get("chatId") || undefined;
+    const fromQuery = !arrivalSpent.current.chat && arrivalQuery.get("openChat") === "true";
+    const openChat = state?.openChat || fromQuery;
+    const chatId = state?.chatId || (fromQuery ? arrivalQuery.get("chatId") : null) || undefined;
     if (!openChat || !bookReady) return;
-    setSidePanel("ai");
+    arrivalSpent.current.chat = true;
+    // Narrow keeps the page. The AI panel covers the whole screen on a phone
+    // (`narrowPanel`), and its header reads「AI 助手」— so forcing it open on
+    // arrival landed the reader on a screen indistinguishable from the one
+    // they pressed "open in reader" to leave, and the book they asked for was
+    // behind it. Every jump *inside* the reader already hands the screen back
+    // this way (`closesOnNavigate`); an arrival from outside is the same
+    // promise. The conversation is still selected, so opening the panel by
+    // hand lands on it.
+    if (!isNarrowNow()) setSidePanel("ai");
     if (chatId) setInitialChatId(chatId);
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
-  }, [bookReady, location.state, location.pathname, navigate]);
+  }, [arrivalQuery, bookReady, location.state, location.pathname, navigate]);
 
   // Arriving from an example sentence in another book's chat. The jump is kept
   // in component state because the router state is cleared immediately below —
@@ -1771,15 +1794,18 @@ export default function Reader() {
   // Supports both location.state (main window) and URL search params (standalone window).
   useEffect(() => {
     const state = location.state as { openVocab?: boolean; cfi?: string; page?: number } | null;
-    const searchParams = new URLSearchParams(window.location.search);
-    const openVocab = state?.openVocab || searchParams.get("openVocab") === "true";
-    const cfi = state?.cfi || searchParams.get("cfi") || undefined;
-    const rawPage = state?.page ?? Number(searchParams.get("page"));
+    const fromQuery = !arrivalSpent.current.source;
+    const openVocab = state?.openVocab || (fromQuery && arrivalQuery.get("openVocab") === "true");
+    const cfi = state?.cfi || (fromQuery ? arrivalQuery.get("cfi") : null) || undefined;
+    const rawPage = state?.page ?? (fromQuery ? Number(arrivalQuery.get("page")) : Number.NaN);
     const page = Number.isInteger(rawPage) && rawPage >= 0 ? rawPage : undefined;
     if (!bookReady || (!openVocab && !cfi && page == null)) return;
+    arrivalSpent.current.source = true;
     if (openVocab) {
       setTracesTab("vocab");
-      setSidePanel("traces");
+      // Same reason as the AI panel above: full-screen on a phone, and the
+      // whole point of this arrival is the line it jumps to.
+      if (!isNarrowNow()) setSidePanel("traces");
     }
     if (cfi && supportsCfiNavigation) flashNavigationTarget(cfi).catch(() => {});
     if (page != null && book?.format === "pdf") {
@@ -1789,6 +1815,7 @@ export default function Reader() {
     // Clear the state so it doesn't re-trigger
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
   }, [
+    arrivalQuery,
     book?.format,
     bookReady,
     flashNavigationTarget,
