@@ -87,11 +87,13 @@ const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
  */
 const VIEW_MODE_STORAGE_KEY = "library-view-mode";
 
-type ViewMode = "grid2" | "grid3" | "list";
+type ViewMode = "grid2" | "grid3" | "grid4" | "list";
 
 function readStoredViewMode(): ViewMode {
   const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-  return stored === "grid2" || stored === "grid3" || stored === "list" ? stored : "grid3";
+  return stored === "grid2" || stored === "grid3" || stored === "grid4" || stored === "list"
+    ? stored
+    : "grid3";
 }
 
 export default function Home() {
@@ -579,6 +581,7 @@ export default function Home() {
                       [
                         { mode: "grid2", label: t("home.columnsTwo") },
                         { mode: "grid3", label: t("home.columnsThree") },
+                        { mode: "grid4", label: t("home.columnsFour") },
                         { mode: "list", label: t("home.columnsList") },
                       ] as const
                     ).map((option) => (
@@ -659,7 +662,7 @@ export default function Home() {
               // a wide window always gets the auto-fill grid, whichever of
               // grid2/grid3 happens to be stored, because the segmented control
               // that sets it isn't even on screen there.
-              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : 3) : undefined} />
+              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : viewMode === "grid4" ? 4 : 3) : undefined} />
             )}
           </div>
 
