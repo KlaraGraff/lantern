@@ -19,6 +19,12 @@ import {
   subscribeExplanationSessions,
   type ExplanationSessionState,
 } from './explanation-session.ts'
+import {
+  getPaperGeneration,
+  regenerateArticles as startArticleRegeneration,
+  subscribeGenerationSessions,
+  type GenerationSessionState,
+} from './generation-session.ts'
 import { parseQuizAiProfileId } from '../../quiz/transport.ts'
 import { useSettings } from '../../hooks/useSettings.ts'
 import type {
@@ -40,6 +46,10 @@ export interface UseQuizPaperResult {
   explanationSession: ExplanationSessionState | undefined
   /** 触发补生成：只重跑点名的文章组（含其语法题）。running 期间调用被契约模块自身挡掉。 */
   regenerateExplanations: (passageIds: string[]) => void
+  /** 渐进发卷会话（本卷还有篇在生成/重生成时存在），做题页据此画按篇状态 */
+  generationSession: GenerationSessionState | undefined
+  /** 单篇重新生成 / 继续生成：点名生成计划里的篇号。running 期间调用被会话模块挡掉。 */
+  regenerateArticles: (groupIndexes: number[]) => void
 }
 
 export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
@@ -104,6 +114,21 @@ export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
     prevRunningRef.current = running
   }, [explanationSession, load])
 
+  const generationSession = useSyncExternalStore(
+    subscribeGenerationSessions,
+    () => (paperId == null ? undefined : getPaperGeneration(paperId)),
+    () => undefined,
+  )
+
+  // 生成会话每写一次库 revision +1（新篇落库/失败状态/解析写回），跟着静默重拉。
+  // 同样走 snapshotSeqRef 最新请求胜出，不会顶掉更晚的交卷快照。
+  const prevGenRevisionRef = useRef(0)
+  useEffect(() => {
+    const revision = generationSession?.revision ?? 0
+    if (revision !== prevGenRevisionRef.current) void load({ silent: true })
+    prevGenRevisionRef.current = revision
+  }, [generationSession, load])
+
   const submit = useCallback(
     async (result: QuizResult) => {
       if (paperId == null) return
@@ -136,7 +161,26 @@ export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
     [paperId, quiz, settings],
   )
 
-  return { quiz, status, reload: load, submit, saveAskThreads, explanationSession, regenerateExplanations }
+  const regenerateArticles = useCallback(
+    (groupIndexes: number[]) => {
+      if (paperId == null || !quiz || groupIndexes.length === 0) return
+      const profileId = parseQuizAiProfileId(settings['quiz_ai_profile_id'])
+      startArticleRegeneration({ paperId, quiz, groupIndexes, profileId })
+    },
+    [paperId, quiz, settings],
+  )
+
+  return {
+    quiz,
+    status,
+    reload: load,
+    submit,
+    saveAskThreads,
+    explanationSession,
+    regenerateExplanations,
+    generationSession,
+    regenerateArticles,
+  }
 }
 
 // ===== 纯函数（供组件与测试直接调用，不依赖 React） =====

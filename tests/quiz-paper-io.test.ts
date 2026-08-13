@@ -116,9 +116,10 @@ describe("paper-io", () => {
       contentJson: quizContentJson(quiz),
       resultJson: null,
       askThreadsJson: null,
+      generationJson: null,
     };
     const parsed = rowToQuiz(row);
-    assert.deepEqual(parsed, { ...quiz, result: undefined, askThreads: undefined });
+    assert.deepEqual(parsed, { ...quiz, result: undefined, askThreads: undefined, generation: undefined });
   });
 
   it("result / askThreads 列存在时一并解析", () => {
@@ -149,11 +150,36 @@ describe("paper-io", () => {
       contentJson: quizContentJson(quiz),
       resultJson: JSON.stringify(result),
       askThreadsJson: JSON.stringify(threads),
+      generationJson: null,
     };
     const parsed = rowToQuiz(row);
     assert.equal(parsed.status, "submitted");
     assert.deepEqual(parsed.result, result);
     assert.deepEqual(parsed.askThreads, threads);
+  });
+
+  it("generation 列存在时解析成渐进发卷计划（generating 卷）", () => {
+    const quiz = makeQuiz();
+    const plan = {
+      groups: [
+        { words: ["apple"], state: "done", passageId: "p1" },
+        { words: ["banana"], state: "failed", errorCode: "AI_STREAM_FAILED" },
+      ],
+    };
+    const row: QuizPaperRow = {
+      id: 7,
+      createdAt: quiz.createdAt,
+      status: "generating",
+      configJson: JSON.stringify(quiz.config),
+      wordsJson: JSON.stringify(quiz.words),
+      contentJson: quizContentJson(quiz),
+      resultJson: null,
+      askThreadsJson: null,
+      generationJson: JSON.stringify(plan),
+    };
+    const parsed = rowToQuiz(row);
+    assert.equal(parsed.status, "generating");
+    assert.deepEqual(parsed.generation, plan);
   });
 });
 

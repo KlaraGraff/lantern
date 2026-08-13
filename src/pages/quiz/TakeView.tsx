@@ -1,53 +1,92 @@
 /**
- * 做题屏（status === 'ready'）。样张：docs/impls/cijuan-merge-mockup.html §D。
+ * 做题屏（status === 'ready' | 'generating'）。样张：docs/impls/cijuan-merge-mockup.html §D。
  * 版式对照 labs/cijuan/src/ui/QuizView.tsx 的未交卷分支：文章与题目同处一张卷面，
  * 题间细分隔线，题号按 Georgia 衬线 + 着重色，选项单选圆点限宽单栏。
  *
  * 作答态不给任何正误线索——选项不变色、不判分、不显示答案。判分只在交卷后发生。
+ *
+ * 渐进发卷（docs/impls/quiz-progressive-delivery.md §五）：status === 'generating'
+ * 时篇位标签来自生成计划（generation.groups，篇号 = 组下标），四种槽位状态——
+ * open（就绪且前篇全就绪，可做）/ locked（就绪但有前篇未就绪，按篇序解锁）/
+ * pending（会话在跑，该篇还在生成）/ failed（没生成成或上次中断，可单篇重生成）。
+ * 计数（页脚已答/总数、语法页）只算 open 篇的题；交卷前后端双重门（这里禁用
+ * 按钮 + 提示，后端 submit_quiz_paper 对 generating 卷拒绝）。全部就绪翻 ready
+ * 后静默换快照，槽位 key 按组下标不变，用户停在哪个标签就还在哪个标签。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Loader2, RotateCw } from 'lucide-react'
 import ConfirmDialog from '../../components/settings/ConfirmDialog.tsx'
 import { gradeQuiz } from '../../quiz/grading.ts'
 import { judgeGrammar } from '../../quiz/judge.ts'
 import { parseQuizAiProfileId } from '../../quiz/transport.ts'
 import { useSettings } from '../../hooks/useSettings.ts'
-import type { AnswerSheet, Quiz, QuizResult } from '../../quiz/types.ts'
+import type { AnswerSheet, Passage, Quiz, QuizResult } from '../../quiz/types.ts'
+import type { GenerationSessionState } from './generation-session.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
+import { deriveSlots, type SlotState } from './take-slots.ts'
 
-type Tab = { key: string; label: string; count: number; countLabel: string }
+type Tab = {
+  key: string
+  label: string
+  /** 标签右侧小字：open 是题数，其余是状态词 */
+  sub: string
+  state: SlotState
+  passage?: Passage
+  /** 生成计划里的篇号，failed 槽位的重生成按钮用 */
+  groupIndex?: number
+}
 
 export default function TakeView(props: {
   quiz: Quiz
   onSubmit: (result: QuizResult, elapsedMs: number) => Promise<void>
   onExit: () => void
+  generationSession?: GenerationSessionState
+  onRegenerateArticles?: (groupIndexes: number[]) => void
 }) {
-  const { quiz, onSubmit, onExit } = props
+  const { quiz, onSubmit, onExit, generationSession, onRegenerateArticles } = props
   const { t, i18n } = useTranslation()
   const { settings } = useSettings()
 
+  const slots = useMemo(() => deriveSlots(quiz, generationSession), [quiz, generationSession])
+
+  // 计数与作答只认 open 篇：locked/pending/failed 篇的题不进总数，
+  // 全部就绪翻 ready 后 slots 全 open，总数自然长上去
+  const openPassageIds = useMemo(
+    () => new Set(slots.filter((s) => s.state === 'open').map((s) => s.passage!.id)),
+    [slots],
+  )
+  const openGrammarQuestions = useMemo(
+    () => quiz.grammarQuestions.filter((q) => openPassageIds.has(q.passageId)),
+    [quiz, openPassageIds],
+  )
+
   const tabs = useMemo<Tab[]>(() => {
-    const list: Tab[] = quiz.passages.map((p, i) => {
-      const count = quiz.readingQuestions.filter((q) => q.passageId === p.id).length
-      return {
-        key: `p:${p.id}`,
+    const list: Tab[] = slots.map((slot, i) => {
+      const base = {
+        // key 按篇号而不是 passageId：pending → open 的翻转不换 key，标签停留原位
+        key: `a:${i}`,
         label: t('quiz.paper.take.passageLabel', { n: i + 1 }),
-        count,
-        countLabel: t('quiz.paper.take.questionCount', { count }),
+        state: slot.state,
+        passage: slot.passage,
+        groupIndex: i,
       }
+      if (slot.state === 'open') {
+        const count = quiz.readingQuestions.filter((q) => q.passageId === slot.passage!.id).length
+        return { ...base, sub: t('quiz.paper.take.questionCount', { count }) }
+      }
+      return { ...base, sub: t(`quiz.paper.take.slot.${slot.state}`) }
     })
-    if (quiz.grammarQuestions.length > 0) {
-      const count = quiz.grammarQuestions.length
+    if (openGrammarQuestions.length > 0) {
       list.push({
         key: 'grammar',
         label: t('quiz.paper.take.grammarTabLabel'),
-        count,
-        countLabel: t('quiz.paper.take.blankCount', { count }),
+        sub: t('quiz.paper.take.blankCount', { count: openGrammarQuestions.length }),
+        state: 'open',
       })
     }
     return list
-  }, [quiz, t])
+  }, [slots, quiz, openGrammarQuestions, t])
 
   const [activeTab, setActiveTab] = useState(tabs[0]?.key ?? '')
   const [answers, setAnswers] = useState<AnswerSheet>({})
@@ -64,8 +103,11 @@ export default function TakeView(props: {
   }, [])
 
   const allQuestionIds = useMemo(
-    () => [...quiz.readingQuestions.map((q) => q.id), ...quiz.grammarQuestions.map((q) => q.id)],
-    [quiz],
+    () => [
+      ...quiz.readingQuestions.filter((q) => openPassageIds.has(q.passageId)).map((q) => q.id),
+      ...openGrammarQuestions.map((q) => q.id),
+    ],
+    [quiz, openPassageIds, openGrammarQuestions],
   )
   const totalQuestions = allQuestionIds.length
   const answeredCount = countAnswered(allQuestionIds, answers)
@@ -104,7 +146,8 @@ export default function TakeView(props: {
     }
   }
 
-  const activePassage = quiz.passages.find((p) => `p:${p.id}` === activeTab)
+  const activeSlot = tabs.find((tabItem) => tabItem.key === activeTab)
+  const activePassage = activeSlot?.state === 'open' ? activeSlot.passage : undefined
   const difficultyLabel = t(`quiz.paper.difficulty.${quiz.config.difficulty}`)
   const wordsCount = quiz.words.length
   const dateLabel = new Date(quiz.createdAt).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US', {
@@ -147,10 +190,39 @@ export default function TakeView(props: {
                     : 'text-text-muted hover:text-text-secondary'
                 }`}
               >
-                {tabItem.label} <span className="ml-1 text-text-muted">{tabItem.countLabel}</span>
+                {tabItem.label}{' '}
+                <span
+                  className={`ml-1 ${tabItem.state === 'failed' ? 'text-danger-text' : 'text-text-muted'}`}
+                >
+                  {tabItem.state === 'pending' && (
+                    <Loader2 size={11} className="mr-0.5 inline animate-spin align-[-1px]" />
+                  )}
+                  {tabItem.sub}
+                </span>
               </button>
             ))}
           </div>
+
+          {activeSlot && activeSlot.state !== 'open' && (
+            <div className="rounded-b-lg rounded-tr-lg border border-border bg-bg-surface px-6 py-14 text-center">
+              {activeSlot.state === 'pending' && (
+                <Loader2 size={20} className="mx-auto mb-3 animate-spin text-text-muted" />
+              )}
+              <p className="mx-auto max-w-[42ch] text-[13.5px] leading-[1.8] text-text-secondary">
+                {t(`quiz.paper.take.slot.${activeSlot.state}Body`)}
+              </p>
+              {activeSlot.state === 'failed' && onRegenerateArticles && (
+                <button
+                  type="button"
+                  onClick={() => onRegenerateArticles([activeSlot.groupIndex!])}
+                  className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-4 text-[13px] font-medium text-text-secondary hover:bg-bg-input"
+                >
+                  <RotateCw size={14} />
+                  {t('quiz.paper.take.slot.regenerate')}
+                </button>
+              )}
+            </div>
+          )}
 
           {activePassage && (
             <div className="rounded-b-lg rounded-tr-lg border border-border bg-bg-surface p-6">
@@ -209,14 +281,14 @@ export default function TakeView(props: {
             </div>
           )}
 
-          {activeTab === 'grammar' && quiz.grammarQuestions.length > 0 && (
+          {activeTab === 'grammar' && openGrammarQuestions.length > 0 && (
             <div className="rounded-b-lg rounded-tr-lg border border-border bg-bg-surface p-6">
               <h2 className="font-serif text-[19px] font-semibold text-text-primary">
                 {t('quiz.paper.take.grammarTabLabel')}
               </h2>
-              <p className="mt-1 text-[12px] text-text-muted">{t('quiz.paper.take.grammarMeta', { count: quiz.grammarQuestions.length })}</p>
+              <p className="mt-1 text-[12px] text-text-muted">{t('quiz.paper.take.grammarMeta', { count: openGrammarQuestions.length })}</p>
               <div className="mt-4 space-y-4">
-                {quiz.grammarQuestions.map((q, i) => {
+                {openGrammarQuestions.map((q, i) => {
                   const parts = q.sentence.split('____')
                   return (
                     <div key={q.id} className={i > 0 ? 'border-t border-border-light pt-4' : ''}>
@@ -249,12 +321,15 @@ export default function TakeView(props: {
       <div className="flex h-16 shrink-0 items-center gap-3 border-t border-border bg-bg-surface px-4">
         <button
           type="button"
-          disabled={submitting}
+          disabled={submitting || quiz.status !== 'ready'}
           onClick={handleSubmitClick}
           className="flex h-9 items-center rounded-lg bg-accent px-4 text-[13.5px] font-medium text-white transition-colors disabled:opacity-50"
         >
           {submitting ? t('quiz.paper.take.submitting') : t('quiz.paper.take.submit')}
         </button>
+        {quiz.status !== 'ready' && (
+          <span className="text-[12.5px] text-text-muted">{t('quiz.paper.take.submitGate')}</span>
+        )}
         {submitError && <span className="text-[12.5px] text-danger-text">{submitError}</span>}
         <span className="flex-1" />
         <span className="text-[13px] text-text-secondary">

@@ -27,8 +27,9 @@ export function useQuizHistory() {
     refresh();
   }, [refresh]);
 
-  // status 'ready' = 已生成、还没交卷；§A2「未交完的卷」横幅、§B「上一卷」摘要都据此算
-  const unfinished = papers.filter((p) => p.status === "ready");
+  // 未交卷 = ready（已生成、还没交）+ generating（渐进发卷还有篇没生成完）；
+  // §A2「未交完的卷」横幅、§B「上一卷」摘要都据此算
+  const unfinished = papers.filter((p) => p.status !== "submitted");
 
   return { papers, unfinished, loading, refresh };
 }

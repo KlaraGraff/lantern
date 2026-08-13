@@ -23,8 +23,16 @@ export default function QuizPaper() {
   const numericId = paperId != null && paperId !== '' ? Number(paperId) : NaN
   const validId = Number.isFinite(numericId) ? numericId : null
 
-  const { quiz, status, submit, saveAskThreads, explanationSession, regenerateExplanations } =
-    useQuizPaper(validId)
+  const {
+    quiz,
+    status,
+    submit,
+    saveAskThreads,
+    explanationSession,
+    regenerateExplanations,
+    generationSession,
+    regenerateArticles,
+  } = useQuizPaper(validId)
 
   // 做题用时只在「本次交卷会话」里有意义：换卷（或从评卷页刷新回做题态，理论上
   // 不会发生但保险起见）时清空，不带着上一张卷的用时串场。
@@ -75,12 +83,16 @@ export default function QuizPaper() {
     )
   }
 
-  if (quiz.status === 'ready') {
+  // 渐进发卷：generating 卷也进做题屏——已就绪的篇可做，未就绪的篇位显示
+  // 生成状态/重生成入口，交卷被禁用（TakeView 内部按 quiz.status 把门）
+  if (quiz.status === 'ready' || quiz.status === 'generating') {
     return (
       <div ref={swipeRef} {...swipeHandlers}>
         <TakeView
           quiz={quiz}
           onExit={exit}
+          generationSession={generationSession}
+          onRegenerateArticles={regenerateArticles}
           onSubmit={async (result: QuizResult, ms: number) => {
             await submit(result)
             setElapsedMs(ms)

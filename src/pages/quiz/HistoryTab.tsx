@@ -74,6 +74,11 @@ function HistoryRow({
         <span className="shrink-0 tabular-nums text-[14px] font-semibold text-text-primary">
           {paper.result.score} / {paper.result.total}
         </span>
+      ) : paper.status === "generating" ? (
+        // 渐进发卷：还有篇没生成完的卷。点开照常进做题页，未就绪篇位在那边展示
+        <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-bg-input px-2.5 text-[11.5px] text-text-muted">
+          {t("quiz.history.generating")}
+        </span>
       ) : (
         <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-bg-input px-2.5 text-[11.5px] text-text-muted">
           {t("quiz.history.unsubmitted")}
