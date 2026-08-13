@@ -813,6 +813,25 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
    * is part of the prose, and cutting it out of the selection would make the
    * paragraph around it uncopyable in one gesture. */
 
+  /* The other half of the same race, and the half the rule above cannot win.
+   * `-webkit-touch-callout` suppresses the「存储图像」sheet and does inherit
+   * into a cover `<img>`; `-webkit-user-drag` is a separate mechanism, does
+   * *not* inherit, and defaults to `auto` on every image. So iOS still lifts a
+   * held cover onto a floating card and lets it follow the finger — at the
+   * same 500ms `LONG_PRESS.holdMs` waits for. The OS wins, the shelf's own
+   * menu never opens, and when the lift is abandoned the interrupted press
+   * lands as a plain tap that opens the book. The card that drops back on
+   * release is that lift, not a menu.
+   *
+   * Every image in the app is illustration — a cover, a logo, a stats
+   * thumbnail. Nothing is a drag source: `SortableList` reorders through
+   * dnd-kit's pointer events, not HTML5 drag-and-drop, so there is nothing
+   * here to keep working. Coarse pointers only, because dragging a cover out
+   * to the desktop is a real gesture on a Mac. */
+  img {
+    -webkit-user-drag: none;
+  }
+
   /* A field nested inside one of those — a search box in a labelled row, the
    * note editor inside a card — still has to hand the reader a caret and a
    * selection. Same specificity, written second, so it wins. */

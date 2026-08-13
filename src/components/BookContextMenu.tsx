@@ -15,12 +15,16 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useCollections } from "../hooks/useCollections";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { useTranslation } from "react-i18next";
 import { deriveBookIndexState, type BookIndexState, type IndexDetails } from "./index-state";
 import { anchorTransformOrigin } from "./motion";
 
 /** Fixed width of the collections submenu — it is set on the element too. */
 const SUBMENU_WIDTH = 200;
+
+/** How close to the viewport edge the clamped submenu is allowed to sit. */
+const SUBMENU_EDGE_GAP = 8;
 
 interface BookContextMenuProps {
   x: number;
@@ -61,6 +65,12 @@ export default function BookContextMenu({
   const [creatingNew, setCreatingNew] = useState(false);
   const { collections, create, addBook, removeBook } = useCollections();
   const { t } = useTranslation();
+  // A finger has no hover, so the collections row cannot be a hover trigger on
+  // a phone — and it cannot be *both* either: WebKit's post-tap compatibility
+  // burst fires `mouseover` and `click` at the same element, so a row that
+  // opened on hover and toggled on click would open and close on one tap.
+  // Each pointer kind therefore gets exactly one of the two.
+  const coarsePointer = useCoarsePointer();
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const submenuRef = useRef<HTMLDivElement>(null);
   // Where the clamp above actually put the menu. Kept rather than re-measured
@@ -82,7 +92,16 @@ export default function BookContextMenu({
   }, [bookId]);
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    // `pointerdown`, not `mousedown`, and the difference is the whole gesture
+    // on a phone. This menu opens from a long press while the finger is still
+    // down; the press ends with a `touchend`, and WebKit answers that with a
+    // synthetic `mouseover → mousedown → mouseup → click` burst aimed at the
+    // cover underneath. A `mousedown` listener reads that burst as "pressed
+    // outside" and closes the menu in the same frame the finger lifts —
+    // deterministically, not now and then. Pointer events are generated from
+    // the touch itself and have no compatibility burst, so the only
+    // `pointerdown` this ever sees is a real second press.
+    const handlePressOutside = (e: PointerEvent) => {
       const target = e.target as Node;
       if (menuRef.current?.contains(target)) return;
       if (submenuRef.current?.contains(target)) return;
@@ -91,10 +110,10 @@ export default function BookContextMenu({
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handlePressOutside);
     document.addEventListener("keydown", handleEscape);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("pointerdown", handlePressOutside);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [onClose]);
@@ -163,8 +182,17 @@ export default function BookContextMenu({
     const trigger = element.querySelector<HTMLElement>("[data-collection-trigger]");
     const top = menuTop + (trigger?.offsetTop ?? 0);
     const opensLeft = right + SUBMENU_WIDTH > window.innerWidth;
+    // Clamped, because on a phone neither side fits: a 220px menu opened under
+    // a finger near the left edge leaves less than 200px to its right, and
+    // flipping it left puts it off the screen entirely. A desktop window is
+    // always wide enough for one side or the other, so the clamp never bites
+    // there.
+    const unclampedLeft = opensLeft ? left - SUBMENU_WIDTH : right;
     setSubmenuStyle({
-      left: opensLeft ? left - SUBMENU_WIDTH : right,
+      left: Math.max(
+        SUBMENU_EDGE_GAP,
+        Math.min(unclampedLeft, window.innerWidth - SUBMENU_WIDTH - SUBMENU_EDGE_GAP),
+      ),
       top,
       // Unfolds from the edge it is attached to, so it reads as coming out of
       // the parent menu rather than appearing beside it.
@@ -181,7 +209,7 @@ export default function BookContextMenu({
       >
         {/* Status indicator */}
         <button
-          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-default"
+          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-default"
         >
           <BookOpen size={16} className="text-text-muted" />
           <span className="flex-1 text-[13px] font-medium text-text-muted tracking-[-0.08px]">
@@ -195,7 +223,7 @@ export default function BookContextMenu({
             right click as the only way in. */}
         <button
           onClick={onViewDetails}
-          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
         >
           <Info size={16} className="text-text-muted" />
           <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -209,7 +237,7 @@ export default function BookContextMenu({
         {bookStatus !== "reading" && (
           <button
             onClick={onMarkReading}
-            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
           >
             <BookOpen size={16} className="text-text-muted" />
             <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -220,7 +248,7 @@ export default function BookContextMenu({
         {bookStatus !== "finished" && (
           <button
             onClick={onMarkFinished}
-            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
           >
             <CheckCircle2 size={16} className="text-text-muted" />
             <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -231,7 +259,7 @@ export default function BookContextMenu({
         {bookStatus !== "unread" && (
           <button
             onClick={onMarkUnread}
-            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
           >
             <CircleDashed size={16} className="text-text-muted" />
             <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -245,7 +273,7 @@ export default function BookContextMenu({
         {/* Edit Info */}
         <button
           onClick={onEditInfo}
-          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
         >
           <Pencil size={16} className="text-text-muted" />
           <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -266,17 +294,18 @@ export default function BookContextMenu({
 
         <div className="mx-3 my-1 h-px bg-border/80" />
 
-        {/* Add to Collection - hover trigger */}
+        {/* Add to Collection — hover under a cursor, tap under a finger */}
         <button
           data-collection-trigger
-          onMouseEnter={() => {
+          onClick={coarsePointer ? () => setShowCollections((open) => !open) : undefined}
+          onMouseEnter={coarsePointer ? undefined : () => {
             if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
             setShowCollections(true);
           }}
-          onMouseLeave={() => {
+          onMouseLeave={coarsePointer ? undefined : () => {
             hoverTimeoutRef.current = setTimeout(() => setShowCollections(false), 150);
           }}
-          className={`flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer transition-colors ${showCollections ? "bg-accent-bg" : "hover:bg-accent-bg"}`}
+          className={`flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer transition-colors ${showCollections ? "bg-accent-bg" : "hover:bg-accent-bg"}`}
         >
           <FolderPlus size={16} className="text-text-muted" />
           <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -289,7 +318,7 @@ export default function BookContextMenu({
         {activeCollectionId && (
           <button
             onClick={handleRemoveFromCollection}
-            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
           >
             <FolderMinus size={16} className="text-text-muted" />
             <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px] whitespace-nowrap">
@@ -303,7 +332,7 @@ export default function BookContextMenu({
         {/* Delete Book */}
         <button
           onClick={onDelete}
-          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
         >
           <Trash2 size={16} className="text-red-400" />
           <span className="flex-1 text-[13px] font-medium text-red-400 tracking-[-0.08px]">
@@ -318,10 +347,10 @@ export default function BookContextMenu({
           ref={submenuRef}
           className="motion-pop fixed z-[51] bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[200px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
           style={submenuStyle}
-          onMouseEnter={() => {
+          onMouseEnter={coarsePointer ? undefined : () => {
             if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
           }}
-          onMouseLeave={() => {
+          onMouseLeave={coarsePointer ? undefined : () => {
             hoverTimeoutRef.current = setTimeout(() => setShowCollections(false), 150);
           }}
         >
@@ -334,7 +363,7 @@ export default function BookContextMenu({
             <button
               key={c.id}
               onClick={() => handleAddToCollection(c.id)}
-              className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+              className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
             >
               <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px] truncate">
                 {c.name}
@@ -368,7 +397,7 @@ export default function BookContextMenu({
           ) : (
             <button
               onClick={() => setCreatingNew(true)}
-              className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+              className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
             >
               <Plus size={16} className="text-text-muted" />
               <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
