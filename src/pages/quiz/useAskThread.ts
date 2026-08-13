@@ -12,7 +12,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createUuid } from '../../utils/randomUuid.ts'
-import { completeText } from '../../quiz/transport.ts'
+import { completeText, parseQuizAiProfileId } from '../../quiz/transport.ts'
+import { useSettings } from '../../hooks/useSettings.ts'
 import type { AskMessage, AskThread } from '../../quiz/types.ts'
 
 export interface AskPop {
@@ -64,6 +65,13 @@ export function useAskThread(opts: {
   onPersist: (threads: AskThread[]) => void
 }): UseAskThreadResult {
   const { quizId, enabled, onPersist } = opts
+  const { settings } = useSettings()
+  // sendToApi 是空依赖数组的 useCallback（见下方定义处的说明），靠 ref 拿到最新
+  // 设置值——每次渲染后同步一次，不需要因为设置变化而重建这个回调本身。
+  const settingsRef = useRef(settings)
+  useEffect(() => {
+    settingsRef.current = settings
+  })
 
   const [threads, setThreads] = useState<AskThread[]>(opts.initialThreads)
   const threadsRef = useRef(threads)
@@ -181,6 +189,7 @@ export function useAskThread(opts: {
         system,
         messages: thread.messages.map((m) => ({ role: m.role, content: m.content })),
         maxTokens: 1200,
+        profileId: parseQuizAiProfileId(settingsRef.current['quiz_ai_profile_id']),
       })
       const aiMsg: AskMessage = { role: 'assistant', content: reply, at: new Date().toISOString() }
       const finalThread: AskThread = { ...thread, messages: [...thread.messages, aiMsg] }

@@ -39,6 +39,12 @@ pub async fn ai_complete_text(
     max_tokens: u32,
     cache: Option<bool>,
     request_id: String,
+    // Forces this one call onto a single `ai_profiles` row instead of the
+    // usual priority+failover route — quiz generation pins the profile the
+    // reader picked for grading rather than letting the router wander onto
+    // whatever answers first. `None` is every other caller: unchanged
+    // priority/cooldown routing. See `router::pin_profile`.
+    profile_id: Option<String>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -86,6 +92,7 @@ pub async fn ai_complete_text(
         "user",
         "quiz",
         cache.unwrap_or(false),
+        profile_id.as_deref(),
     )
     .await?;
     Ok(AiCompleteTextResponse {

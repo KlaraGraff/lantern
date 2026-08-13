@@ -19,6 +19,8 @@ import {
   subscribeExplanationSessions,
   type ExplanationSessionState,
 } from './explanation-session.ts'
+import { parseQuizAiProfileId } from '../../quiz/transport.ts'
+import { useSettings } from '../../hooks/useSettings.ts'
 import type {
   AskThread,
   GrammarFillQuestion,
@@ -41,6 +43,7 @@ export interface UseQuizPaperResult {
 }
 
 export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
+  const { settings } = useSettings()
   const [quiz, setQuiz] = useState<Quiz | null>(null)
   const [status, setStatus] = useState<QuizPaperLoadStatus>('loading')
 
@@ -127,9 +130,10 @@ export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
   const regenerateExplanations = useCallback(
     (passageIds: string[]) => {
       if (paperId == null || !quiz || passageIds.length === 0) return
-      void runExplanationSession({ paperId, quiz, onlyPassageIds: passageIds })
+      const profileId = parseQuizAiProfileId(settings['quiz_ai_profile_id'])
+      void runExplanationSession({ paperId, quiz, onlyPassageIds: passageIds, profileId })
     },
-    [paperId, quiz],
+    [paperId, quiz, settings],
   )
 
   return { quiz, status, reload: load, submit, saveAskThreads, explanationSession, regenerateExplanations }

@@ -73,6 +73,20 @@ function profileLabel(value: string): string {
   return Array.from(value).slice(0, 100).join("");
 }
 
+/**
+ * 设置里存的 profile id 指向已被停用/删除的行时（本机删过、或从别的设备同步来），
+ * 追加一个可见的失效项占住选中态——否则 Select 渲染成空白，而出题模型是硬指定，
+ * 空白下拉是「词卷 AI 整个不可用」在设置里唯一的线索，不能没了。
+ */
+function withDanglingOption(
+  options: { value: string; label: string }[],
+  selected: string | undefined,
+  goneLabel: string,
+): { value: string; label: string }[] {
+  if (!selected || options.some((option) => option.value === selected)) return options;
+  return [...options, { value: selected, label: goneLabel }];
+}
+
 function updateOne<T extends { id: string }>(items: T[], id: string, patch: Partial<T>): T[] {
   return items.map((item) => item.id === id ? { ...item, ...patch } : item);
 }
@@ -80,6 +94,12 @@ function updateOne<T extends { id: string }>(items: T[], id: string, patch: Part
 export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }: AiSettingsProps) {
   const { t } = useTranslation();
   const { settings, save: saveSetting } = useSettings();
+  // deleteProfile 是 async 回调，await 之后再读 render 闭包里的 settings 可能已经
+  // 过期（刚在下拉里选完某行、set_setting 还在飞就点删除的竞态会漏清）；走 ref 拿当下值。
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
   const [profiles, setProfiles] = useState<AiProfile[]>([]);
   const [savedProfiles, setSavedProfiles] = useState<AiProfile[]>([]);
   const [credentials, setCredentials] = useState<Record<string, AiCredential[]>>({});
@@ -611,6 +631,10 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         return next;
       });
       setExpandedId((current) => current === id ? null : current);
+      // 指向这行的设置一并清掉，回到跟随路由——留着一个悬空 id 只会让下拉框
+      // 显示失效项（出题模型是硬指定，悬空意味着词卷 AI 整个不可用）
+      if (settingsRef.current.quiz_ai_profile_id === id) void saveSetting("quiz_ai_profile_id", "");
+      if (settingsRef.current.ai_summary_profile_id === id) void saveSetting("ai_summary_profile_id", "");
       showSavedToast(t("settings.ai.serviceDeleted"));
     } catch (nextError) {
       setError(errorText(nextError));
@@ -909,10 +933,18 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           className="mt-2"
           value={settings.ai_summary_profile_id || ""}
           onChange={(value) => void saveSetting("ai_summary_profile_id", value)}
-          options={[
-            { value: "", label: t("settings.ai.summaryProfileFollow") },
-            ...profiles.filter((profile) => profile.enabled).map((profile) => ({ value: profile.id, label: profile.label })),
-          ]}
+          options={withDanglingOption(
+            [
+              { value: "", label: t("settings.ai.summaryProfileFollow") },
+              // 与后端 pin_profile 的可路由判定对齐（enabled 且配置完整）：目录里
+              // 刚添加还没填模型的行不该能被钉住，钉了也只会报「不可用」还查无实据
+              ...profiles
+                .filter((profile) => profile.enabled && isProfileConfigComplete(profile))
+                .map((profile) => ({ value: profile.id, label: profile.label })),
+            ],
+            settings.ai_summary_profile_id,
+            t("settings.ai.profileGone"),
+          )}
         />
       </div>
       <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
@@ -924,6 +956,27 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           checked={settings.ai_summaries_auto !== "false"}
           onChange={(enabled) => void saveSetting("ai_summaries_auto", enabled ? "true" : "false")}
           label={t("settings.ai.summariesAuto")}
+        />
+      </div>
+      <div className="mb-4 border-b border-border py-3">
+        <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.quizProfile")}</h4>
+        <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.quizProfileHint")}</p>
+        <Select
+          className="mt-2"
+          value={settings.quiz_ai_profile_id || ""}
+          onChange={(value) => void saveSetting("quiz_ai_profile_id", value)}
+          options={withDanglingOption(
+            [
+              { value: "", label: t("settings.ai.quizProfileFollow") },
+              // 与后端 pin_profile 的可路由判定对齐（enabled 且配置完整）：目录里
+              // 刚添加还没填模型的行不该能被钉住，钉了也只会报「不可用」还查无实据
+              ...profiles
+                .filter((profile) => profile.enabled && isProfileConfigComplete(profile))
+                .map((profile) => ({ value: profile.id, label: profile.label })),
+            ],
+            settings.quiz_ai_profile_id,
+            t("settings.ai.profileGone"),
+          )}
         />
       </div>
       <div className="mb-3 flex items-start justify-between gap-4">

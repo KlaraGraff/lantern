@@ -4,7 +4,7 @@ import {
   applySettingsChange,
   listenForSettingsChanged,
   notifySettingsChanged,
-} from "../components/settings-events";
+} from "../components/settings-events.ts";
 
 export function useSettings() {
   const [settings, setSettings] = useState<Record<string, string>>({});

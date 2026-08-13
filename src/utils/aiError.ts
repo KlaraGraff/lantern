@@ -5,6 +5,9 @@ export const AI_ERROR_CODES = [
   "AI_KEYS_COOLING_DOWN",
   "AI_NO_USABLE_KEYS",
   "AI_STREAM_FAILED",
+  // 词卷「出题模型」硬指定的 profile 被停用/删除（router.rs pin_profile）。
+  // 只有带 profileId 的调用（quiz/transport.ts）可能收到，其余功能不会。
+  "AI_PROFILE_NOT_AVAILABLE",
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -15,6 +18,7 @@ const AI_SETTINGS_ERROR_CODES = new Set<AiErrorCode>([
   "AI_ALL_KEYS_INVALID",
   "AI_KEYS_COOLING_DOWN",
   "AI_NO_USABLE_KEYS",
+  "AI_PROFILE_NOT_AVAILABLE",
 ]);
 
 export function getAiErrorCode(error: unknown): AiErrorCode | null {
@@ -58,5 +62,7 @@ export function aiErrorMessageKey(code: AiErrorCode): string {
       return "ai.noUsableKeys";
     case "AI_STREAM_FAILED":
       return "ai.requestFailed";
+    case "AI_PROFILE_NOT_AVAILABLE":
+      return "quiz.error.profileUnavailable";
   }
 }

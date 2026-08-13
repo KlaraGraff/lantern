@@ -13,6 +13,7 @@ import AskDrawer from './AskDrawer.tsx'
 import { useAskThread } from './useAskThread.ts'
 import { explanationTriState, type ExplanationTriState } from './useQuizPaper.ts'
 import type { ExplanationSessionState } from './explanation-session.ts'
+import { aiErrorMessageKey } from '../../utils/aiError.ts'
 import type {
   AskThread,
   GrammarFillQuestion,
@@ -74,12 +75,18 @@ function ExplanationSkeleton({ t }: { t: (key: string) => string }) {
  * disabled：另一组的补生成正在跑时置真——runExplanationSession 对同卷重入直接
  * 返回 null（无任何 UI 反馈），所以别的组的入口必须先禁掉，不给静默无响应的机会。
  */
-function ExplanationMissing(props: { onGenerate: () => void; disabled: boolean; t: (key: string) => string }) {
+function ExplanationMissing(props: {
+  onGenerate: () => void
+  disabled: boolean
+  /** 失败原因：会话里识别出 AI 错误码时是对应文案（如钉住的模型被删），否则是默认的「上次生成中断了」 */
+  reason: string
+  t: (key: string) => string
+}) {
   return (
     <div className="flex flex-wrap items-center gap-3 pt-3">
       <p className="min-w-[220px] flex-1 text-[12.5px] leading-[1.7] text-text-secondary">
         {props.t('quiz.paper.grade.explanationMissing')}
-        <span className="text-text-muted"> {props.t('quiz.paper.grade.explanationMissingReason')}</span>
+        <span className="text-text-muted"> {props.reason}</span>
       </p>
       <button
         type="button"
@@ -174,6 +181,16 @@ export default function GradeView(props: {
 
   function explainState(passageId: string): ExplanationTriState {
     return explanationTriState(explanationSession, quiz, passageId)
+  }
+
+  /**
+   * 「没写成」的原因文案：会话记了 AI 错误码就说真实原因（钉住的模型被删 →
+   * 引导去设置），没记（含 App 重启后 session 为 undefined 的冷启动）用默认的
+   * 「上次生成中断了」——冷启动时缺失确实源自中断，默认文案是对的。
+   */
+  function missingReason(passageId: string): string {
+    const code = explanationSession?.missingErrorCodes[passageId]
+    return code ? t(aiErrorMessageKey(code)) : t('quiz.paper.grade.explanationMissingReason')
   }
 
   return (
@@ -355,6 +372,7 @@ export default function GradeView(props: {
                               <ExplanationMissing
                                 onGenerate={() => regenerateExplanations([q.passageId])}
                                 disabled={explanationSession?.running ?? false}
+                                reason={missingReason(q.passageId)}
                                 t={t}
                               />
                             )}
@@ -469,6 +487,7 @@ export default function GradeView(props: {
                             <ExplanationMissing
                               onGenerate={() => regenerateExplanations([q.passageId])}
                               disabled={explanationSession?.running ?? false}
+                              reason={missingReason(q.passageId)}
                               t={t}
                             />
                           )}

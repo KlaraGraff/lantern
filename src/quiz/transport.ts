@@ -41,6 +41,13 @@ export interface CompleteTextOptions {
   cache?: boolean
   /** 取消句柄；不传则内部生成一个（后端参数必填，invoke 负载必须始终带上） */
   requestId?: string
+  /**
+   * 出题模型硬指定（设置项 `quiz_ai_profile_id`）。传了就把这次调用钉死在这个
+   * ai_profiles 行上，不参与后端故障切换路由；该 profile 被停用/删除时后端报错
+   * （错误串含 `AI_PROFILE_NOT_AVAILABLE`，UI 层据此映射成引导改设置的文案）。
+   * 不传 = 跟随自动路由，行为与这个功能上线前完全一致。
+   */
+  profileId?: string
 }
 
 /**
@@ -56,6 +63,7 @@ export function buildCompleteTextPayload(opts: CompleteTextOptions): {
   maxTokens: number
   cache: boolean
   requestId: string
+  profileId: string | undefined
 } {
   return {
     messages: opts.messages,
@@ -63,6 +71,7 @@ export function buildCompleteTextPayload(opts: CompleteTextOptions): {
     maxTokens: opts.maxTokens,
     cache: opts.cache ?? false,
     requestId: opts.requestId ?? createUuid(),
+    profileId: opts.profileId,
   }
 }
 
@@ -126,6 +135,8 @@ export async function completeStructured<S extends z.ZodType>(opts: {
   cache?: boolean
   /** 取消句柄；不传则 completeText 内部生成一个 */
   requestId?: string
+  /** 出题模型硬指定，见 CompleteTextOptions.profileId 说明 */
+  profileId?: string
 }): Promise<StructuredCompletion<z.infer<S>>> {
   const { schema, messages } = opts
   if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
@@ -145,6 +156,7 @@ ${JSON.stringify(jsonSchema)}`
     maxTokens: opts.maxTokens,
     cache: opts.cache,
     requestId: opts.requestId,
+    profileId: opts.profileId,
   })
   if (!text) throw new Error('模型返回了空响应')
   const data = schema.parse(JSON.parse(extractJson(text)))
@@ -161,4 +173,17 @@ export function extractJson(text: string): string {
   const end = trimmed.lastIndexOf('}')
   if (start !== -1 && end > start) return trimmed.slice(start, end + 1)
   return trimmed
+}
+
+/**
+ * 出题模型设置项 `quiz_ai_profile_id`（settings KV 里存的是字符串）→ profileId。
+ *
+ * `ai_profiles.id` 在 schema 里是 `TEXT PRIMARY KEY`（ULID 风格字符串，见
+ * src-tauri/migrations/015_ai_profiles.sql），不是数字——这里直接透传字符串，
+ * 与既有的 `ai_summary_profile_id`（AiSettings.tsx 的「默认摘要模型」设置，
+ * 同样存 profile.id 原文）走同一约定。空串/缺失（跟随自动路由）统一收口成
+ * undefined，调用方（useQuizGeneration/useQuizPaper/useAskThread）不用各自判。
+ */
+export function parseQuizAiProfileId(raw: string | undefined): string | undefined {
+  return raw ? raw : undefined
 }

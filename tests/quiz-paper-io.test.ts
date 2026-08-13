@@ -203,6 +203,7 @@ describe("runExplanationSession", () => {
       running: false,
       runningPassageIds: [],
       missingPassageIds: [],
+      missingErrorCodes: {},
     });
   });
 
@@ -226,6 +227,8 @@ describe("runExplanationSession", () => {
       running: false,
       runningPassageIds: [],
       missingPassageIds: ["p2"],
+      // "boom" 不是注册表里的 AI 错误码，识别不出就不记原因
+      missingErrorCodes: {},
     });
   });
 
@@ -259,6 +262,46 @@ describe("runExplanationSession", () => {
       running: false,
       runningPassageIds: [],
       missingPassageIds: ["p2"],
+      missingErrorCodes: {},
+    });
+  });
+
+  it("失败原因码随组走：认得的错误码记进 missingErrorCodes，补生成成功后一起清掉", async () => {
+    // 第一轮：p1 因钉住的出题模型不可用失败（后端 AppError 序列化成裸 token），p2 成功
+    const completeP1ProfileGone: CompleteStructured = (opts) => {
+      if (JSON.stringify(opts.messages).includes("apple")) {
+        return Promise.reject(new Error("AI_PROFILE_NOT_AVAILABLE"));
+      }
+      return completeOk(opts);
+    };
+    await runExplanationSession({
+      paperId: 7,
+      quiz: makeQuiz(),
+      complete: completeP1ProfileGone,
+      persist: () => Promise.resolve(),
+    });
+    assert.deepEqual(getExplanationSession(7), {
+      running: false,
+      runningPassageIds: [],
+      missingPassageIds: ["p1"],
+      missingErrorCodes: { p1: "AI_PROFILE_NOT_AVAILABLE" },
+    });
+
+    // 第二轮：用户改好设置后补生成 p1，成功——原因码必须随缺失记录一起清掉，
+    // 不许留一句过期的「模型没了」（这正是 carry 过滤存在的意义）
+    const merged = await runExplanationSession({
+      paperId: 7,
+      quiz: makeQuiz(),
+      onlyPassageIds: ["p1"],
+      complete: completeOk,
+      persist: () => Promise.resolve(),
+    });
+    assert.ok(merged);
+    assert.deepEqual(getExplanationSession(7), {
+      running: false,
+      runningPassageIds: [],
+      missingPassageIds: [],
+      missingErrorCodes: {},
     });
   });
 

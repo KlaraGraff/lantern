@@ -25,8 +25,10 @@ export async function judgeGrammar(opts: {
   answers: Record<string, string>
   /** 演示卷：跳过 LLM 裁决，不一致一律判错（demo 卷不该产生真实用量） */
   demo?: boolean
+  /** 出题模型硬指定（设置项 quiz_ai_profile_id）——判卷和出题共用同一根钉 */
+  profileId?: string
 }): Promise<GrammarVerdict[]> {
-  const { questions, answers, demo } = opts
+  const { questions, answers, demo, profileId } = opts
   const verdicts: GrammarVerdict[] = []
   const pending: { question: GrammarFillQuestion; userAnswer: string; slot: number }[] = []
 
@@ -60,6 +62,7 @@ export async function judgeGrammar(opts: {
         ],
         schema: grammarJudgeSchema,
         maxTokens: 4000,
+        profileId,
       })
       for (const v of result.verdicts) {
         const p = pending[v.questionIndex]

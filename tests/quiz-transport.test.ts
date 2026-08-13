@@ -61,6 +61,19 @@ describe("buildCompleteTextPayload · requestId 接入 ai_cancel 取消通道", 
     assert.equal(payload.maxTokens, 100);
     assert.equal(payload.cache, false);
   });
+
+  // profileId 是「出题模型硬指定」上线的那根线——负载里丢了它，整个功能就静默
+  // 退化成自动路由，且上层测试全测不出来（generate.ts 的透传测试只走 mock complete，
+  // 摸不到真实负载）。这两条直接钉住负载形状。
+  it("传 profileId 时原样进入负载（出题模型硬指定的唯一通道）", () => {
+    const payload = buildCompleteTextPayload({ ...baseOpts, profileId: "profile-x" });
+    assert.equal(payload.profileId, "profile-x");
+  });
+
+  it("不传 profileId 时负载里是 undefined（JSON 序列化会丢掉键，后端收到 None = 跟随自动路由）", () => {
+    const payload = buildCompleteTextPayload(baseOpts);
+    assert.equal(payload.profileId, undefined);
+  });
 });
 
 describe("buildCancelPayload · ai_cancel 负载形状", () => {

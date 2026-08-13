@@ -27,6 +27,7 @@ import {
   type ChatMessage,
 } from './transport.ts'
 import { createUuid } from '../utils/randomUuid.ts'
+import { getAiErrorCode, type AiErrorCode } from '../utils/aiError.ts'
 
 /**
  * 测试注入点：Tauri 的 `invoke` 在 Node 测试环境里没有 IPC 桥（既不能连后端，
@@ -115,8 +116,10 @@ export async function generateQuiz(opts: {
   complete?: CompleteStructured
   /** 取消句柄注册表，见上方 withRequestRegistry 说明；不传则不生成取消句柄 */
   requestRegistry?: Set<string>
+  /** 出题模型硬指定（设置项 quiz_ai_profile_id），见 transport.ts profileId 说明；不传 = 跟随自动路由 */
+  profileId?: string
 }): Promise<{ quiz: Quiz; traces: GenerationTrace[] }> {
-  const { words, config } = opts
+  const { words, config, profileId } = opts
   const progress = opts.onProgress ?? (() => {})
   const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
 
@@ -141,6 +144,7 @@ export async function generateQuiz(opts: {
         maxTokens: 16000,
         // 让明答校验（阶段一收卷前的质检）续写这次对话时能命中前缀缓存
         cache: true,
+        profileId,
       }),
     ),
   )
@@ -202,9 +206,9 @@ export async function generateQuiz(opts: {
   if (readingQuestions.length > 0 || grammarQuestions.length > 0) {
     progress('checking')
     const [answerCheck, maskedFailedIdx] = await Promise.all([
-      runAnswerCheck({ readingQuestions, grammarQuestions, traces, complete }),
+      runAnswerCheck({ readingQuestions, grammarQuestions, traces, complete, profileId }),
       config.maskedCheck && readingQuestions.length > 0
-        ? runMaskedCheck({ passages, readingQuestions, complete })
+        ? runMaskedCheck({ passages, readingQuestions, complete, profileId })
         : Promise.resolve(new Set<number>()),
     ])
     const readingFailedIdx = new Set([...answerCheck.readingFailed, ...maskedFailedIdx])
@@ -220,6 +224,7 @@ export async function generateQuiz(opts: {
         grammarFailedIdx,
         config,
         complete,
+        profileId,
       })
       readingQuestions = redone.readingQuestions
       grammarQuestions = redone.grammarQuestions
@@ -286,8 +291,9 @@ async function runAnswerCheck(opts: {
   grammarQuestions: GrammarFillQuestion[]
   traces: GenerationTrace[]
   complete: CompleteStructured
+  profileId?: string
 }): Promise<{ readingFailed: Set<number>; grammarFailed: Set<number> }> {
-  const { readingQuestions, grammarQuestions, traces, complete } = opts
+  const { readingQuestions, grammarQuestions, traces, complete, profileId } = opts
   // 组内 questionIndex 是「这一组过滤后的子数组」下标，不是整卷全局下标——
   // 用 id 把每道题映射回它在全局 readingQuestions/grammarQuestions 里的下标
   const readingGlobalIndex = new Map(readingQuestions.map((q, i) => [q.id, i]))
@@ -318,6 +324,7 @@ async function runAnswerCheck(opts: {
           schema: answerCheckSchema,
           maxTokens: 8000,
           cache: true,
+          profileId,
         })
 
         for (const v of check.readingAnswers) {
@@ -350,8 +357,9 @@ async function runMaskedCheck(opts: {
   passages: Passage[]
   readingQuestions: ReadingQuestion[]
   complete: CompleteStructured
+  profileId?: string
 }): Promise<Set<number>> {
-  const { passages, readingQuestions, complete } = opts
+  const { passages, readingQuestions, complete, profileId } = opts
   try {
     const byId = new Map(passages.map((p) => [p.id, p]))
     const items = readingQuestions.map((q) => ({ passage: byId.get(q.passageId)!, question: q }))
@@ -360,6 +368,7 @@ async function runMaskedCheck(opts: {
       messages: [{ role: 'user', content: buildMaskedCheckPrompt(items) }],
       schema: maskedCheckVerdictSchema,
       maxTokens: 8000,
+      profileId,
     })
 
     return new Set(
@@ -385,6 +394,7 @@ async function redoFailedQuestions(opts: {
   grammarFailedIdx: Set<number>
   config: QuizConfig
   complete: CompleteStructured
+  profileId?: string
 }): Promise<{ readingQuestions: ReadingQuestion[]; grammarQuestions: GrammarFillQuestion[] }> {
   const {
     passages,
@@ -394,6 +404,7 @@ async function redoFailedQuestions(opts: {
     grammarFailedIdx,
     config,
     complete,
+    profileId,
   } = opts
   const readingOrder = [...readingFailedIdx].sort((a, b) => a - b)
   const grammarOrder = [...grammarFailedIdx].sort((a, b) => a - b)
@@ -417,6 +428,7 @@ async function redoFailedQuestions(opts: {
       ],
       schema: generatedPaperStage1Schema,
       maxTokens: 16000,
+      profileId,
     })
 
     // 消费式映射：按 targetWord（小写）分桶，而不是按位置对位——重出提示里阅读、
@@ -523,6 +535,12 @@ export interface GenerateExplanationsResult {
   quiz: Quiz
   /** 解析生成失败的组，按 passageId 报告；UI 据此渲染「点击补生成」 */
   missingPassageIds: string[]
+  /**
+   * 失败组里能识别出 AI 错误码的那部分（passageId → 错误码）。典型场景：钉住的
+   * 出题模型被停用/删除（AI_PROFILE_NOT_AVAILABLE）——UI 据此把「没写成」的原因
+   * 说对（引导去设置），而不是默认的「上次生成中断了」。识别不出的失败不进这张表。
+   */
+  missingErrorCodes: Record<string, AiErrorCode>
 }
 
 /**
@@ -542,8 +560,10 @@ export async function generateExplanations(opts: {
   traces?: GenerationTrace[]
   /** 测试注入点，见 CompleteStructured 说明；省略时用真实 transport */
   complete?: CompleteStructured
+  /** 出题模型硬指定（设置项 quiz_ai_profile_id），见 transport.ts profileId 说明；不传 = 跟随自动路由 */
+  profileId?: string
 }): Promise<GenerateExplanationsResult> {
-  const { quiz } = opts
+  const { quiz, profileId } = opts
   const onProgress = opts.onProgress ?? (() => {})
   const complete = opts.complete ?? defaultCompleteStructured
   const groups = regroupForExplanations(quiz)
@@ -552,6 +572,7 @@ export async function generateExplanations(opts: {
   const updatedReading = new Map(quiz.readingQuestions.map((q) => [q.id, q]))
   const updatedGrammar = new Map(quiz.grammarQuestions.map((q) => [q.id, q]))
   const missingPassageIds: string[] = []
+  const missingErrorCodes: Record<string, AiErrorCode> = {}
 
   await Promise.all(
     groups.map(async (group) => {
@@ -596,6 +617,7 @@ export async function generateExplanations(opts: {
           schema: generatedExplanationsSchema,
           maxTokens: 16000,
           cache: true,
+          profileId,
         })
 
         for (const exp of result.readingExplanations) {
@@ -629,9 +651,11 @@ export async function generateExplanations(opts: {
           })
         }
         onProgress(group.passage.id)
-      } catch {
+      } catch (error) {
         // 这一组解析生成失败：不抛出、不影响其它组，留给 UI「点击补生成」兜底
         missingPassageIds.push(group.passage.id)
+        const code = getAiErrorCode(error)
+        if (code) missingErrorCodes[group.passage.id] = code
       }
     }),
   )
@@ -643,5 +667,6 @@ export async function generateExplanations(opts: {
       grammarQuestions: quiz.grammarQuestions.map((q) => updatedGrammar.get(q.id) ?? q),
     },
     missingPassageIds,
+    missingErrorCodes,
   }
 }

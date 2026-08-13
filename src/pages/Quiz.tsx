@@ -18,6 +18,7 @@ import PoolTab from "./quiz/PoolTab.tsx";
 import HistoryTab from "./quiz/HistoryTab.tsx";
 import GeneratingScreen from "./quiz/GeneratingScreen.tsx";
 import { useQuizGeneration } from "./quiz/useQuizGeneration.ts";
+import { isAiSettingsError } from "../utils/aiError.ts";
 import { useWrongWordPool } from "./quiz/useWrongWordPool.ts";
 import { useQuizHistory } from "./quiz/useQuizHistory.ts";
 import type { Difficulty, QuestionType, QuizWord } from "../quiz/types.ts";
@@ -121,7 +122,11 @@ export default function Quiz() {
                 {t("quiz.error.retry")}
               </button>
             </div>
-            <div className="mt-3 text-center text-[12.5px] text-text-muted">{t("quiz.error.note")}</div>
+            {/* 「删掉部分词缩小范围」只对生成本身的失败有意义；设置类错误（模型没配、
+                钉住的模型被删）跟词表多少无关，提示了反而自相矛盾 */}
+            {!isAiSettingsError(generation.errorCode) && (
+              <div className="mt-3 text-center text-[12.5px] text-text-muted">{t("quiz.error.note")}</div>
+            )}
           </div>
         </div>
       </div>

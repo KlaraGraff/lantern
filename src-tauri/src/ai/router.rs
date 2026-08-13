@@ -972,6 +972,29 @@ fn profiles(db: &Db, usable_only: bool) -> AppResult<Vec<AiProfile>> {
     })
 }
 
+/// Narrows a routable set to exactly the profile one request pinned itself
+/// to — quiz's per-request override, not a preference a route failover is
+/// free to wander away from. `None` passes `enabled` through untouched, which is every
+/// caller but the pinned one. `Some(id)` keeps only the matching row, so
+/// whatever tries the request next (cooldowns, per-credential retries) stays
+/// inside that one profile; if nothing in `enabled` matches — deleted,
+/// disabled, or never existed, and the caller cannot tell which — routing
+/// fails before any provider is contacted rather than silently falling back
+/// to a different model than the one asked for.
+fn pin_profile(
+    enabled: Vec<AiProfile>,
+    pinned_profile_id: Option<&str>,
+) -> AppResult<Vec<AiProfile>> {
+    let Some(id) = pinned_profile_id else {
+        return Ok(enabled);
+    };
+    enabled
+        .into_iter()
+        .find(|profile| profile.view.id == id)
+        .map(|profile| vec![profile])
+        .ok_or_else(|| AppError::Other("AI_PROFILE_NOT_AVAILABLE".to_string()))
+}
+
 /// Whether this provider is a model server the reader runs on their own
 /// machine and that takes no credential at all — Ollama and LM Studio both
 /// answer on localhost with nothing but a base URL.
@@ -1713,6 +1736,7 @@ pub async fn stream_with_failover<R: Runtime>(
         origin,
         feature,
         false,
+        None,
         &mut cancel,
     )
     .await;
@@ -1758,6 +1782,7 @@ pub async fn complete_with_failover<R: Runtime>(
         origin,
         feature,
         false,
+        None,
     )
     .await
 }
@@ -1781,6 +1806,11 @@ pub async fn complete_with_failover_cached<R: Runtime>(
     // auto-cache and silently ignore the flag, by construction (it is never
     // threaded into their request builders).
     cache_last_message: bool,
+    // Forces this one call onto a single `ai_profiles` row instead of
+    // priority+failover routing — `Some(id)` fails fast with
+    // `AI_PROFILE_NOT_AVAILABLE` if `id` is not enabled. `None` is the
+    // routing every caller had before this parameter existed.
+    pinned_profile_id: Option<&str>,
 ) -> AppResult<AiCompletion> {
     let event_name = format!("ai-internal-completion-{}", uuid::Uuid::new_v4());
     let output = Arc::new(Mutex::new(String::new()));
@@ -1833,6 +1863,7 @@ pub async fn complete_with_failover_cached<R: Runtime>(
         origin,
         feature,
         cache_last_message,
+        pinned_profile_id,
         &mut cancel,
     )
     .await;
@@ -2186,9 +2217,14 @@ async fn stream_with_failover_inner<R: Runtime>(
     origin: &str,
     feature: &str,
     cache_last_message: bool,
+    // Some(id) restricts this whole call to one `ai_profiles` row — no
+    // failover to any other profile, though that one profile's own
+    // cooldown/credential retries below still run. See `pin_profile`.
+    pinned_profile_id: Option<&str>,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<AiProfileView> {
     let enabled_profiles = profiles(db, true)?;
+    let enabled_profiles = pin_profile(enabled_profiles, pinned_profile_id)?;
     if enabled_profiles.is_empty() {
         return Err(AppError::Other("AI_NOT_CONFIGURED".to_string()));
     }
@@ -4385,6 +4421,59 @@ mod tests {
         }
     }
 
+    fn profile_with_id(id: &str) -> AiProfile {
+        let mut view = profile("custom", None);
+        view.id = id.to_string();
+        AiProfile { view }
+    }
+
+    /// A pinned request never sees the other enabled profiles at all — quiz's
+    /// hard pin, not a preference route_for_request could still wander from.
+    #[test]
+    fn pin_profile_narrows_to_only_the_pinned_id() {
+        let enabled = vec![profile_with_id("a"), profile_with_id("b")];
+
+        let pinned = pin_profile(enabled, Some("b")).unwrap();
+
+        assert_eq!(
+            pinned.into_iter().map(|p| p.view.id).collect::<Vec<_>>(),
+            vec!["b".to_string()]
+        );
+    }
+
+    /// Deleted, disabled, or never existed — `enabled` cannot tell the caller
+    /// which, and the pin does not need to distinguish: any of the three
+    /// means the request cannot be honored, so it fails before a provider is
+    /// ever contacted rather than falling back onto a model the caller did
+    /// not ask for.
+    #[test]
+    fn pin_profile_missing_id_fails_with_ai_profile_not_available() {
+        let enabled = vec![profile_with_id("a"), profile_with_id("b")];
+
+        let error = pin_profile(enabled, Some("missing")).unwrap_err();
+
+        assert!(error.to_string().contains("AI_PROFILE_NOT_AVAILABLE"));
+    }
+
+    /// `None` is every caller that predates pinning: the enabled set passes
+    /// through untouched, in the same order, for `route_for_request` to
+    /// choose from exactly as it always has.
+    #[test]
+    fn pin_profile_none_leaves_the_enabled_set_unchanged() {
+        let enabled = vec![profile_with_id("a"), profile_with_id("b")];
+        let ids_before = enabled
+            .iter()
+            .map(|p| p.view.id.clone())
+            .collect::<Vec<_>>();
+
+        let pinned = pin_profile(enabled, None).unwrap();
+
+        assert_eq!(
+            pinned.into_iter().map(|p| p.view.id).collect::<Vec<_>>(),
+            ids_before
+        );
+    }
+
     // A cap that a reasoning model can spend on thinking alone is not a cap on
     // the answer — it is a way to get no answer at all. Only Anthropic, which
     // requires the field, may see one.
@@ -5057,6 +5146,7 @@ mod tests {
             "user",
             "test",
             false,
+            None,
             &mut cancel,
         )
         .await

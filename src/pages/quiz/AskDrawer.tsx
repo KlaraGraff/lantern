@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, MessageCircleQuestion, X } from 'lucide-react'
+import { aiErrorMessageKey, getAiErrorCode } from '../../utils/aiError.ts'
 import type { AskThread } from '../../quiz/types.ts'
 
 const NARROW_QUERY = '(max-width: 900px)'
@@ -39,7 +40,11 @@ export default function AskDrawer(props: {
   const [input, setInput] = useState('')
   const listRef = useRef<HTMLDivElement | null>(null)
   const sending = activeThread != null && sendingThreadId === activeThread.id
-  const activeError = activeThread && error?.threadId === activeThread.id ? error.message : null
+  // 后端错误串带的是给程序看的 token（如出题模型被删时的 AI_PROFILE_NOT_AVAILABLE），
+  // 注册表认得的一律换成 i18n 文案再上屏；认不出的才原样展示。
+  const rawError = activeThread && error?.threadId === activeThread.id ? error.message : null
+  const rawErrorCode = rawError == null ? null : getAiErrorCode(rawError)
+  const activeError = rawErrorCode ? t(aiErrorMessageKey(rawErrorCode)) : rawError
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })

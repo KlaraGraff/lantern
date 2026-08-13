@@ -11,6 +11,8 @@ import { ArrowLeft } from 'lucide-react'
 import ConfirmDialog from '../../components/settings/ConfirmDialog.tsx'
 import { gradeQuiz } from '../../quiz/grading.ts'
 import { judgeGrammar } from '../../quiz/judge.ts'
+import { parseQuizAiProfileId } from '../../quiz/transport.ts'
+import { useSettings } from '../../hooks/useSettings.ts'
 import type { AnswerSheet, Quiz, QuizResult } from '../../quiz/types.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
 
@@ -23,6 +25,7 @@ export default function TakeView(props: {
 }) {
   const { quiz, onSubmit, onExit } = props
   const { t, i18n } = useTranslation()
+  const { settings } = useSettings()
 
   const tabs = useMemo<Tab[]>(() => {
     const list: Tab[] = quiz.passages.map((p, i) => {
@@ -89,6 +92,7 @@ export default function TakeView(props: {
         questions: quiz.grammarQuestions,
         answers,
         demo: quiz.config.demo,
+        profileId: parseQuizAiProfileId(settings['quiz_ai_profile_id']),
       })
       const result = gradeQuiz(quiz, answers, grammarVerdicts)
       const elapsedMs = Date.now() - startRef.current

@@ -111,7 +111,7 @@ describe("explanationTriState", () => {
   it("running 且该组在本轮 scope 里 → 优先于缺失判定", () => {
     const quiz = makeQuiz(); // 阶段二字段全空，本该判 missing
     const state = explanationTriState(
-      { running: true, runningPassageIds: ["p1"], missingPassageIds: [] },
+      { running: true, runningPassageIds: ["p1"], missingPassageIds: [], missingErrorCodes: {} },
       quiz,
       "p1",
     );
@@ -121,7 +121,7 @@ describe("explanationTriState", () => {
   it("running 但该组不在本轮 scope 里 → 按实际字段判定，不画骨架屏", () => {
     // 补生成只点名 p2 时，p1 不该跟着变骨架：缺字段照样显示 missing，
     // 有字段照常展开 ready。
-    const session = { running: true, runningPassageIds: ["p2"], missingPassageIds: ["p1"] };
+    const session = { running: true, runningPassageIds: ["p2"], missingPassageIds: ["p1"], missingErrorCodes: {} };
     assert.equal(explanationTriState(session, makeQuiz(), "p1"), "missing");
 
     const readyQuiz = makeQuiz({
@@ -134,7 +134,7 @@ describe("explanationTriState", () => {
   it("!running 且缺字段 → missing", () => {
     const quiz = makeQuiz();
     const state = explanationTriState(
-      { running: false, runningPassageIds: [], missingPassageIds: ["p1"] },
+      { running: false, runningPassageIds: [], missingPassageIds: ["p1"], missingErrorCodes: {} },
       quiz,
       "p1",
     );

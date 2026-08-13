@@ -18,6 +18,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { generateExplanations, type GenerationTrace } from '../../quiz/generate.ts'
 import type { CompleteStructured } from '../../quiz/generate.ts'
 import type { Quiz } from '../../quiz/types.ts'
+import type { AiErrorCode } from '../../utils/aiError.ts'
 import { quizContentJson } from './paper-io.ts'
 
 export interface ExplanationSessionState {
@@ -29,6 +30,12 @@ export interface ExplanationSessionState {
   runningPassageIds: string[]
   /** 最近一次运行后仍缺解析的组；running 期间保持上一次的值 */
   missingPassageIds: string[]
+  /**
+   * 缺失组里能识别出 AI 错误码的那部分（passageId → 错误码），随
+   * missingPassageIds 同步维护。评卷页用它把「没写成」的原因说对（比如钉住的
+   * 出题模型被删时引导去设置）；查不到的组用默认的「上次生成中断了」文案。
+   */
+  missingErrorCodes: Record<string, AiErrorCode>
 }
 
 const sessions = new Map<number, ExplanationSessionState>()
@@ -102,8 +109,10 @@ export async function runExplanationSession(opts: {
   complete?: CompleteStructured
   /** 测试注入点，默认 update_quiz_paper_content */
   persist?: (paperId: number, quiz: Quiz) => Promise<void>
+  /** 出题模型硬指定（设置项 quiz_ai_profile_id），穿透给 generateExplanations */
+  profileId?: string
 }): Promise<Quiz | null> {
-  const { paperId, quiz } = opts
+  const { paperId, quiz, profileId } = opts
   const persist = opts.persist ?? persistContent
 
   const existing = sessions.get(paperId)
@@ -112,21 +121,26 @@ export async function runExplanationSession(opts: {
   const scopeIds = opts.onlyPassageIds
     ? new Set(opts.onlyPassageIds)
     : new Set(quiz.passages.map((p) => p.id))
-  // 上一轮失败、这一轮没被点名的组，失败状态要保住，不能被这轮的成功清掉
+  // 上一轮失败、这一轮没被点名的组，失败状态（含原因码）要保住，不能被这轮的成功清掉
   const carriedMissing = (existing?.missingPassageIds ?? []).filter((id) => !scopeIds.has(id))
+  const carriedCodes = Object.fromEntries(
+    Object.entries(existing?.missingErrorCodes ?? {}).filter(([id]) => !scopeIds.has(id)),
+  )
 
   setSession(paperId, {
     running: true,
     runningPassageIds: [...scopeIds],
     missingPassageIds: existing?.missingPassageIds ?? [],
+    missingErrorCodes: existing?.missingErrorCodes ?? {},
   })
 
   try {
     const scoped = opts.onlyPassageIds ? scopeQuiz(quiz, scopeIds) : quiz
-    const { quiz: updatedScoped, missingPassageIds } = await generateExplanations({
+    const { quiz: updatedScoped, missingPassageIds, missingErrorCodes } = await generateExplanations({
       quiz: scoped,
       traces: opts.traces,
       complete: opts.complete,
+      profileId,
     })
     const merged = mergeQuizQuestions(quiz, updatedScoped)
     await persist(paperId, merged)
@@ -134,16 +148,19 @@ export async function runExplanationSession(opts: {
       running: false,
       runningPassageIds: [],
       missingPassageIds: [...carriedMissing, ...missingPassageIds],
+      missingErrorCodes: { ...carriedCodes, ...missingErrorCodes },
     })
     return merged
   } catch (error) {
     // generateExplanations 按组吞错不抛；走到这里只剩写库失败——解析已生成但没
-    // 落库，等价于整个 scope 都缺，让补生成按钮出现
+    // 落库，等价于整个 scope 都缺，让补生成按钮出现。原因是写库不是 AI 调用，
+    // 所以 scope 内不记错误码，走默认「上次生成中断了」文案。
     console.error('explanation session failed to persist:', error)
     setSession(paperId, {
       running: false,
       runningPassageIds: [],
       missingPassageIds: [...carriedMissing, ...scopeIds],
+      missingErrorCodes: carriedCodes,
     })
     return null
   }

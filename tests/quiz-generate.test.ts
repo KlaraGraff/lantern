@@ -140,7 +140,11 @@ describe("generateQuiz · 明答校验 + 遮词自检全部通过", () => {
 describe("generateQuiz · 明答校验与遮词自检失败题合并重出", () => {
   it("两边失败集合按题目下标去重合并，各自类型分别重出，止损一轮", async () => {
     const steps: string[] = []
+    // 顺带捕获每次调用的 profileId：这是唯一驱动到重出调用的用例，出题模型
+    // 硬指定必须连重出这一跳也带上（generate.ts redoFailedQuestions 内的调用）
+    const capturedProfileIds: (string | undefined)[] = []
     const complete: CompleteStructured = (async (opts: any) => {
+      capturedProfileIds.push(opts.profileId)
       const firstContent = String(opts.messages[0]?.content ?? "")
 
       if (opts.schema === generatedPaperStage1Schema) {
@@ -185,9 +189,21 @@ describe("generateQuiz · 明答校验与遮词自检失败题合并重出", () 
       throw new Error(`未预期的 schema 调用：${firstContent.slice(0, 50)}`)
     }) as CompleteStructured
 
-    const { quiz } = await generateQuiz({ words, config, onProgress: (s) => steps.push(s), complete })
+    const { quiz } = await generateQuiz({
+      words,
+      config,
+      onProgress: (s) => steps.push(s),
+      complete,
+      profileId: "profile-pinned",
+    })
 
     assert.ok(steps.includes("regenerating"), "两边任一失败都该触发重出")
+    // 出题、明答校验、遮词自检、重出四跳全部带上同一个 profileId，重出不许漏
+    assert.ok(capturedProfileIds.length >= 4, "本用例应至少驱动 4 次底层调用（含重出）")
+    assert.ok(
+      capturedProfileIds.every((id) => id === "profile-pinned"),
+      "重出调用也必须带上钉住的 profileId",
+    )
     // 去重合并：readingFailedIdx 应为 {0,1}（明答校验的 0 与遮词自检的 0、1 合并后只有两个，
     // 不是三个），因此两道阅读题都应被重出题覆盖
     assert.equal(quiz.readingQuestions[0].stem, "redone-stem0")
@@ -449,6 +465,93 @@ describe("generateQuiz · 续写缓存链路", () => {
   })
 })
 
+describe("generateQuiz/generateExplanations · profileId 出题模型硬指定透传", () => {
+  it("generateQuiz 传入 profileId 时，阶段一出题调用与解析生成调用都带上原样的 profileId", async () => {
+    const capturedProfileIds: (string | undefined)[] = []
+    const complete: CompleteStructured = (async (opts: any) => {
+      capturedProfileIds.push(opts.profileId)
+      if (opts.schema === generatedPaperStage1Schema) {
+        return structured(structuredClone(stage1Paper), "stub-request", JSON.stringify(stage1Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        return structured({
+          readingAnswers: [
+            { questionIndex: 0, answer: "B" },
+            { questionIndex: 1, answer: "A" },
+          ],
+          grammarAnswers: [{ questionIndex: 0, answer: "have advocated" }],
+        })
+      }
+      if (opts.schema === maskedCheckVerdictSchema) {
+        return structured({ verdicts: [] })
+      }
+      throw new Error("未预期的调用")
+    }) as CompleteStructured
+
+    await generateQuiz({ words, config, complete, profileId: "profile-pinned" })
+
+    assert.ok(capturedProfileIds.length >= 3, "至少应观察到出题/明答校验/遮词自检三次调用")
+    assert.ok(
+      capturedProfileIds.every((id) => id === "profile-pinned"),
+      "每一次底层 complete 调用都该带上同一个 profileId",
+    )
+  })
+
+  it("generateQuiz 不传 profileId 时，底层调用的 profileId 是 undefined（跟随自动路由）", async () => {
+    const capturedProfileIds: (string | undefined)[] = []
+    const complete: CompleteStructured = (async (opts: any) => {
+      capturedProfileIds.push(opts.profileId)
+      if (opts.schema === generatedPaperStage1Schema) {
+        return structured(structuredClone(stage1Paper), "stub-request", JSON.stringify(stage1Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        return structured({
+          readingAnswers: [
+            { questionIndex: 0, answer: "B" },
+            { questionIndex: 1, answer: "A" },
+          ],
+          grammarAnswers: [{ questionIndex: 0, answer: "have advocated" }],
+        })
+      }
+      if (opts.schema === maskedCheckVerdictSchema) return structured({ verdicts: [] })
+      throw new Error("未预期的调用")
+    }) as CompleteStructured
+
+    await generateQuiz({ words, config, complete })
+
+    assert.ok(capturedProfileIds.length > 0, "应至少发生过一次调用")
+    assert.ok(capturedProfileIds.every((id) => id === undefined), "不传 profileId 时不该凭空带出一个值")
+  })
+
+  it("generateExplanations 传入 profileId 时，解析生成调用带上原样的 profileId", async () => {
+    const quiz: Quiz = {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      config,
+      words,
+      passages: [{ id: "p1", title: "T1", paragraphs: ["a"], targetWords: ["subsidy"] }],
+      readingQuestions: [rq("rq1", "p1")],
+      grammarQuestions: [gq("gq1", "p1")],
+      status: "ready",
+    }
+    let capturedProfileId: string | undefined
+    const complete: CompleteStructured = (async (opts: any) => {
+      capturedProfileId = opts.profileId
+      return structured({
+        readingExplanations: [
+          { questionIndex: 0, stemTranslation: "x", howToSolve: "y", wordNote: "z", options: [] },
+        ],
+        grammarExplanations: [
+          { questionIndex: 0, sentenceTranslation: "x", grammarPoints: [], reasoning: [], wrongForms: [], wordMeaning: "x" },
+        ],
+      })
+    }) as CompleteStructured
+
+    await generateExplanations({ quiz, complete, profileId: "profile-pinned" })
+
+    assert.equal(capturedProfileId, "profile-pinned")
+  })
+})
+
 describe("regroupForExplanations", () => {
   it("按 passageId 把阅读题与语法题重新分组", () => {
     const quiz: Quiz = {
@@ -650,6 +753,36 @@ describe("generateExplanations", () => {
     assert.deepEqual(result.missingPassageIds, ["p1"])
     assert.equal(result.quiz.readingQuestions[0].stemTranslation, undefined) // p1 组失败，原题不变
     assert.equal(result.quiz.readingQuestions[1].stemTranslation, "T2 解析")
+    // 「模拟这一组解析生成失败」不是注册表里的错误码，识别不出就不记原因
+    assert.deepEqual(result.missingErrorCodes, {})
+  })
+
+  it("失败原因是注册表认得的 AI 错误码时（如钉住的出题模型被删），按组记进 missingErrorCodes", async () => {
+    const quiz: Quiz = {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      config,
+      words,
+      passages: [
+        { id: "p1", title: "T1", paragraphs: ["a"], targetWords: ["subsidy"] },
+        { id: "p2", title: "T2", paragraphs: ["b"], targetWords: ["advocate"] },
+      ],
+      readingQuestions: [rq("rq1", "p1"), rq("rq2", "p2")],
+      grammarQuestions: [],
+      status: "ready",
+    }
+    const complete: CompleteStructured = (async (opts: any) => {
+      const isP1 = String(opts.messages[1]?.content ?? "").includes('"title":"T1"')
+      // 后端 AppError 序列化成裸字符串，前端拿到的是 message 含错误码的 Error
+      if (isP1) throw new Error("AI_PROFILE_NOT_AVAILABLE")
+      return structured({
+        readingExplanations: [{ questionIndex: 0, stemTranslation: "T2 解析", howToSolve: "x", wordNote: "y", options: [] }],
+        grammarExplanations: [],
+      })
+    }) as CompleteStructured
+
+    const result = await generateExplanations({ quiz, complete })
+    assert.deepEqual(result.missingPassageIds, ["p1"])
+    assert.deepEqual(result.missingErrorCodes, { p1: "AI_PROFILE_NOT_AVAILABLE" })
   })
 
   it("传入 traces 时按 passageId 原样回放阶段一原文续写（不重建 JSON），带 cache:true", async () => {
