@@ -58,7 +58,12 @@ export default function ProgressScrubber({
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Capture can be rejected (seen on WKWebView); touch already has
+      // implicit capture from pointerdown, so the drag must proceed either way.
+    }
     setIsDragging(true);
     setDragFraction(fractionFromEvent(event));
   }, [fractionFromEvent]);
