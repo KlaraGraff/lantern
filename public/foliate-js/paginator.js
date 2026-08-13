@@ -505,6 +505,7 @@ export class Paginator extends HTMLElement {
     ]
     #root = this.attachShadow({ mode: 'closed' })
     #resizeTimeout = 0
+    #settleScrollAnim = null
     #observer = new ResizeObserver(() => {
         // During panel drag resize, skip intermediate renders entirely;
         // we'll get one final render when the drag ends via attributeChangedCallback.
@@ -899,6 +900,10 @@ export class Paginator extends HTMLElement {
         return Math.round(this.viewSize / this.size)
     }
     scrollBy(dx, dy) {
+        // LANTERN: a drag landing inside the 260ms turn animation must first
+        // settle it — its forwards-fill transform is still displacing the view,
+        // and writing scrollLeft under it would move the content twice.
+        this.#settleScrollAnim?.()
         const delta = this.#vertical ? dy : dx
         const element = this.#container
         const { scrollProp } = this
@@ -1006,18 +1011,64 @@ export class Paginator extends HTMLElement {
         }
         // FIXME: vertical-rl only, not -lr
         if (this.scrolled && this.#vertical) offset = -offset
-        if ((reason === 'snap' || smooth) && this.hasAttribute('animated')) return animate(
-            element[scrollProp], offset, 300, easeOutQuad,
-            x => element[scrollProp] = x,
-        ).then(() => {
-            this.#scrollBounds = [offset, this.atStart ? 0 : size, this.atEnd ? 0 : size]
-            this.#afterScroll(reason)
-        })
+        if ((reason === 'snap' || smooth) && this.hasAttribute('animated'))
+            return this.#animateScrollTo(offset, reason)
         else {
+            // LANTERN: same as scrollBy — land any in-flight turn animation
+            // before the direct write, or the leftover transform displaces
+            // the freshly scrolled content until its fill is removed.
+            this.#settleScrollAnim?.()
             element[scrollProp] = offset
             this.#scrollBounds = [offset, this.atStart ? 0 : size, this.atEnd ? 0 : size]
             this.#afterScroll(reason)
         }
+    }
+    // LANTERN: the slide used to be an rAF loop writing scrollLeft every
+    // frame, which makes the main thread re-resolve scroll layout per frame
+    // and drops frames whenever React work lands mid-turn (the relocate
+    // handler's state updates always do). The turn now plays as a compositor
+    // transform on the view element — the overlayer rides along since it
+    // lives inside it — and the real scroll position is written once, in the
+    // same frame the fill comes off, so everything that reads `scrollProp`
+    // keeps its existing mid-animation semantics (the old page, until
+    // `#afterScroll`).
+    #animateScrollTo(offset, reason) {
+        const element = this.#container
+        const moved = this.#view?.element
+        const { scrollProp, size } = this
+        // A turn arriving mid-flight settles the previous one at its target,
+        // bookkeeping included, so two turns never fight over the same frame.
+        this.#settleScrollAnim?.()
+        const land = () => {
+            element[scrollProp] = offset
+            this.#scrollBounds = [offset, this.atStart ? 0 : size, this.atEnd ? 0 : size]
+            this.#afterScroll(reason)
+        }
+        const delta = offset - element[scrollProp]
+        if (!delta || !moved || document.hidden || typeof moved.animate !== 'function') {
+            land()
+            return Promise.resolve()
+        }
+        const translate = scrollProp === 'scrollTop'
+            ? d => `translate3d(0, ${d}px, 0)`
+            : d => `translate3d(${d}px, 0, 0)`
+        const anim = moved.animate(
+            [{ transform: translate(0) }, { transform: translate(-delta) }],
+            // easeOutQuad, near enough. The forwards fill holds the last
+            // frame until `land()` swaps it for the real scroll write.
+            { duration: 260, easing: 'cubic-bezier(.25, .46, .45, .94)', fill: 'forwards' },
+        )
+        return new Promise(resolve => {
+            const settle = () => {
+                if (this.#settleScrollAnim !== settle) return
+                this.#settleScrollAnim = null
+                anim.cancel()
+                land()
+                resolve()
+            }
+            this.#settleScrollAnim = settle
+            anim.onfinish = settle
+        })
     }
     async #scrollToPage(page, reason, smooth) {
         const offset = this.size * (this.#rtl ? -page : page)
