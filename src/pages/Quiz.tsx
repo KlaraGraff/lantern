@@ -18,6 +18,8 @@ import PoolTab from "./quiz/PoolTab.tsx";
 import HistoryTab from "./quiz/HistoryTab.tsx";
 import GeneratingScreen from "./quiz/GeneratingScreen.tsx";
 import { useQuizGeneration } from "./quiz/useQuizGeneration.ts";
+import { useIsNarrow } from "../hooks/useIsNarrow.ts";
+import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack.ts";
 import { isAiSettingsError } from "../utils/aiError.ts";
 import { useWrongWordPool } from "./quiz/useWrongWordPool.ts";
 import { useQuizHistory } from "./quiz/useQuizHistory.ts";
@@ -71,6 +73,21 @@ export default function Quiz() {
     setTab("setup");
   };
 
+  // 左滑返回：主屏 = 头部返回按钮（navigate(-1)），失败屏 = 「返回出卷」。
+  // 生成中不接手势——那一屏唯一的出口是「取消」按钮，误触左滑不该白白
+  // 作废一次已经付费的生成。
+  const isNarrow = useIsNarrow();
+  const { ref: swipeRef, pointerHandlers: swipeHandlers } = useEdgeSwipeBack<HTMLDivElement>({
+    enabled: isNarrow && generation.phase !== "generating",
+    onBack: () => {
+      if (generation.phase === "error") {
+        handleBackToSetup();
+        return;
+      }
+      navigate(-1);
+    },
+  });
+
   if (generation.phase === "generating") {
     return (
       <div className="h-screen bg-bg-page">
@@ -87,7 +104,7 @@ export default function Quiz() {
 
   if (generation.phase === "error") {
     return (
-      <div className="flex h-screen flex-col bg-bg-page">
+      <div ref={swipeRef} {...swipeHandlers} className="flex h-screen flex-col bg-bg-page">
         <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
           <span className="text-[15px] font-semibold text-text-primary">{t("quiz.error.title")}</span>
           {lastAttempt && (
@@ -135,7 +152,7 @@ export default function Quiz() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-bg-page">
+    <div ref={swipeRef} {...swipeHandlers} className="flex h-screen flex-col bg-bg-page">
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
         <button
           type="button"

@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronLeft, ChevronRight, Keyboard, Loader2, MousePointer2, Search, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import type { PassiveVocabSettings } from "./passive-vocab";
 import Select from "./ui/Select";
 import {
@@ -288,6 +289,31 @@ function ReaderSettings({
   // The toast lives in the main view, where `scopeError` is never rendered, so
   // a failed undo needs a message of its own or it disappears entirely.
   const [undoError, setUndoError] = useState<string | null>(null);
+
+  // Left-edge swipe on the narrow sheet — the touch spelling of the bar's ⟨,
+  // and the same one-step-back walk the Escape handler below does: the
+  // clear-marks confirmation first, then the scope sub-views, then the sheet.
+  // No dialog-above check here: a dialog layered over the sheet takes the
+  // touches with it, so the swipe never fires under one.
+  const { ref: sheetSwipeRef, pointerHandlers: sheetSwipeHandlers } = useEdgeSwipeBack<HTMLDivElement>({
+    enabled: open && isNarrow,
+    onBack: () => {
+      if (capturingBinding) return;
+      if (clearLookupConfirm) {
+        if (clearLookupBusy) return;
+        setClearLookupConfirm(false);
+        setClearLookupError(false);
+        return;
+      }
+      if (scopeView !== "main") {
+        if (scopeBusy) return;
+        setScopeError(false);
+        setScopeView(scopeView === "manage" ? "main" : scopeView === "confirm" ? "manage" : "confirm");
+        return;
+      }
+      onClose();
+    },
+  });
 
   useLayoutEffect(() => {
     // Narrow renders the sheet, which is `inset-0` and has nothing to place.
@@ -598,13 +624,17 @@ function ReaderSettings({
       && visibleConflicts.every((conflict) => selectedConflictIds.has(conflict.id));
     return (
       <div
-        ref={popoverRef}
+        ref={(node) => {
+          popoverRef.current = node;
+          if (isNarrow) sheetSwipeRef(node);
+        }}
         data-reader-settings
         role={isNarrow ? "dialog" : undefined}
         aria-modal={isNarrow ? true : undefined}
         aria-label={isNarrow ? t("reader.typography") : undefined}
         className={isNarrow ? SHEET_CLASS : POPOVER_CLASS}
         style={isNarrow ? undefined : { top: position.top, right: position.right, height: position.maxHeight, maxHeight: position.maxHeight }}
+        {...(isNarrow ? sheetSwipeHandlers : undefined)}
       >
         {isNarrow ? sheetBar(t(`readerSettings.scope.${scopeView}Title`), stepBack) : (
           <div className="flex h-12 shrink-0 items-center border-b border-border-light px-3">
@@ -1179,12 +1209,16 @@ function ReaderSettings({
   if (isNarrow) {
     return (
       <div
-        ref={popoverRef}
+        ref={(node) => {
+          popoverRef.current = node;
+          sheetSwipeRef(node);
+        }}
         data-reader-settings
         role="dialog"
         aria-modal="true"
         aria-label={t("reader.typography")}
         className={SHEET_CLASS}
+        {...sheetSwipeHandlers}
       >
         {sheetBar(t("reader.typography"))}
         <div className="min-h-0 flex-1 overflow-y-auto">{mainBody}</div>

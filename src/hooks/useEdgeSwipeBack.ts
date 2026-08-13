@@ -85,6 +85,10 @@ export function useEdgeSwipeBack<T extends HTMLElement>({
   const travelRef = useRef(1);
   const onBackRef = useRef(onBack);
   const settleTimerRef = useRef<number | null>(null);
+  // Set by the wiring effect; lets the pointerdown handler (a stable memo
+  // that cannot see the effect's `node`) force a pending back to finish
+  // before a new gesture registers with the controller.
+  const flushSettleRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     onBackRef.current = onBack;
@@ -131,15 +135,41 @@ export function useEdgeSwipeBack<T extends HTMLElement>({
     // allowed to change under it. `onBack` fires after the same duration the
     // transition above animates over, so the card is fully off-screen — not
     // mid-slide — by the time BookDetails unmounts.
+    const finishSettledBack = () => {
+      settleTimerRef.current = null;
+      onBackRef.current();
+      // "Back" does not always unmount this element: the settings surfaces
+      // pop one level and keep the same node, which would otherwise stay
+      // parked at fraction 1, fully off-screen. Rewinding in the same task
+      // as onBack means React flushes the level change before the next
+      // paint, so the parent level appears at rest with no visible snap —
+      // and on a page that does unmount, these writes land on a node that
+      // is already gone.
+      controller.cancel();
+      node.style.transition = "";
+      node.style.transform = "";
+      node.style.boxShadow = "";
+    };
     const unsubscribeSettled = controller.subscribeSettled((outcome) => {
       if (outcome !== "back") return;
-      settleTimerRef.current = window.setTimeout(() => onBackRef.current(), EDGE_BACK_SETTLE_MS);
+      settleTimerRef.current = window.setTimeout(finishSettledBack, EDGE_BACK_SETTLE_MS);
     });
+    // A second swipe can begin inside the settle window on a surface that
+    // stays mounted (the settings levels, a reader panel closing into
+    // another). Left pending, the timer's `cancel()` would fire after that
+    // gesture's pointerdown and null its claim on the controller, eating the
+    // swipe — so the pointerdown handler runs the pending back first.
+    flushSettleRef.current = () => {
+      if (settleTimerRef.current === null) return;
+      window.clearTimeout(settleTimerRef.current);
+      finishSettledBack();
+    };
     window.addEventListener("resize", measure);
 
     return () => {
       unsubscribeFrame();
       unsubscribeSettled();
+      flushSettleRef.current = null;
       window.removeEventListener("resize", measure);
       if (settleTimerRef.current !== null) {
         window.clearTimeout(settleTimerRef.current);
@@ -163,6 +193,17 @@ export function useEdgeSwipeBack<T extends HTMLElement>({
         // window-manager gesture on every platform this app ships to, and
         // `enabled` already keeps this off the wide layout.
         if (!enabled || event.pointerType !== "touch") return;
+        // A back that settled but hasn't fired yet finishes now, so this
+        // touch starts on the surface the back reveals instead of the one
+        // sliding away — and so the pending cleanup can't null this
+        // gesture's controller claim from under it.
+        flushSettleRef.current?.();
+        // A touch that starts on a control that owns horizontal drags itself
+        // stays that control's gesture even inside the edge zone — a range
+        // slider's thumb parked at its minimum sits within 20px of the left
+        // edge, and claiming that drag would slide the page while the finger
+        // is setting a value.
+        if ((event.target as Element | null)?.closest?.("input, textarea, select, [contenteditable]")) return;
         controller.pointerDown({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY });
       },
       // The `enabled` guard is on all five handlers, not just the entry

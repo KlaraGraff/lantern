@@ -12,6 +12,8 @@ import { ArrowLeft } from 'lucide-react'
 import { useQuizPaper } from './quiz/useQuizPaper.ts'
 import TakeView from './quiz/TakeView.tsx'
 import GradeView from './quiz/GradeView.tsx'
+import { useIsNarrow } from '../hooks/useIsNarrow.ts'
+import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack.ts'
 import type { QuizResult } from '../quiz/types.ts'
 
 export default function QuizPaper() {
@@ -41,13 +43,25 @@ export default function QuizPaper() {
     navigate('/quiz?tab=pool')
   }
 
+  // 左滑返回 = 头部退出按钮的触屏拼法。做题态也接：退出本来就不弹确认，
+  // 手势跟按钮保持同一语义，不单独加一道闸。
+  const isNarrow = useIsNarrow()
+  const { ref: swipeRef, pointerHandlers: swipeHandlers } = useEdgeSwipeBack<HTMLDivElement>({
+    enabled: isNarrow,
+    onBack: exit,
+  })
+
   if (status === 'loading') {
     return <div className="h-screen bg-bg-page" />
   }
 
   if (status === 'not-found' || !quiz || validId == null) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-bg-page px-6 text-center">
+      <div
+        ref={swipeRef}
+        {...swipeHandlers}
+        className="flex h-screen flex-col items-center justify-center gap-3 bg-bg-page px-6 text-center"
+      >
         <p className="text-[14px] text-text-secondary">{t('quiz.paper.notFound')}</p>
         <button
           type="button"
@@ -63,29 +77,33 @@ export default function QuizPaper() {
 
   if (quiz.status === 'ready') {
     return (
-      <TakeView
-        quiz={quiz}
-        onExit={exit}
-        onSubmit={async (result: QuizResult, ms: number) => {
-          await submit(result)
-          setElapsedMs(ms)
-        }}
-      />
+      <div ref={swipeRef} {...swipeHandlers}>
+        <TakeView
+          quiz={quiz}
+          onExit={exit}
+          onSubmit={async (result: QuizResult, ms: number) => {
+            await submit(result)
+            setElapsedMs(ms)
+          }}
+        />
+      </div>
     )
   }
 
   return (
-    <GradeView
-      key={quiz.id}
-      quiz={quiz}
-      paperId={validId}
-      elapsedMs={elapsedMs}
-      explanationSession={explanationSession}
-      regenerateExplanations={regenerateExplanations}
-      saveAskThreads={saveAskThreads}
-      onExit={exit}
-      onRetake={retake}
-      onGoToPool={goToPool}
-    />
+    <div ref={swipeRef} {...swipeHandlers}>
+      <GradeView
+        key={quiz.id}
+        quiz={quiz}
+        paperId={validId}
+        elapsedMs={elapsedMs}
+        explanationSession={explanationSession}
+        regenerateExplanations={regenerateExplanations}
+        saveAskThreads={saveAskThreads}
+        onExit={exit}
+        onRetake={retake}
+        onGoToPool={goToPool}
+      />
+    </div>
   )
 }

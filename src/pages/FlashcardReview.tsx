@@ -21,6 +21,8 @@ import { ArrowLeft, BookOpen, CheckCircle2, Eye, RotateCcw } from "lucide-react"
 import Button from "../components/ui/Button";
 import PronounceButton from "../components/speech/PronounceButton";
 import { useSettings } from "../hooks/useSettings";
+import { useIsNarrow } from "../hooks/useIsNarrow";
+import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import type { DictionaryWord } from "../hooks/useDictionary";
 import { dueMergedEntries, mergeVocabWords, type MergedVocabEntry } from "../components/vocab/merge";
 import {
@@ -209,6 +211,13 @@ export default function FlashcardReview() {
     navigate(-1);
   }, [navigate]);
 
+  // 左滑返回 = 页头返回按钮的触屏拼法；goBack 自带「评分提交中不退出」的闸。
+  const isNarrow = useIsNarrow();
+  const { ref: swipeBackRef, pointerHandlers: swipeBackHandlers } = useEdgeSwipeBack<HTMLElement>({
+    enabled: isNarrow,
+    onBack: goBack,
+  });
+
   const recordReview = useCallback(async (id: string, rating: Rating) => {
     const reviewed = await invoke<DictionaryWord>("record_vocab_review", { id, rating });
     notifyReaders("vocab-changed", { bookId: reviewed.book_id, cfi: reviewed.cfi });
@@ -325,7 +334,15 @@ export default function FlashcardReview() {
   }, [reviewAnswerVisible, reviewing]);
 
   return (
-    <main ref={mainRef} tabIndex={-1} className="flex h-screen flex-col bg-bg-page text-text-primary outline-none">
+    <main
+      ref={(node) => {
+        mainRef.current = node;
+        swipeBackRef(node);
+      }}
+      tabIndex={-1}
+      className="flex h-screen flex-col bg-bg-page text-text-primary outline-none"
+      {...swipeBackHandlers}
+    >
       <header className={`sticky top-0 z-10 flex min-h-[52px] shrink-0 items-center gap-3 border-b border-border bg-bg-surface/95 px-4 backdrop-blur ${TOP_INSET}`}>
         <button
           type="button"

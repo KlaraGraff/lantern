@@ -120,6 +120,7 @@ import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-p
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
 import type { TapZone } from "./reader/tap-zones";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
+import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import { isCoarsePointer } from "../hooks/useCoarsePointer";
 import {
   fileStatusExplainsFailure,
@@ -656,7 +657,9 @@ export default function Reader() {
   // itself (which must not push a new entry for the pop it just performed).
   const goToLocation = useCallback((location: string) => {
     if (isTextBook) textReaderNavigateRef.current?.(location);
-    else viewRef.current?.goTo(location);
+    else viewRef.current?.goTo(location).catch((error: unknown) => {
+      logIgnoredError("reader.goto-location", error);
+    });
   }, [isTextBook]);
 
   const navigateToChapter = useCallback((href: string) => {
@@ -1088,11 +1091,12 @@ export default function Reader() {
    * and the outer zones simply do nothing, while the middle one still raises
    * the chrome.
    *
-   * Paging by tap has a rhythm ceiling the swipe does not: each tap waits out
-   * the double-click grace before it commits (see the narrow branch in
-   * `useReaderInteractions`), so two taps inside that window are a double-tap —
-   * the AI lookup the reader chose over fast tap-paging — not two turns. A
-   * reader in a hurry can still swipe, which commits immediately.
+   * Taps commit immediately: whether a tap is a lookup or a turn is decided
+   * by where it lands — on a word it looks the word up, on blank space it
+   * pages (the narrow branch in `useReaderInteractions`) — not by a timing
+   * window. With no double-click grace, fast tap-paging never stalls; the
+   * accepted cost is the occasional page-turn tap that grazes a word and
+   * opens its card instead.
    */
   const handleTapZone = useCallback((zone: TapZone) => {
     if (zone === "menu") {
@@ -1821,11 +1825,31 @@ export default function Reader() {
     setSidePanel(null);
   }, []);
 
+  // Left-edge swipe on whichever panel is covering the page — the touch
+  // spelling of the ⟨ in the panel's own bar, one level, never the book. The
+  // reading surface itself deliberately has no swipe-back (the edge belongs to
+  // page turns), which is why this enables only while a panel is up: the
+  // handlers live on the panel shells, and with no shell mounted the page
+  // never sees them.
+  const { ref: panelSwipeRef, pointerHandlers: panelSwipeHandlers } = useEdgeSwipeBack<HTMLDivElement>({
+    enabled: isNarrow && narrowPanel({ tocOpen, searchOpen, sidePanel }) !== null,
+    onBack: () => {
+      setTocOpen(false);
+      setSearchOpen(false);
+      setSidePanel(null);
+    },
+  });
+
   const handleTocNavigate = useCallback((page: number) => {
     const chapter = chapters[page - 1];
-    if (chapter?.targetHref) navigateToChapter(chapter.targetHref);
+    if (!chapter?.targetHref) return;
+    // Refuse — with the panel kept up so the tap isn't silently consumed —
+    // when the engine can't navigate yet; closing the panel around a no-op
+    // reads as "tapped, nothing happened".
+    if (isTextBook ? !textReaderNavigateRef.current : !viewRef.current) return;
+    navigateToChapter(chapter.targetHref);
     closeNarrowPanels();
-  }, [chapters, closeNarrowPanels, navigateToChapter]);
+  }, [chapters, closeNarrowPanels, isTextBook, navigateToChapter]);
 
   const closeReaderSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -2420,8 +2444,19 @@ export default function Reader() {
             ) : (
               <button
                 type="button"
-                onClick={() => navigate("/")}
-                aria-label={t("reader.returnToLibrary")}
+                // One level at a time. The covering panels sit in the body
+                // below this strip, so with one open the screen shows two
+                // back-ish arrows stacked at the top-left — and the topmost
+                // exiting the whole book while the one under it means "close
+                // the panel" is exactly the trap it looks like.
+                onClick={() => {
+                  if (coveringPanel) {
+                    closeAllPanels();
+                    return;
+                  }
+                  navigate("/");
+                }}
+                aria-label={coveringPanel ? t("reader.panelBack") : t("reader.returnToLibrary")}
                 className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-lg text-text-muted"
               >
                 <ArrowLeft size={18} />
@@ -2692,7 +2727,11 @@ export default function Reader() {
         className="relative flex flex-1 overflow-hidden"
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
-        <div className={panelShellClass(tocOpen, "md:w-80", coveringPanel === "toc")}>
+        <div
+          className={panelShellClass(tocOpen, "md:w-80", coveringPanel === "toc")}
+          ref={coveringPanel === "toc" ? panelSwipeRef : undefined}
+          {...(coveringPanel === "toc" ? panelSwipeHandlers : undefined)}
+        >
           {coveringPanel === "toc" && coveringPanelBar("toc")}
           <div className="min-h-0 flex-1">
             <TableOfContents
@@ -2706,7 +2745,11 @@ export default function Reader() {
           </div>
         </div>
         {supportsSearch && bookId && (
-          <div className={panelShellClass(searchOpen, "md:w-80", coveringPanel === "search")}>
+          <div
+            className={panelShellClass(searchOpen, "md:w-80", coveringPanel === "search")}
+            ref={coveringPanel === "search" ? panelSwipeRef : undefined}
+            {...(coveringPanel === "search" ? panelSwipeHandlers : undefined)}
+          >
             {coveringPanel === "search" && coveringPanelBar("search")}
             <div className="min-h-0 flex-1">
               <BookSearchPanel
@@ -3031,13 +3074,17 @@ export default function Reader() {
           />
         )}
         <div
-          ref={panelRef}
+          ref={(node) => {
+            panelRef.current = node;
+            if (coveringPanel === "ai" || coveringPanel === "traces") panelSwipeRef(node);
+          }}
           className={panelShellClass(sidePanel !== null, "", coveringPanel === "ai" || coveringPanel === "traces")}
           // `panelWidth` is undefined below the breakpoint, so no inline width
           // is written and the panel's classes are free to size it. An inline
           // width would beat every one of them.
           style={{ width: panelWidth }}
           onPointerDownCapture={blockPageTurnKeyboard}
+          {...(coveringPanel === "ai" || coveringPanel === "traces" ? panelSwipeHandlers : undefined)}
         >
           {coveringPanel === "ai" && coveringPanelBar("ai")}
           {coveringPanel === "traces" && coveringPanelBar("traces")}

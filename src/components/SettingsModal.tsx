@@ -26,6 +26,7 @@ import {
 } from "./settings/settings-sections";
 import { useSettings } from "../hooks/useSettings";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
+import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import { platform } from "../services/platform";
 import { focusFirstElement, trapTabKey } from "./focus-trap";
 import type { SettingsSection, SettingsView } from "./settings-destination";
@@ -132,6 +133,28 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
       close();
     }
   }, []);
+  // Left-edge swipe on the narrow modal — the touch spelling of the nav bar's
+  // ⟨, walking the same layers Escape does below: a settings sub-page first,
+  // then a pushed section, then the modal itself. Off while an overlay
+  // preview covers the modal: the preview owns the screen, and its own
+  // dismissal is a button, not an edge.
+  const { ref: modalSwipeRef, pointerHandlers: modalSwipeHandlers } = useEdgeSwipeBack<HTMLDivElement>({
+    enabled: open && isNarrow && !overlayPreviewOpen,
+    onBack: () => {
+      const dismiss = previewDismissRef.current;
+      const back = subPageBackRef.current;
+      const popLevel = levelBackRef.current;
+      if (dismiss) {
+        dismiss();
+      } else if (back) {
+        back();
+      } else if (popLevel) {
+        popLevel();
+      } else {
+        requestClose();
+      }
+    },
+  });
   const requestSection = (section: SettingsSection) => {
     if (section === activeSection) return;
     const changeSection = () => setActiveSection(section);
@@ -418,7 +441,10 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
           atRoot ? "bg-bg-page" : "bg-bg-surface"
         }`}
       >
-        <div className="flex min-h-0 flex-1 flex-col">
+        {/* The swipe slides this wrapper, not the fixed root: the root keeps
+            painting the modal's background behind the drag, so a level pop
+            reveals settings surface rather than the page under the modal. */}
+        <div className="flex min-h-0 flex-1 flex-col" ref={modalSwipeRef} {...modalSwipeHandlers}>
           {/* Nav bar. The root list carries its own grey page colour up to the
               top edge under a finger; a narrow window keeps the ruled bar it
               shares with every other level. */}
