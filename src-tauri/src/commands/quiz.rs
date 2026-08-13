@@ -41,6 +41,10 @@ pub struct QuizPaperRow {
     pub content_json: String,
     pub result_json: Option<String>,
     pub ask_threads_json: Option<String>,
+    /// Progressive-delivery generation plan (docs/impls/quiz-progressive-delivery.md):
+    /// per-group words + state while `status = 'generating'`; NULL otherwise.
+    /// Opaque JSON owned by the frontend, like every other JSON column here.
+    pub generation_json: Option<String>,
 }
 
 /// A `quiz_wrong_words` row, returned to the frontend for the pool table and
@@ -105,7 +109,7 @@ struct QuizResultInput {
 // ===== Row mapping =====
 
 const PAPER_COLS: &str =
-    "id, created_at, status, config_json, words_json, content_json, result_json, ask_threads_json";
+    "id, created_at, status, config_json, words_json, content_json, result_json, ask_threads_json, generation_json";
 
 fn row_to_paper(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuizPaperRow> {
     Ok(QuizPaperRow {
@@ -117,6 +121,7 @@ fn row_to_paper(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuizPaperRow> {
         content_json: row.get(5)?,
         result_json: row.get(6)?,
         ask_threads_json: row.get(7)?,
+        generation_json: row.get(8)?,
     })
 }
 
@@ -307,21 +312,116 @@ fn all_wrong_words(conn: &rusqlite::Connection) -> AppResult<Vec<WrongWordEntry>
 
 // ===== Paper CRUD =====
 
-#[tauri::command]
-pub fn create_quiz_paper(
+/// The two statuses the frontend may set through the generation surface
+/// ('submitted' is only ever reached through `submit_quiz_paper`).
+fn validate_generation_status(status: &str) -> AppResult<()> {
+    if status == "generating" || status == "ready" {
+        Ok(())
+    } else {
+        Err(AppError::Other(format!("QUIZ_STATUS_INVALID: {status}")))
+    }
+}
+
+/// Creates a paper. Progressive delivery (docs/impls/quiz-progressive-delivery.md)
+/// creates the row as soon as the *first* article lands: `status = 'generating'`
+/// plus a `generation_json` plan. A single-article paper (and the pre-progressive
+/// path) passes `status = 'ready'` with no plan.
+pub(crate) fn create_quiz_paper_inner(
     created_at: String,
+    status: String,
     config_json: String,
     words_json: String,
     content_json: String,
-    db: State<'_, Db>,
+    generation_json: Option<String>,
+    db: &Db,
 ) -> AppResult<i64> {
-    let conn = writer(&db)?;
+    validate_generation_status(&status)?;
+    let conn = writer(db)?;
     conn.execute(
-        "INSERT INTO quiz_papers (created_at, status, config_json, words_json, content_json)
-             VALUES (?1, 'ready', ?2, ?3, ?4)",
-        params![created_at, config_json, words_json, content_json],
+        "INSERT INTO quiz_papers (created_at, status, config_json, words_json, content_json, generation_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![created_at, status, config_json, words_json, content_json, generation_json],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn create_quiz_paper(
+    created_at: String,
+    status: String,
+    config_json: String,
+    words_json: String,
+    content_json: String,
+    generation_json: Option<String>,
+    db: State<'_, Db>,
+) -> AppResult<i64> {
+    create_quiz_paper_inner(
+        created_at,
+        status,
+        config_json,
+        words_json,
+        content_json,
+        generation_json,
+        &db,
+    )
+}
+
+/// Progressive delivery's per-article writeback: each finished (or failed)
+/// article advances the paper in one UPDATE — appended content, the grown
+/// word list (per-article coverage settlement), the generation plan, and the
+/// status ('generating' while articles remain, 'ready' once all are done,
+/// at which point `generation_json` is passed as NULL and the row becomes
+/// shape-identical to a non-progressive paper).
+///
+/// Refuses to touch a submitted paper: submit settles the wrong-word pool and
+/// FSRS from `words_json`/`result_json`, and rewriting the paper body under a
+/// settled result would desync the two. Unreachable through the UI (submit is
+/// gated until 'ready'); this is defence in depth.
+pub(crate) fn update_quiz_paper_generation_inner(
+    id: i64,
+    content_json: String,
+    words_json: String,
+    status: String,
+    generation_json: Option<String>,
+    db: &Db,
+) -> AppResult<()> {
+    validate_generation_status(&status)?;
+    let conn = writer(db)?;
+    let changed = conn.execute(
+        "UPDATE quiz_papers
+             SET content_json = ?1, words_json = ?2, status = ?3, generation_json = ?4
+             WHERE id = ?5 AND status != 'submitted'",
+        params![content_json, words_json, status, generation_json, id],
+    )?;
+    if changed == 0 {
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM quiz_papers WHERE id = ?1",
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        return Err(AppError::Other(if exists {
+            "QUIZ_PAPER_ALREADY_SUBMITTED".to_string()
+        } else {
+            "QUIZ_PAPER_NOT_FOUND".to_string()
+        }));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_quiz_paper_generation(
+    id: i64,
+    content_json: String,
+    words_json: String,
+    status: String,
+    generation_json: Option<String>,
+    db: State<'_, Db>,
+) -> AppResult<()> {
+    update_quiz_paper_generation_inner(id, content_json, words_json, status, generation_json, &db)
 }
 
 #[tauri::command]
@@ -458,6 +558,13 @@ pub(crate) fn submit_quiz_paper_inner(
 
         if paper.status == "submitted" {
             return Ok(paper);
+        }
+        // Progressive delivery: a paper still generating has an incomplete
+        // word list (per-article settlement) — settling the pool/FSRS now
+        // would silently drop the pending articles' words. The frontend
+        // disables submit until 'ready'; this guard backs it.
+        if paper.status == "generating" {
+            return Err(AppError::Other("QUIZ_PAPER_NOT_READY".to_string()));
         }
 
         let demo = serde_json::from_str::<QuizConfigDemoFlag>(&paper.config_json)
@@ -1152,5 +1259,109 @@ mod tests {
             .unwrap();
         assert_eq!(rating_a, "again");
         assert_eq!(rating_b, "again");
+    }
+
+    // ===== Progressive delivery (docs/impls/quiz-progressive-delivery.md) =====
+
+    #[test]
+    fn create_generating_paper_then_advance_to_ready() {
+        let (_dir, db, _sync) = setup_db();
+        let id = create_quiz_paper_inner(
+            "2026-01-01T00:00:00.000Z".into(),
+            "generating".into(),
+            "{}".into(),
+            "[]".into(),
+            "{\"passages\":[]}".into(),
+            Some("{\"groups\":[]}".into()),
+            &db,
+        )
+        .unwrap();
+
+        let paper = fetch_paper(&db.reader(), id).unwrap().unwrap();
+        assert_eq!(paper.status, "generating");
+        assert_eq!(paper.generation_json.as_deref(), Some("{\"groups\":[]}"));
+
+        // Last article lands: content/words grow, status flips to ready, plan cleared —
+        // the row must end up shape-identical to a non-progressive paper.
+        update_quiz_paper_generation_inner(
+            id,
+            "{\"passages\":[1,2]}".into(),
+            "[\"subsidy\"]".into(),
+            "ready".into(),
+            None,
+            &db,
+        )
+        .unwrap();
+        let paper = fetch_paper(&db.reader(), id).unwrap().unwrap();
+        assert_eq!(paper.status, "ready");
+        assert_eq!(paper.content_json, "{\"passages\":[1,2]}");
+        assert_eq!(paper.words_json, "[\"subsidy\"]");
+        assert!(paper.generation_json.is_none());
+    }
+
+    #[test]
+    fn create_rejects_invalid_status() {
+        let (_dir, db, _sync) = setup_db();
+        let err = create_quiz_paper_inner(
+            "2026-01-01T00:00:00.000Z".into(),
+            "submitted".into(),
+            "{}".into(),
+            "[]".into(),
+            "{}".into(),
+            None,
+            &db,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("QUIZ_STATUS_INVALID"));
+    }
+
+    #[test]
+    fn generation_update_refuses_submitted_and_missing_papers() {
+        let (_dir, db, sync) = setup_db();
+        let id = create_paper(&db, "2026-01-01T00:00:00.000Z", false);
+        submit_quiz_paper_inner(id, wrong_result_json("subsidy", "B"), &db, &sync).unwrap();
+
+        let err = update_quiz_paper_generation_inner(
+            id,
+            "{}".into(),
+            "[]".into(),
+            "ready".into(),
+            None,
+            &db,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("QUIZ_PAPER_ALREADY_SUBMITTED"));
+
+        let err = update_quiz_paper_generation_inner(
+            999,
+            "{}".into(),
+            "[]".into(),
+            "ready".into(),
+            None,
+            &db,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("QUIZ_PAPER_NOT_FOUND"));
+    }
+
+    #[test]
+    fn submit_refuses_generating_paper() {
+        let (_dir, db, sync) = setup_db();
+        let id = create_quiz_paper_inner(
+            "2026-01-01T00:00:00.000Z".into(),
+            "generating".into(),
+            "{}".into(),
+            "[]".into(),
+            "{}".into(),
+            Some("{\"groups\":[]}".into()),
+            &db,
+        )
+        .unwrap();
+
+        let err =
+            submit_quiz_paper_inner(id, wrong_result_json("subsidy", "B"), &db, &sync).unwrap_err();
+        assert!(err.to_string().contains("QUIZ_PAPER_NOT_READY"));
+        // And nothing settled: the pool must be untouched by the refused submit.
+        assert!(wrong_words_table(&db).is_empty());
     }
 }
