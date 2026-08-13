@@ -940,7 +940,9 @@ export default function ReadingStats({
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1040px] space-y-6 px-4 py-5 md:px-7 md:py-7">
+      {/* pb carries the home indicator's inset — this is the page's own
+          scroll floor, nothing docked below it to absorb the overlap. */}
+      <div className="mx-auto w-full max-w-[1040px] space-y-6 px-4 pt-5 pb-[calc(var(--spacing-safe-bottom)+1.25rem)] md:px-7 md:pt-7 md:pb-7">
         {/* Same 2×2 fold as the learning strip and the book page: four
             columns of 24px serif figures need about 320px more than a phone
             has. */}

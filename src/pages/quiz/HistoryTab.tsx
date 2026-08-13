@@ -31,7 +31,8 @@ export default function HistoryTab() {
   }
 
   return (
-    <div className="mx-auto max-w-[900px] px-2 py-2">
+    // pb carries the home indicator's inset — same reasoning as SetupTab.
+    <div className="mx-auto max-w-[900px] px-2 pt-2 pb-[calc(var(--spacing-safe-bottom)+0.5rem)]">
       {papers.map((paper) => (
         <HistoryRow key={paper.id} paper={paper} locale={locale} t={t} onOpen={() => navigate(`/quiz/paper/${paper.id}`)} />
       ))}

@@ -336,9 +336,11 @@ export default function AnnotationsContent({ menuButton }: { menuButton?: ReactN
               <p className="mt-1 text-[13px] text-text-muted">{t("annotations.subtitle")}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-text-muted">{t("annotations.count", { count: total })}</span>
-            <button type="button" onClick={() => downloadCsv().catch(() => {})} title={t("annotations.export")} aria-label={t("annotations.export")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"><Download size={15} /></button>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Same reason as `QaContent`: the sentence beside it will eat the
+                whole row on a phone and wrap the count's unit onto its own line. */}
+            <span className="whitespace-nowrap text-[12px] text-text-muted">{t("annotations.count", { count: total })}</span>
+            <button type="button" onClick={() => downloadCsv().catch(() => {})} title={t("annotations.export")} aria-label={t("annotations.export")} className="tap-44 flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"><Download size={15} /></button>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -353,7 +355,9 @@ export default function AnnotationsContent({ menuButton }: { menuButton?: ReactN
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-page">
+      {/* pb adds the home indicator's inset on top of the normal page
+          padding, matching Home.tsx's book-list floor. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-page pb-[calc(var(--spacing-safe-bottom)+var(--spacing-page))]">
         {loading ? (
           <p className="text-[13px] text-text-muted">{t("home.loading")}</p>
         ) : items.length === 0 ? (
@@ -474,11 +478,11 @@ export default function AnnotationsContent({ menuButton }: { menuButton?: ReactN
                         </button>
                       )}
                       {item.book_id && item.location && (
-                        <button type="button" onClick={() => openInReader(item.book_id!, { cfi: item.location! })} title={t("annotations.locate")} aria-label={t("annotations.locate")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text">
+                        <button type="button" onClick={() => openInReader(item.book_id!, { cfi: item.location! })} title={t("annotations.locate")} aria-label={t("annotations.locate")} className="tap-44 flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text">
                           <BookOpen size={14} />
                         </button>
                       )}
-                      <button type="button" onClick={() => { stopEditing(); setConfirmingId(item.id); }} title={t("common.delete")} aria-label={t("common.delete")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text">
+                      <button type="button" onClick={() => { stopEditing(); setConfirmingId(item.id); }} title={t("common.delete")} aria-label={t("common.delete")} className="tap-44 flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text">
                         <Trash2 size={14} />
                       </button>
                     </div>

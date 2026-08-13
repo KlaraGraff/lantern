@@ -372,7 +372,9 @@ export default function FlashcardReview() {
         <div className="h-full bg-accent transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${reviewProgress.ratio * 100}%` }} />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-8">
+      {/* pb carries the home indicator's inset — the last card's controls
+          would otherwise end up underneath it. */}
+      <div className="flex-1 overflow-y-auto px-4 pt-8 pb-[calc(var(--spacing-safe-bottom)+2rem)]">
         {queue === null ? null : done ? (
           <div className="mx-auto max-w-[520px] py-10 text-center">
             <CheckCircle2 size={34} className="mx-auto text-accent" />

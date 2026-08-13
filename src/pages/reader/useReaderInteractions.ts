@@ -705,8 +705,20 @@ export function useReaderInteractions({
           );
           const wordInteraction = wordRange ? interactionForRange(wordRange, false) : null;
           if (wordRange && wordInteraction) {
-            replaceDocumentSelection(doc, wordRange);
-            selectionSnapshot = snapshotSelectionRange(wordRange);
+            // No document selection is painted, unlike every other lookup path
+            // here. A real selection is what makes iOS draw its two blue
+            // handles, and on this path they are a lie twice over: dragging
+            // one does not widen the lookup (the card is already built from
+            // the range this tap produced), and extending to a phrase is the
+            // long press's job, which answers with the app's own menu. What
+            // they do accomplish is leaving grab handles lying on the page
+            // after every single tap of the primary reading gesture.
+            //
+            // Nothing downstream misses it — `wordInteraction` already carries
+            // the text, the CFI and the anchor rect, so 标记 / 收藏 / 复制 read
+            // from it, never from the live selection. Clearing the snapshot
+            // keeps that honest: it describes a selection, and there is none.
+            selectionSnapshot = null;
             openLearningInteraction(wordInteraction);
             return;
           }

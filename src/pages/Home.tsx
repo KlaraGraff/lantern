@@ -125,6 +125,9 @@ export default function Home() {
   const drawerPanelRef = useRef<HTMLDivElement>(null);
   const drawerScrimRef = useRef<HTMLDivElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
+  // Set when the drawer closes because it was *used* — a section was picked, or
+  // settings opened — rather than dismissed. See the focus effect below.
+  const drawerHandedOffRef = useRef(false);
   // The gesture never measures the DOM itself, so the travel distance is read
   // here and cached: reading `offsetWidth` inside a pointermove would force a
   // synchronous layout on every frame of the drag.
@@ -145,6 +148,7 @@ export default function Home() {
     // `vocabInitialView` above.
     setVocabInitialView("all");
     setActiveFilter(filter);
+    drawerHandedOffRef.current = true;
     setDrawerOpen(false);
   }, [setDrawerOpen]);
 
@@ -196,11 +200,16 @@ export default function Home() {
     }
     if (drawerOpen) {
       drawerPanelRef.current?.focus({ preventScroll: true });
-    } else if (wasDrawerOpen.current) {
+    } else if (wasDrawerOpen.current && !drawerHandedOffRef.current) {
       // Only after a drawer that was actually open — otherwise the page would
-      // steal focus to the hamburger on first paint.
+      // steal focus to the hamburger on first paint — and only when it was
+      // dismissed rather than used. Picking a section or opening settings hands
+      // the screen to something else, and that something else is where a screen
+      // reader should land; pulling focus back to the ☰ would announce the
+      // button the reader just left instead of the page they asked for.
       hamburgerRef.current?.focus({ preventScroll: true });
     }
+    if (!drawerOpen) drawerHandedOffRef.current = false;
     wasDrawerOpen.current = drawerOpen;
   }, [drawerOpen, isNarrow]);
 
@@ -514,6 +523,7 @@ export default function Home() {
     userName,
     onOpenSettings: () => {
       openSettings();
+      drawerHandedOffRef.current = true;
       setDrawerOpen(false);
     },
     syncProgress,

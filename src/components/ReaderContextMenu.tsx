@@ -20,6 +20,7 @@ import {
 } from "./reader-interaction";
 import DictionaryCard, { type DictionaryEntry } from "./DictionaryCard";
 import { anchorTransformOrigin } from "./motion";
+import { readSafeInsetBottom } from "../utils/safe-inset";
 import {
   clickSpendsGlance,
   glanceCounts,
@@ -274,6 +275,13 @@ export default function ReaderContextMenu({
       // settles a frame later.
       const rect = { width: element.offsetWidth, height: element.offsetHeight };
       const gap = 8;
+      // The floor is the home indicator's, not the screen's. A card clamped to
+      // 8px off the bottom edge of a phone puts its last row — 复制 on a word,
+      // and the row a reader is most likely to want after reading the card —
+      // under the indicator, where the system claims the touch. Every other
+      // bottom-anchored surface in the app already pays this inset in CSS; the
+      // positioner has to pay it in numbers because it writes `top` itself.
+      const floor = window.innerHeight - readSafeInsetBottom();
       const roomRight = window.innerWidth - anchorRect.right - gap;
       const roomLeft = anchorRect.left - gap;
       const canPlaceBeside = roomRight >= rect.width || roomLeft >= rect.width;
@@ -283,8 +291,8 @@ export default function ReaderContextMenu({
           ? anchorRect.left - rect.width - gap
           : Math.max(gap, Math.min(anchorRect.right - rect.width, window.innerWidth - rect.width - gap));
       const top = canPlaceBeside
-        ? Math.max(gap, Math.min(anchorRect.top, window.innerHeight - rect.height - gap))
-        : anchorRect.bottom + gap + rect.height <= window.innerHeight
+        ? Math.max(gap, Math.min(anchorRect.top, floor - rect.height - gap))
+        : anchorRect.bottom + gap + rect.height <= floor
           ? anchorRect.bottom + gap
           : Math.max(gap, anchorRect.top - rect.height - gap);
       element.style.left = `${left}px`;

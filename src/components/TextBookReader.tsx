@@ -1263,8 +1263,13 @@ function TextBookReader({
       if (wordRange && containerRef.current?.contains(wordRange.startContainer)) {
         const wordInteraction = interactionFromRange(wordRange, "word-menu");
         if (wordInteraction?.normalizedText) {
-          replaceDocumentSelection(window.document, wordRange);
-          doubleClickSelectionRef.current = snapshotSelectionRange(wordRange);
+          // No document selection is painted here, and the snapshot is dropped
+          // with it — same call as the foliate reader makes on this path, for
+          // the same reason: a real selection is what makes iOS draw its blue
+          // handles, dragging one would not widen a card already built from
+          // this range, and phrase selection belongs to the long press. See
+          // `useReaderInteractions` for the full argument.
+          doubleClickSelectionRef.current = null;
           onInteraction(wordInteraction);
           return;
         }

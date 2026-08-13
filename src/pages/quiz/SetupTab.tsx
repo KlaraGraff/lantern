@@ -117,7 +117,9 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
   };
 
   return (
-    <div className="mx-auto max-w-[900px] px-5 py-6">
+    // pb carries the home indicator's inset — this tab's scroll wrapper
+    // (Quiz.tsx) is unpadded, so the floor here is the physical screen edge.
+    <div className="mx-auto max-w-[900px] px-5 pt-6 pb-[calc(var(--spacing-safe-bottom)+1.5rem)]">
       {latestUnfinished && (
         <div className="mb-4 flex items-start gap-3 rounded-xl border border-border bg-bg-surface p-4">
           <div className="flex-1 min-w-0">

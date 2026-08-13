@@ -64,12 +64,17 @@ export default function LibraryHintBanner() {
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-bg-muted px-page py-2">
       <div className="flex min-w-0 items-center gap-2 text-[12px] text-text-secondary">
         <AlertCircle size={14} className="shrink-0 text-text-muted" />
-        <span className="truncate">{t(`home.onboardingHint.${reason}`)}</span>
+        {/* Wraps rather than truncates. Both hints spend their second half
+            saying what stops working — "…查词和解释暂时用不了" — and a phone
+            has room for about the first half, so a single truncated line cut
+            the sentence exactly where it started to matter. Still capped at
+            two lines: this is a hint above the shelf, not a paragraph. */}
+        <span className="line-clamp-2">{t(`home.onboardingHint.${reason}`)}</span>
       </div>
       <button
         type="button"
         onClick={() => openSettings(reason === "aiNotConfigured" ? "services" : "general")}
-        className="shrink-0 text-[12px] font-medium text-accent-text hover:opacity-70"
+        className="tap-44 shrink-0 text-[12px] font-medium text-accent-text hover:opacity-70"
       >
         {t("home.onboardingHint.openSettings")}
       </button>

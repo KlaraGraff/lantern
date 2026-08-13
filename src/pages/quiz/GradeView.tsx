@@ -212,7 +212,9 @@ export default function GradeView(props: {
       </div>
 
       <div className={`flex-1 overflow-y-auto ${ask.drawerOpen ? 'md:mr-[340px]' : ''}`}>
-        <div className="mx-auto max-w-[720px] px-4 py-6">
+        {/* pb carries the home indicator's inset — unlike TakeView there's no
+            fixed bottom bar here to absorb it, only a floating ask button. */}
+        <div className="mx-auto max-w-[720px] px-4 pt-6 pb-[calc(var(--spacing-safe-bottom)+1.5rem)]">
           {result && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-bg-surface px-4 py-3">
               <span className="text-[19px] font-semibold text-text-primary">

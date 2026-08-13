@@ -67,7 +67,9 @@ export default function PoolTab() {
   }
 
   return (
-    <div className="mx-auto max-w-[900px] px-5 py-6">
+    // pb carries the home indicator's inset — same reasoning as SetupTab,
+    // this tab's scroll wrapper (Quiz.tsx) is unpadded.
+    <div className="mx-auto max-w-[900px] px-5 pt-6 pb-[calc(var(--spacing-safe-bottom)+1.5rem)]">
       <div className="mb-4 rounded-lg border border-border-light bg-bg-muted px-3.5 py-3 text-[12.5px] leading-[1.6] text-text-secondary">
         <span className="mr-1.5 rounded bg-bg-input px-1.5 py-0.5 text-[11px] font-medium text-text-muted">
           {t("quiz.pool.mechanismBanner.tag")}

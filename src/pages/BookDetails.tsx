@@ -324,7 +324,11 @@ export default function BookDetails() {
           </div>
         </BottomSheet>
 
-        <div className="mx-auto w-full max-w-[1000px] px-4 py-5 md:px-7 md:py-6">
+        {/* The bottom pad carries the home indicator's inset. Without it the
+            last file row ends 20px off the screen edge, which on a phone is
+            underneath the indicator — the page still scrolled to its true end,
+            but it reads as one that refuses to go the last centimetre. */}
+        <div className="mx-auto w-full max-w-[1000px] px-4 pt-5 pb-[calc(var(--spacing-safe-bottom)+1.25rem)] md:px-7 md:pt-6 md:pb-6">
           <section className="grid grid-cols-[96px_1fr] gap-4 border-b border-border pb-5 md:grid-cols-[120px_1fr] md:gap-[22px] md:pb-[22px]">
             <div className="aspect-[3/4] w-full overflow-hidden rounded-md bg-bg-muted shadow-card md:w-[120px]">
               {book.cover_data ? (

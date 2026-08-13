@@ -144,7 +144,11 @@ export default function QaContent({ menuButton }: { menuButton?: ReactNode } = {
               <p className="mt-1 text-[13px] text-text-muted">{t("qa.subtitle")}</p>
             </div>
           </div>
-          <span className="text-[12px] text-text-muted">{t("qa.count", { count: total })}</span>
+          {/* Never wraps. The subtitle beside it is a full sentence, and on a
+              phone it takes every pixel the row will give it — which broke
+              "0 entries" over two lines, the number on one and its unit on the
+              next. The count is three characters; it gets its three. */}
+          <span className="shrink-0 whitespace-nowrap text-[12px] text-text-muted">{t("qa.count", { count: total })}</span>
         </div>
         <div className="flex flex-col gap-2 md:flex-row md:items-center">
           <Input
@@ -158,7 +162,9 @@ export default function QaContent({ menuButton }: { menuButton?: ReactNode } = {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-page">
+      {/* pb adds the home indicator's inset on top of the normal page
+          padding, matching AnnotationsContent.tsx / Home.tsx. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-page pb-[calc(var(--spacing-safe-bottom)+var(--spacing-page))]">
         {loading ? (
           <p className="text-[13px] text-text-muted">{t("home.loading")}</p>
         ) : isEmpty ? (

@@ -727,7 +727,12 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 md:flex-nowrap md:justify-normal md:gap-0">
             {contentTab === "vocab" && (
-              <div className="flex items-center gap-2 mr-2">
+              // Full width on a phone, so the row below it is the four icon
+              // buttons and nothing else. Left to wrap on its own, six controls
+              // in a 440pt row put five on the first line and stranded the
+              // sixth — the list-view toggle — alone on a second line with a
+              // hand's width of empty space beside it.
+              <div className="flex w-full items-center gap-2 md:mr-2 md:w-auto">
                 <Button
                   variant="secondary"
                   size="md"
@@ -757,7 +762,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                     aria-label={t("vocab.backup.export")}
                     onClick={() => setBackupMenuOpen((open) => !open)}
                     disabled={exporting || importing}
-                    className="size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input disabled:opacity-50 cursor-pointer"
+                    className="tap-44 size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input disabled:opacity-50 cursor-pointer"
                   >
                     <Download size={16} />
                   </button>
@@ -778,7 +783,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                   aria-label={t("vocab.backup.import")}
                   onClick={() => chooseVocabBackup().catch(() => {})}
                   disabled={exporting || importing}
-                  className="size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input disabled:opacity-50 cursor-pointer"
+                  className="tap-44 size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input disabled:opacity-50 cursor-pointer"
                 >
                   <Upload size={16} />
                 </button>
@@ -790,15 +795,15 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                 aria-label={t("vocab.export")}
                 onClick={exportCsv}
                 disabled={exporting}
-                className="size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input disabled:opacity-50 cursor-pointer"
+                className="tap-44 size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input disabled:opacity-50 cursor-pointer"
               >
                 <Download size={16} />
               </button>
             )}
-            <Button variant="icon" size="md" active={view === "card"} onClick={() => setView("card")}>
+            <Button variant="icon" size="md" className="touch:size-11" active={view === "card"} onClick={() => setView("card")}>
               <LayoutGrid size={16} />
             </Button>
-            <Button variant="icon" size="md" active={view === "list"} onClick={() => setView("list")}>
+            <Button variant="icon" size="md" className="touch:size-11" active={view === "list"} onClick={() => setView("list")}>
               <List size={16} />
             </Button>
           </div>
