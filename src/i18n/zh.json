@@ -2865,6 +2865,7 @@
   "quiz.generating.article_one": "第 {{num}} 篇 · {{count}} 个词",
   "quiz.generating.article_other": "第 {{num}} 篇 · {{count}} 个词",
   "quiz.generating.article.done": "完成",
+  "quiz.generating.article.failed": "这篇没生成成，其余篇不受影响，之后可以单独重新生成",
   "quiz.generating.pipeline.note": "每篇写完立刻各自校验：明答校验带原文把题重做一遍，答案对不上的作废；遮词自检遮住目标词再做，仍答得对说明没考到词，同样作废。没过检的题重出一轮。",
   "quiz.generating.step.done": "发卷",
   "quiz.generating.step.done.note": "这一步亮起就可以开始做题；讲解会在你做题时于后台补齐",

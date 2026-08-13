@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { CompleteStructured, GenerateProgress } from "../src/quiz/generate.ts";
-import { generateExplanations, generateQuiz, regroupForExplanations } from "../src/quiz/generate.ts";
+import type { ArticleOutcome, ArticleStep, CompleteStructured, GenerateProgress } from "../src/quiz/generate.ts";
+import { generateArticle, generateExplanations, generateQuiz, regroupForExplanations } from "../src/quiz/generate.ts";
 import {
   answerCheckSchema,
   generatedExplanationsSchema,
@@ -18,7 +18,8 @@ import type { GrammarFillQuestion, Quiz, QuizConfig, ReadingQuestion } from "../
 //
 // completeStructured 的返回形状是 { data, requestMessage, rawResponse }（缓存链路
 // 复审新增，见 src/quiz/transport.ts）——测试替身一律用 structured() 包一层；
-// generateQuiz 的返回形状同样变成 { quiz, traces }。
+// generateQuiz 的返回形状同样变成 { quiz, traces, articles }（articles 是渐进
+// 发卷的按篇结算单元，见 generate.ts 的 ArticleOutcome）。
 
 const config: QuizConfig = {
   difficulty: "cet6",
@@ -1026,9 +1027,13 @@ describe("generateQuiz · 每篇独立流水线（并发行为）", () => {
     )
   })
 
-  it("某篇写稿失败后，其余篇写完不再发起校验/重出（共享中止标志，不给注定作废的卷烧调用）", async () => {
-    // 第 1 篇写稿直接失败 → generateQuiz reject、卷子定局；第 2 篇写稿被门闩
-    // 挡到 reject 之后才返回——此时它必须看到中止标志、跳过自己的明答校验。
+})
+
+describe("generateQuiz · 失败按篇隔离（渐进发卷语义，docs/impls/quiz-progressive-delivery.md §一.5）", () => {
+  it("某篇写稿失败只标记该篇 failed，其余篇照常校验并进卷；失败篇的词不进覆盖结算", async () => {
+    // 第 1 篇写稿直接失败；第 2 篇写稿被门闩挡到第 1 篇失败定局之后才返回——
+    // 旧版共享中止闸在这个时序下会让第 2 篇跳过校验、整卷 reject；渐进发卷
+    // 语义下第 2 篇必须照常发起明答校验、照常进卷（每一篇独立有价值）。
     const group1Words = ["alphaA", "alphaB", "alphaC", "alphaD", "alphaE", "alphaF", "alphaG"]
     const group2Words = ["betaA", "betaB", "betaC", "betaD", "betaE", "betaF"]
     const manyWords = [...group1Words, ...group2Words].map((word) => ({ word, origin: "today" as const }))
@@ -1039,34 +1044,193 @@ describe("generateQuiz · 每篇独立流水线（并发行为）", () => {
       releaseGroup2 = resolve
     })
     let answerCheckCalls = 0
+    const events: GenerateProgress[] = []
 
     const complete: CompleteStructured = (async (opts: any) => {
       const firstContent = String(opts.messages[0]?.content ?? "")
       if (opts.schema === generatedPaperStage1Schema) {
-        if (firstContent.includes("alphaA")) throw new Error("模拟第 1 篇写稿失败")
+        if (firstContent.includes("alphaA")) {
+          // 先放行第 2 篇再抛：保证第 2 篇的写稿在第 1 篇失败已定局之后才返回
+          releaseGroup2()
+          throw new Error("模拟第 1 篇写稿失败")
+        }
         await group2Gate
         return structured(structuredClone(group2Paper), "req-group2", JSON.stringify(group2Paper))
       }
       if (opts.schema === answerCheckSchema) {
         answerCheckCalls++
-        return structured({ readingAnswers: [], grammarAnswers: [] })
+        return structured({
+          readingAnswers: group2Words.map((_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
       }
       throw new Error(`未预期的调用：${firstContent.slice(0, 50)}`)
     }) as CompleteStructured
 
-    await assert.rejects(() =>
-      generateQuiz({
-        words: manyWords,
-        config: { ...config, types: ["reading"], maskedCheck: false },
-        complete,
-      }),
-    )
-    // reject 已定局，此刻才放行第 2 篇的写稿，再等两拍让它的流水线余下部分走完
-    releaseGroup2()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    const { quiz, articles } = await generateQuiz({
+      words: manyWords,
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onProgress: (e) => events.push(e),
+      complete,
+    })
 
-    assert.equal(answerCheckCalls, 0, "整卷已 reject 后，第 2 篇不该再发起明答校验")
+    assert.equal(answerCheckCalls, 1, "第 2 篇必须照常发起明答校验，不受第 1 篇失败牵连")
+    // 卷面只装成功篇；失败篇的词不进覆盖结算（words 只剩 beta 组）
+    assert.equal(quiz.passages.length, 1)
+    assert.equal(quiz.passages[0].title, "Demo-betaA")
+    assert.equal(quiz.readingQuestions.length, group2Words.length)
+    assert.deepEqual(quiz.words.map((w) => w.word), group2Words)
+    // 按篇产出：articles 保组序，第 1 篇 ok:false 且带原始错误与本组词（重生成要用）
+    assert.equal(articles.length, 2)
+    assert.equal(articles[0].ok, false)
+    assert.equal(articles[0].index, 0)
+    assert.deepEqual(articles[0].words.map((w) => w.word), group1Words)
+    assert.ok(articles[0].error instanceof Error)
+    assert.equal(articles[0].errorCode, null, "「模拟第 1 篇写稿失败」不是注册表里的错误码")
+    assert.equal(articles[0].passage, null)
+    assert.equal(articles[1].ok, true)
+    assert.equal(articles[1].index, 1)
+    assert.equal(articles[1].passage?.title, "Demo-betaA")
+    // 失败篇的进度事件终态是 failed（生成中屏与做题页占位共用）
+    assert.ok(events.some((e) => e.type === "article" && e.index === 0 && e.step === "failed"))
+  })
+
+  it("onArticle 在每条流水线 settle 时回调一次，成败都报", async () => {
+    const group1Words = ["alphaA", "alphaB", "alphaC", "alphaD", "alphaE", "alphaF", "alphaG"]
+    const group2Words = ["betaA", "betaB", "betaC", "betaD", "betaE", "betaF"]
+    const manyWords = [...group1Words, ...group2Words].map((word) => ({ word, origin: "today" as const }))
+    const group2Paper = makeReadingPaper(group2Words)
+
+    const outcomes: ArticleOutcome[] = []
+    const complete: CompleteStructured = (async (opts: any) => {
+      const firstContent = String(opts.messages[0]?.content ?? "")
+      if (opts.schema === generatedPaperStage1Schema) {
+        if (firstContent.includes("alphaA")) throw new Error("AI_PROFILE_NOT_AVAILABLE")
+        return structured(structuredClone(group2Paper), "req-group2", JSON.stringify(group2Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        return structured({
+          readingAnswers: group2Words.map((_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
+      }
+      throw new Error(`未预期的调用：${firstContent.slice(0, 50)}`)
+    }) as CompleteStructured
+
+    const { articles } = await generateQuiz({
+      words: manyWords,
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onArticle: (o) => outcomes.push(o),
+      complete,
+    })
+
+    assert.equal(outcomes.length, 2, "两条流水线各回调一次")
+    assert.deepEqual(
+      [...outcomes].sort((a, b) => a.index - b.index).map((o) => [o.index, o.ok]),
+      [
+        [0, false],
+        [1, true],
+      ],
+    )
+    // 注册表认得的错误码（钉住的出题模型被停用/删除）要随 outcome 上报
+    const failedOutcome = outcomes.find((o) => !o.ok)!
+    assert.equal(failedOutcome.errorCode, "AI_PROFILE_NOT_AVAILABLE")
+    // 回调给出的就是返回值里同一份 outcome（引用一致，编排层落库不会拿到俩版本）
+    for (const o of outcomes) assert.ok(articles.includes(o))
+  })
+
+  it("全部篇写稿都失败时仍 reject（保留生成失败屏路径），抛出组序在前的底层错误", async () => {
+    const group1Words = ["alphaA", "alphaB", "alphaC", "alphaD", "alphaE", "alphaF", "alphaG"]
+    const group2Words = ["betaA", "betaB", "betaC", "betaD", "betaE", "betaF"]
+    const manyWords = [...group1Words, ...group2Words].map((word) => ({ word, origin: "today" as const }))
+
+    const complete: CompleteStructured = (async (opts: any) => {
+      const firstContent = String(opts.messages[0]?.content ?? "")
+      if (opts.schema === generatedPaperStage1Schema) {
+        throw new Error(firstContent.includes("alphaA") ? "第 1 篇写稿失败" : "第 2 篇写稿失败")
+      }
+      throw new Error("全败时不该有任何校验调用")
+    }) as CompleteStructured
+
+    await assert.rejects(
+      () =>
+        generateQuiz({
+          words: manyWords,
+          config: { ...config, types: ["reading"], maskedCheck: false },
+          complete,
+        }),
+      /第 1 篇写稿失败/,
+    )
+  })
+})
+
+describe("generateArticle · 单组流水线独立入口（继续生成/单篇重生成）", () => {
+  it("走同一段 写稿→校验→重出 代码，index 原样进 outcome，重出结果写回", async () => {
+    const groupWords = ["gammaA", "gammaB"]
+    const paper = makeReadingPaper(groupWords)
+    const steps: ArticleStep[] = []
+
+    const complete: CompleteStructured = (async (opts: any) => {
+      const firstContent = String(opts.messages[0]?.content ?? "")
+      if (opts.schema === generatedPaperStage1Schema) {
+        if (firstContent.includes("没有通过质检")) {
+          return structured({
+            passages: [],
+            readingQuestions: [
+              { passageIndex: 0, targetWord: "gammaA", stem: "redone-gammaA", options: [{ label: "A", text: "x" }], answer: "A", sourceParagraph: 1, sourceQuote: "p1" },
+            ],
+            grammarQuestions: [],
+          })
+        }
+        return structured(structuredClone(paper), "req-gamma", JSON.stringify(paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        // 篇内 idx0 答案对不上 → 触发重出
+        return structured({
+          readingAnswers: [
+            { questionIndex: 0, answer: "B" },
+            { questionIndex: 1, answer: "A" },
+          ],
+          grammarAnswers: [],
+        })
+      }
+      throw new Error(`未预期的调用：${firstContent.slice(0, 50)}`)
+    }) as CompleteStructured
+
+    const outcome = await generateArticle({
+      words: groupWords.map((word) => ({ word, origin: "today" as const })),
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      index: 3,
+      onStep: (s) => steps.push(s),
+      complete,
+    })
+
+    assert.equal(outcome.ok, true)
+    assert.equal(outcome.index, 3, "重生成场景 index 传原篇位，进度与落库靠它对号")
+    assert.equal(outcome.passage?.title, "Demo-gammaA")
+    assert.equal(outcome.readingQuestions[0].stem, "redone-gammaA")
+    assert.equal(outcome.readingQuestions[1].stem, "stem-gammaB")
+    assert.deepEqual(steps, ["writing", "checking", "regenerating", "done"])
+  })
+
+  it("写稿失败产出 ok:false 的 outcome（不抛出），errorCode 识别注册表错误码", async () => {
+    const steps: ArticleStep[] = []
+    const complete: CompleteStructured = (async () => {
+      throw new Error("AI_PROFILE_NOT_AVAILABLE")
+    }) as CompleteStructured
+
+    const outcome = await generateArticle({
+      words: [{ word: "gammaA", origin: "today" as const }],
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onStep: (s) => steps.push(s),
+      complete,
+    })
+
+    assert.equal(outcome.ok, false)
+    assert.equal(outcome.index, 0, "省略 index 时按单篇卷记 0")
+    assert.equal(outcome.errorCode, "AI_PROFILE_NOT_AVAILABLE")
+    assert.deepEqual(outcome.words.map((w) => w.word), ["gammaA"])
+    assert.deepEqual(steps, ["writing", "failed"])
   })
 })
 

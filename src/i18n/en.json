@@ -2865,6 +2865,7 @@
   "quiz.generating.article_one": "Passage {{num}} · {{count}} word",
   "quiz.generating.article_other": "Passage {{num}} · {{count}} words",
   "quiz.generating.article.done": "Done",
+  "quiz.generating.article.failed": "This passage didn't generate — the others are unaffected, and it can be regenerated later",
   "quiz.generating.pipeline.note": "Each passage is checked the moment it's written: the answer check redoes its questions with the passage in view, discarding any whose answer doesn't hold up; the masked-word check redoes them with the target word hidden — a question still answerable without it is discarded too. Failed questions are regenerated once.",
   "quiz.generating.step.done": "Ready",
   "quiz.generating.step.done.note": "Once this lights up, you can start — explanations finish writing in the background while you work",

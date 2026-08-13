@@ -99,8 +99,12 @@ export interface GenerationTrace {
  *   （见 toStage1Paper），不需要额外持久化一份「生成会话」状态。
  */
 
-/** 一篇文章的流水线阶段：写稿 → 校验（明答+遮词） → 重出（如有） → 完成 */
-export type ArticleStep = 'writing' | 'checking' | 'regenerating' | 'done'
+/**
+ * 一篇文章的流水线阶段：写稿 → 校验（明答+遮词） → 重出（如有） → 完成。
+ * `failed` 是终态之一（写稿异常或模型没给出文章）——渐进发卷下失败按篇隔离
+ * （docs/impls/quiz-progressive-delivery.md §一.5），生成中屏与做题页占位共用这个状态。
+ */
+export type ArticleStep = 'writing' | 'checking' | 'regenerating' | 'done' | 'failed'
 
 /**
  * 生成进度（按篇流水线改版）：全卷不再有统一的「当前阶段」——同一时刻第 1 篇
@@ -134,8 +138,14 @@ export async function generateQuiz(opts: {
   requestRegistry?: Set<string>
   /** 出题模型硬指定（设置项 quiz_ai_profile_id），见 transport.ts profileId 说明；不传 = 跟随自动路由 */
   profileId?: string
-}): Promise<{ quiz: Quiz; traces: GenerationTrace[] }> {
-  const { words, config, profileId } = opts
+  /**
+   * 每条流水线 settle（成或败）即回调一次——渐进发卷的编排层
+   * （generation-session）靠它逐篇落库，不等整卷。回调抛出会连坐整卷 reject，
+   * 调用方自己兜好异常。
+   */
+  onArticle?: (outcome: ArticleOutcome) => void
+}): Promise<{ quiz: Quiz; traces: GenerationTrace[]; articles: ArticleOutcome[] }> {
+  const { words, config, profileId, onArticle } = opts
   const progress = opts.onProgress ?? (() => {})
   const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
 
@@ -143,36 +153,41 @@ export async function generateQuiz(opts: {
   const groups = splitWords(words)
   progress({ type: 'split', articles: groups.map((g) => ({ wordCount: g.length })) })
 
-  // 单篇写稿失败仍然让整卷失败（Promise.all 原语义不变）：写稿是卷子正文的
-  // 唯一来源，缺一篇就不是用户配置的那张卷。校验/重出的失败才按篇降级
-  // （见 runArticlePipeline 内部的 try/catch）。
-  //
-  // abort 是各流水线共享的中止标志：任何一篇写稿失败即置位。Promise.all 一
-  // reject 结果就已定局（错误上屏、卷子不发），但其余流水线不会因此停下——
-  // 没有这道闸，它们各自写完后还会照常发起校验/重出，给一张注定作废的卷
-  // 多烧最多每篇 3 次计费调用。置位后各流水线在进校验/重出前自查并早退。
-  const abort = { aborted: false }
+  // 失败按篇隔离（渐进发卷语义，docs/impls/quiz-progressive-delivery.md §一.5）：
+  // 某篇写稿失败只让该篇产出 ok:false 的 outcome，其余篇照常走完各自的
+  // 校验/重出——每一篇现在都独立有价值（失败篇可单篇重生成），旧版「一篇
+  // 失败整卷作废 + 共享 abort 闸」的存在理由已消失。runArticlePipeline 不再
+  // 抛出，Promise.all 必然 resolve 且保序。
   const results = await Promise.all(
     groups.map((group, index) =>
       runArticlePipeline({
         group,
+        index,
         config,
         complete,
         profileId,
-        abort,
         onStep: (step) => progress({ type: 'article', index, step }),
+      }).then((outcome) => {
+        onArticle?.(outcome)
+        return outcome
       }),
     ),
   )
 
-  // 汇总：Promise.all 保序，passages 与题目仍按拆词分组的顺序拼接，
-  // 与旧版「按 results 顺序 push」的卷面顺序逐题一致
+  // 全部篇都失败时仍 reject：没有任何一篇可发，退回旧的「生成失败屏」路径。
+  // 抛第一个拿得到的底层错误，错误码识别（getAiErrorCode）与旧行为一致。
+  if (results.every((r) => !r.ok)) {
+    throw results.find((r) => r.error != null)?.error ?? new Error('QUIZ_ALL_ARTICLES_FAILED')
+  }
+
+  // 汇总：Promise.all 保序，passages 与题目仍按拆词分组的顺序拼接；
+  // 失败篇（ok:false）不进卷面，它们的词也不进覆盖结算（见下）
   const passages: Passage[] = []
   const readingQuestions: ReadingQuestion[] = []
   const grammarQuestions: GrammarFillQuestion[] = []
   const traces: GenerationTrace[] = []
   for (const r of results) {
-    if (!r.passage || !r.trace) continue
+    if (!r.ok || !r.passage || !r.trace) continue
     passages.push(r.passage)
     traces.push(r.trace)
     readingQuestions.push(...r.readingQuestions)
@@ -198,11 +213,23 @@ export async function generateQuiz(opts: {
       status: 'ready',
     },
     traces,
+    articles: results,
   }
 }
 
-/** 一条流水线的产出；写稿没给出文章时（模型异常输出）passage/trace 为 null，本篇整组丢弃 */
-interface ArticleResult {
+/**
+ * 一条流水线的产出（渐进发卷的按篇结算单元）。`ok:false` 表示写稿异常或模型
+ * 没给出文章——此时 passage/trace 为 null、题目为空，errorCode 是从底层错误
+ * 识别出的 AI 错误码（识别不出为 null），error 保留原始异常供整卷全败时上抛。
+ * `words` 是该组的拆词结果：失败篇重生成、按篇覆盖结算都要用它。
+ */
+export interface ArticleOutcome {
+  /** 篇号 = 拆词分组下标，与 GenerateProgress 的 article.index 同一坐标系 */
+  index: number
+  words: QuizWord[]
+  ok: boolean
+  errorCode: AiErrorCode | null
+  error: unknown
   passage: Passage | null
   trace: GenerationTrace | null
   readingQuestions: ReadingQuestion[]
@@ -220,14 +247,31 @@ interface ArticleResult {
  */
 async function runArticlePipeline(opts: {
   group: QuizWord[]
+  /** 篇号（拆词分组下标），原样进 ArticleOutcome.index */
+  index: number
   config: QuizConfig
   complete: CompleteStructured
   profileId?: string
-  /** 各流水线共享的中止标志（见 generateQuiz）：任一篇写稿失败后不再发起新调用 */
-  abort: { aborted: boolean }
   onStep: (step: ArticleStep) => void
-}): Promise<ArticleResult> {
-  const { group, config, complete, profileId, abort, onStep } = opts
+}): Promise<ArticleOutcome> {
+  const { group, index, config, complete, profileId, onStep } = opts
+
+  // 写稿失败（调用异常/模型没给文章）→ 失败终态，不抛出：失败按篇隔离，
+  // 其余流水线照常走完（见 generateQuiz 顶部注释）
+  const failed = (error: unknown): ArticleOutcome => {
+    onStep('failed')
+    return {
+      index,
+      words: group,
+      ok: false,
+      errorCode: getAiErrorCode(error),
+      error,
+      passage: null,
+      trace: null,
+      readingQuestions: [],
+      grammarQuestions: [],
+    }
+  }
 
   onStep('writing')
   let result
@@ -250,16 +294,14 @@ async function runArticlePipeline(opts: {
       profileId,
     })
   } catch (err) {
-    abort.aborted = true
-    throw err
+    return failed(err)
   }
 
   const paper = result.data
   // 每次调用只该有一篇文章；模型多给的丢弃，题目全部挂到本组文章上
   const p = paper.passages[0]
   if (!p) {
-    onStep('done')
-    return { passage: null, trace: null, readingQuestions: [], grammarQuestions: [] }
+    return failed(new Error('模型没有产出文章（passages 为空）'))
   }
   const passage: Passage = {
     id: nextId('psg'),
@@ -292,7 +334,7 @@ async function runArticlePipeline(opts: {
     answer: q.answer,
   }))
 
-  if (!abort.aborted && (readingQuestions.length > 0 || grammarQuestions.length > 0)) {
+  if (readingQuestions.length > 0 || grammarQuestions.length > 0) {
     onStep('checking')
     const [answerCheck, maskedFailedIdx] = await Promise.all([
       runAnswerCheck({ readingQuestions, grammarQuestions, trace, complete, profileId }),
@@ -303,7 +345,7 @@ async function runArticlePipeline(opts: {
     const readingFailedIdx = new Set([...answerCheck.readingFailed, ...maskedFailedIdx])
     const grammarFailedIdx = answerCheck.grammarFailed
 
-    if (!abort.aborted && (readingFailedIdx.size > 0 || grammarFailedIdx.size > 0)) {
+    if (readingFailedIdx.size > 0 || grammarFailedIdx.size > 0) {
       onStep('regenerating')
       const redone = await redoFailedQuestions({
         passage,
@@ -321,7 +363,47 @@ async function runArticlePipeline(opts: {
   }
 
   onStep('done')
-  return { passage, trace, readingQuestions, grammarQuestions }
+  return {
+    index,
+    words: group,
+    ok: true,
+    errorCode: null,
+    error: null,
+    passage,
+    trace,
+    readingQuestions,
+    grammarQuestions,
+  }
+}
+
+/**
+ * 单篇流水线的独立入口：「继续生成 / 单篇重新生成」用它对一个词组重跑
+ * 写稿 → 校验 → 重出，与 generateQuiz 内部走的是同一段代码
+ * （runArticlePipeline），失败同样不抛出、产出 ok:false 的 outcome。
+ * `index` 传原篇位（generation_json 的组下标），让进度事件与落库都能对上号。
+ */
+export async function generateArticle(opts: {
+  words: QuizWord[]
+  config: QuizConfig
+  /** 原篇位（组序）；省略时按单篇卷处理，记 0 */
+  index?: number
+  onStep?: (step: ArticleStep) => void
+  /** 测试注入点，见 CompleteStructured 说明；省略时用真实 transport */
+  complete?: CompleteStructured
+  /** 取消句柄注册表，见 withRequestRegistry 说明；不传则不生成取消句柄 */
+  requestRegistry?: Set<string>
+  /** 出题模型硬指定（设置项 quiz_ai_profile_id）；不传 = 跟随自动路由 */
+  profileId?: string
+}): Promise<ArticleOutcome> {
+  const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
+  return runArticlePipeline({
+    group: opts.words,
+    index: opts.index ?? 0,
+    config: opts.config,
+    complete,
+    profileId: opts.profileId,
+    onStep: opts.onStep ?? (() => {}),
+  })
 }
 
 /**

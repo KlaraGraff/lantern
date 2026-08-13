@@ -95,9 +95,11 @@ export function useQuizGeneration() {
         const createdAt = new Date().toISOString();
         const id = await invoke<number>("create_quiz_paper", {
           createdAt,
+          status: "ready",
           configJson: JSON.stringify(quiz.config),
           wordsJson: JSON.stringify(quiz.words),
           contentJson: quizContentJson(quiz),
+          generationJson: null,
         });
         if (cancelledRef.current) return;
 
@@ -108,14 +110,9 @@ export function useQuizGeneration() {
         navigate(`/quiz/paper/${id}`);
       } catch (err) {
         if (cancelledRef.current) return;
-        // 某篇写稿失败 → generateQuiz 整体 reject，卷子已注定不发。其余流水线
-        // 里仍在飞的请求（registry 里剩下的 id）此刻只会白烧计费流——照
-        // cancel() 的路数逐个通知后端掐断（generate.ts 侧的 abort 标志管
-        // 「不再发起新调用」，这里管「掐掉已在飞的」，两头都要堵）。
-        for (const requestId of registryRef.current) {
-          cancelRequest(requestId).catch(() => {});
-        }
-        registryRef.current.clear();
+        // generateQuiz 只在「全部篇都失败」时 reject（失败按篇隔离，
+        // docs/impls/quiz-progressive-delivery.md §一.5），而它要等所有流水线
+        // settle 才能知道这一点——reject 时 registry 必然已空，无在飞请求可掐。
         console.error("Quiz generation failed:", err);
         const message = err instanceof Error ? err.message : String(err);
         // 后端错误串带的是给程序看的 token；注册表认得的一律换成 i18n 文案再上屏

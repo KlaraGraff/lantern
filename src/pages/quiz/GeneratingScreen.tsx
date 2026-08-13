@@ -24,15 +24,17 @@ interface GeneratingScreenProps {
   onCancel: () => void;
 }
 
-type BadgeStatus = "done" | "doing" | "pending";
+type BadgeStatus = "done" | "doing" | "pending" | "failed";
 
-/** 各阶段折算的完成度，只喂进度条；取值只需单调递增，不代表真实耗时占比 */
+/** 各阶段折算的完成度，只喂进度条；取值只需单调递增，不代表真实耗时占比。
+ * failed 也记 1：该篇流水线已 settle，进度条量的是「还要等多久」，不是成功率。 */
 const ARTICLE_FRACTION: Record<ArticleProgress["step"], number> = {
   pending: 0.05,
   writing: 0.3,
   checking: 0.7,
   regenerating: 0.9,
   done: 1,
+  failed: 1,
 };
 
 function StepBadge({ status, small }: { status: BadgeStatus; small?: boolean }) {
@@ -43,12 +45,16 @@ function StepBadge({ status, small }: { status: BadgeStatus; small?: boolean }) 
           ? "border-success-border bg-success-bg text-success-text"
           : status === "doing"
             ? "border-transparent bg-accent-bg text-accent-text"
-            : "border-border text-text-muted"
+            : status === "failed"
+              ? "border-danger-border bg-danger-bg text-danger-text"
+              : "border-border text-text-muted"
       }`}
     >
       {status === "done" && <Check size={13} strokeWidth={3} />}
       {status === "doing" && <Loader2 size={13} className="animate-spin" />}
-      {status === "pending" && <span className="size-1.5 rounded-full bg-current" />}
+      {(status === "pending" || status === "failed") && (
+        <span className="size-1.5 rounded-full bg-current" />
+      )}
     </span>
   );
 }
@@ -81,6 +87,9 @@ export default function GeneratingScreen({
         return "quiz.generating.step.regenerating";
       case "done":
         return "quiz.generating.article.done";
+      // 失败按篇隔离（渐进发卷）：这一篇没生成成，其余篇照常；做题页里可单篇重新生成
+      case "failed":
+        return "quiz.generating.article.failed";
       // pending 只在 split 建行到流水线首个事件之间瞬时存在，按「即将写稿」显示
       case "pending":
       case "writing":
@@ -128,7 +137,13 @@ export default function GeneratingScreen({
                       <StepBadge
                         small
                         status={
-                          a.step === "done" ? "done" : a.step === "pending" ? "pending" : "doing"
+                          a.step === "done"
+                            ? "done"
+                            : a.step === "failed"
+                              ? "failed"
+                              : a.step === "pending"
+                                ? "pending"
+                                : "doing"
                         }
                       />
                       <div className="min-w-0">
