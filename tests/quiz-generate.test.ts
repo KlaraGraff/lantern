@@ -710,6 +710,91 @@ describe("generateExplanations", () => {
   })
 })
 
+describe("generateQuiz · requestRegistry 取消句柄注册表（docs/impls/cijuan-merge.md 步骤 4）", () => {
+  it("每次底层 complete 调用前用全新 uuid 登记进 registry，settle 后立刻摘除，不留残留", async () => {
+    const registry = new Set<string>()
+    const seenRequestIds: string[] = []
+    const complete: CompleteStructured = (async (opts: any) => {
+      assert.ok(opts.requestId, "每次调用都应带上 requestId")
+      assert.ok(registry.has(opts.requestId), "调用发起的那一刻，它的 id 必须已经登记进 registry")
+      seenRequestIds.push(opts.requestId)
+      // rawResponse 须是真实 JSON：明答校验续写要从这段文本里剥答案（见 stripStage1Answers），
+      // 不这样写的话 runAnswerCheck 会在 JSON.parse 处静默降级、根本不会发起第二次调用，
+      // 这个用例就验不到「至少三次调用」。
+      if (opts.schema === generatedPaperStage1Schema) {
+        return structured(structuredClone(stage1Paper), "stage1-request", JSON.stringify(stage1Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        return structured({
+          readingAnswers: [
+            { questionIndex: 0, answer: "B" },
+            { questionIndex: 1, answer: "A" },
+          ],
+          grammarAnswers: [{ questionIndex: 0, answer: "have advocated" }],
+        })
+      }
+      if (opts.schema === maskedCheckVerdictSchema) return structured({ verdicts: [] })
+      throw new Error(`未预期的 schema 调用：${JSON.stringify(opts.messages[0]?.content).slice(0, 50)}`)
+    }) as CompleteStructured
+
+    await generateQuiz({ words, config, complete, requestRegistry: registry })
+
+    assert.equal(registry.size, 0, "全部请求都 settle 之后，registry 应该清空")
+    assert.ok(seenRequestIds.length >= 3, "至少应观察到出题/明答校验/遮词自检三次调用")
+    assert.equal(
+      new Set(seenRequestIds).size,
+      seenRequestIds.length,
+      "同一个 requestId 绝不能跨请求复用——旧 id 若被下一次请求带上，会被后端那张已经摘掉记录的待取消表误杀",
+    )
+  })
+
+  it("调用 reject 时也要在 finally 里把对应 id 从 registry 摘除", async () => {
+    const registry = new Set<string>()
+    let capturedDuringFailure: string | undefined
+    const complete: CompleteStructured = (async (opts: any) => {
+      if (opts.schema === generatedPaperStage1Schema) {
+        capturedDuringFailure = opts.requestId
+        throw new Error("模拟出题请求失败")
+      }
+      throw new Error("不该走到这里")
+    }) as CompleteStructured
+
+    await assert.rejects(() => generateQuiz({ words, config, complete, requestRegistry: registry }))
+
+    assert.ok(capturedDuringFailure, "失败前应已拿到 requestId")
+    assert.equal(registry.size, 0, "请求失败也要清理 registry，不留孤儿 id")
+  })
+
+  it("不传 requestRegistry 时不生成也不附带 requestId，交由更底层兜底", async () => {
+    const capturedRequestIds: unknown[] = []
+    const complete: CompleteStructured = (async (opts: any) => {
+      capturedRequestIds.push(opts.requestId)
+      if (opts.schema === generatedPaperStage1Schema) {
+        return structured(structuredClone(stage1Paper), "stage1-request", JSON.stringify(stage1Paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        return structured({
+          readingAnswers: [
+            { questionIndex: 0, answer: "B" },
+            { questionIndex: 1, answer: "A" },
+          ],
+          grammarAnswers: [{ questionIndex: 0, answer: "have advocated" }],
+        })
+      }
+      if (opts.schema === maskedCheckVerdictSchema) return structured({ verdicts: [] })
+      throw new Error("未预期的调用")
+    }) as CompleteStructured
+
+    await generateQuiz({ words, config, complete })
+
+    assert.ok(capturedRequestIds.length > 0, "应至少发生过一次调用")
+    assert.ok(
+      capturedRequestIds.every((id) => id === undefined),
+      "不传 registry 时 generate.ts 自己不应该生成 requestId",
+    )
+  })
+})
+
 function rq(id: string, passageId: string): ReadingQuestion {
   return {
     id,

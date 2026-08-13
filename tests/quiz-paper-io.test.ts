@@ -199,7 +199,11 @@ describe("runExplanationSession", () => {
     assert.equal(merged.readingQuestions[1].stemTranslation, "题干翻译");
     assert.equal(persisted.length, 1);
     assert.deepEqual(persisted[0], merged);
-    assert.deepEqual(getExplanationSession(7), { running: false, missingPassageIds: [] });
+    assert.deepEqual(getExplanationSession(7), {
+      running: false,
+      runningPassageIds: [],
+      missingPassageIds: [],
+    });
   });
 
   it("单组失败进 missingPassageIds；成功组照常写回", async () => {
@@ -218,7 +222,11 @@ describe("runExplanationSession", () => {
     assert.ok(merged);
     assert.equal(merged.readingQuestions[0].stemTranslation, "题干翻译");
     assert.equal(merged.readingQuestions[1].stemTranslation, undefined);
-    assert.deepEqual(getExplanationSession(7), { running: false, missingPassageIds: ["p2"] });
+    assert.deepEqual(getExplanationSession(7), {
+      running: false,
+      runningPassageIds: [],
+      missingPassageIds: ["p2"],
+    });
   });
 
   it("onlyPassageIds 补生成：只跑点名的组，其它组上一轮的失败记录保留", async () => {
@@ -247,7 +255,11 @@ describe("runExplanationSession", () => {
     assert.equal(calls.length, 1);
     assert.ok(calls[0].includes("apple") && !calls[0].includes("banana"));
     assert.equal(merged.readingQuestions[0].stemTranslation, "题干翻译");
-    assert.deepEqual(getExplanationSession(7), { running: false, missingPassageIds: ["p2"] });
+    assert.deepEqual(getExplanationSession(7), {
+      running: false,
+      runningPassageIds: [],
+      missingPassageIds: ["p2"],
+    });
   });
 
   it("写库失败：这轮 scope 内的组全部记为缺失，等补生成兜底", async () => {
@@ -278,6 +290,7 @@ describe("runExplanationSession", () => {
       persist: () => Promise.resolve(),
     });
     assert.equal(getExplanationSession(7)?.running, true);
+    assert.deepEqual(getExplanationSession(7)?.runningPassageIds.slice().sort(), ["p1", "p2"]);
     const second = await runExplanationSession({
       paperId: 7,
       quiz: makeQuiz(),
@@ -288,5 +301,28 @@ describe("runExplanationSession", () => {
     release();
     assert.ok(await first);
     assert.equal(getExplanationSession(7)?.running, false);
+    assert.deepEqual(getExplanationSession(7)?.runningPassageIds, []);
+  });
+
+  it("补生成单组时 runningPassageIds 只含被点名的组", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocked: CompleteStructured = async (opts) => {
+      await gate;
+      return completeOk(opts);
+    };
+    const run = runExplanationSession({
+      paperId: 7,
+      quiz: makeQuiz(),
+      onlyPassageIds: ["p2"],
+      complete: blocked,
+      persist: () => Promise.resolve(),
+    });
+    assert.deepEqual(getExplanationSession(7)?.runningPassageIds, ["p2"]);
+    release();
+    await run;
+    assert.deepEqual(getExplanationSession(7)?.runningPassageIds, []);
   });
 });

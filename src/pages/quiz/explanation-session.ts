@@ -22,6 +22,11 @@ import { quizContentJson } from './paper-io.ts'
 
 export interface ExplanationSessionState {
   running: boolean
+  /**
+   * 本轮正在生成的组；不跑时为空数组。补生成单组时只有被点名的组在里面——
+   * 三态判定据此只给这些组画骨架屏，已写完的组照常展开（不能整卷一起变骨架）。
+   */
+  runningPassageIds: string[]
   /** 最近一次运行后仍缺解析的组；running 期间保持上一次的值 */
   missingPassageIds: string[]
 }
@@ -110,7 +115,11 @@ export async function runExplanationSession(opts: {
   // 上一轮失败、这一轮没被点名的组，失败状态要保住，不能被这轮的成功清掉
   const carriedMissing = (existing?.missingPassageIds ?? []).filter((id) => !scopeIds.has(id))
 
-  setSession(paperId, { running: true, missingPassageIds: existing?.missingPassageIds ?? [] })
+  setSession(paperId, {
+    running: true,
+    runningPassageIds: [...scopeIds],
+    missingPassageIds: existing?.missingPassageIds ?? [],
+  })
 
   try {
     const scoped = opts.onlyPassageIds ? scopeQuiz(quiz, scopeIds) : quiz
@@ -123,6 +132,7 @@ export async function runExplanationSession(opts: {
     await persist(paperId, merged)
     setSession(paperId, {
       running: false,
+      runningPassageIds: [],
       missingPassageIds: [...carriedMissing, ...missingPassageIds],
     })
     return merged
@@ -130,7 +140,11 @@ export async function runExplanationSession(opts: {
     // generateExplanations 按组吞错不抛；走到这里只剩写库失败——解析已生成但没
     // 落库，等价于整个 scope 都缺，让补生成按钮出现
     console.error('explanation session failed to persist:', error)
-    setSession(paperId, { running: false, missingPassageIds: [...carriedMissing, ...scopeIds] })
+    setSession(paperId, {
+      running: false,
+      runningPassageIds: [],
+      missingPassageIds: [...carriedMissing, ...scopeIds],
+    })
     return null
   }
 }

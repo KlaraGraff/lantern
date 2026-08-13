@@ -26,6 +26,7 @@ import {
   extractJson,
   type ChatMessage,
 } from './transport.ts'
+import { createUuid } from '../utils/randomUuid.ts'
 
 /**
  * 测试注入点：Tauri 的 `invoke` 在 Node 测试环境里没有 IPC 桥（既不能连后端，
@@ -34,6 +35,38 @@ import {
  * 场景一律省略这个参数，落回 transport.ts 的 completeStructured。
  */
 export type CompleteStructured = typeof defaultCompleteStructured
+
+/**
+ * 取消句柄注册表（docs/impls/cijuan-merge.md 步骤 4 · UI 实现）：把 `complete`
+ * 包一层——每次真正发起请求前生成一个*全新*的 uuid，登记进调用方传入的
+ * `registry`，settle（无论成功失败）后立刻摘除。UI 侧「生成中屏」的取消按钮
+ * 据此对 registry 里当时还在场的每个 id 调 transport 的 `cancelRequest`。
+ *
+ * 每次调用都必须是全新 id，绝不能复用——后端的取消通道是一张
+ * pending-cancellation 表，若把已经 settle、已从表里摘掉的旧 id 交给下一次
+ * 请求，下一次请求会一发起就被这张陈旧的「待取消」记录误杀。
+ *
+ * 不传 registry（真实调用场景之外没有取消入口，或调用方尚未接入取消 UI）时
+ * 原样返回 `complete`，不生成、不传 requestId——请求仍然可以正常发出，
+ * 只是没有取消句柄，交由更底层（transport.ts 的 completeStructured/
+ * completeText）按需自行兜底。
+ */
+function withRequestRegistry(
+  complete: CompleteStructured,
+  registry?: Set<string>,
+): CompleteStructured {
+  if (!registry) return complete
+  const wrapped: CompleteStructured = async (opts) => {
+    const requestId = createUuid()
+    registry.add(requestId)
+    try {
+      return await complete({ ...opts, requestId })
+    } finally {
+      registry.delete(requestId)
+    }
+  }
+  return wrapped
+}
 
 /**
  * 阶段一每组调用的续写凭据：实际发送的最后一条 user 消息全文（含 schema 附块）
@@ -80,10 +113,12 @@ export async function generateQuiz(opts: {
   onProgress?: ProgressFn
   /** 测试注入点，见上方 CompleteStructured 说明；省略时用真实 transport */
   complete?: CompleteStructured
+  /** 取消句柄注册表，见上方 withRequestRegistry 说明；不传则不生成取消句柄 */
+  requestRegistry?: Set<string>
 }): Promise<{ quiz: Quiz; traces: GenerationTrace[] }> {
   const { words, config } = opts
   const progress = opts.onProgress ?? (() => {})
-  const complete = opts.complete ?? defaultCompleteStructured
+  const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
 
   progress('splitting')
   const groups = splitWords(words)

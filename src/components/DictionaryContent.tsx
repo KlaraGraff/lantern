@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 import {
   Languages,
   Search,
@@ -27,13 +28,11 @@ import {
   BookmarkPlus,
   BookmarkCheck,
   Loader2,
-  Eye,
 } from "lucide-react";
 import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import { notifyReaders } from "../utils/notifyReaders";
-import PronounceButton from "./speech/PronounceButton";
 import MergedVocabDetails from "./vocab/MergedVocabDetails";
 import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
@@ -46,15 +45,7 @@ import {
   vocabMergeKey,
   type MergedVocabEntry,
 } from "./vocab/merge";
-import {
-  contextualReviewAnswer,
-  contextualReviewCloze,
-  contextualReviewProgress,
-  contextualReviewSource,
-  contextualSentenceMeaning,
-} from "./vocab/contextual-review";
 import ReviewBoard from "./review/ReviewBoard";
-import { trapTabKey } from "./focus-trap";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -176,16 +167,6 @@ function formatBookList(titles: string[], locale: string): string {
   }
 }
 
-/** One key cap plus what it does, for the review card's shortcut footer. */
-function ReviewShortcut({ cap, label }: { cap: string; label: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <kbd className="grid h-[18px] min-w-[18px] place-items-center rounded border border-border border-b-2 bg-bg-muted px-1 font-sans text-[10px] leading-none text-text-secondary">{cap}</kbd>
-      {label}
-    </span>
-  );
-}
-
 interface DictionaryContentProps {
   /**
    * "all" (the plain 生词/vocab entry) shows the review board with the full
@@ -202,8 +183,9 @@ interface DictionaryContentProps {
 
 export default function DictionaryContent({ initialView = "all", menuButton }: DictionaryContentProps = {}) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const openInReader = useOpenBook();
-  const { words, remove, updateMastery, recordReview, refresh: refreshWords } = useAllDictionary();
+  const { words, remove, updateMastery, refresh: refreshWords } = useAllDictionary();
   const { records, total: historyTotal, books: historyBooks, hasMore: historyHasMore, loadingMore: historyLoadingMore, refresh: refreshHistory, loadMore: loadMoreHistory, remove: removeHistoryRecord, clear: clearHistory } = useAllLookupHistory();
   const [sort, setSort] = useState<SortMode>("newest");
   const [view, setView] = useState<ViewMode>("list");
@@ -213,13 +195,6 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   const [reviewOnly, setReviewOnly] = useState(false);
   const [contentTab, setContentTab] = useState<ContentTab>("vocab");
   const [now, setNow] = useState(0);
-  const [reviewQueue, setReviewQueue] = useState<MergedVocabEntry[]>([]);
-  const [reviewIndex, setReviewIndex] = useState(0);
-  const [reviewAnswerVisible, setReviewAnswerVisible] = useState(false);
-  const [reviewMeaningVisible, setReviewMeaningVisible] = useState(false);
-  const [reviewComplete, setReviewComplete] = useState(false);
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [reviewError, setReviewError] = useState(false);
   const [historyClearConfirming, setHistoryClearConfirming] = useState(false);
   const [repeatUnsavedOnly, setRepeatUnsavedOnly] = useState(false);
   const [collectingId, setCollectingId] = useState<string | null>(null);
@@ -236,8 +211,6 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [deleteEntry, setDeleteEntry] = useState<MergedVocabEntry | null>(null);
-  const [reviewContextIndex, setReviewContextIndex] = useState(0);
-  const [reviewContextPickerOpen, setReviewContextPickerOpen] = useState(false);
   // "review" starts the list collapsed behind the divider; "all" starts it
   // open. Re-synced on prop change (not just on mount) so switching sidebar
   // rows between 生词/复习 without unmounting this component still lands the
@@ -251,12 +224,6 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   }, []);
   const { settings, save: saveSetting } = useSettings();
   const clearConfirmationTimer = useRef<number | null>(null);
-  const reviewDialogRef = useRef<HTMLDivElement | null>(null);
-  const reviewOpenerRef = useRef<HTMLElement | null>(null);
-  const reviewRevealRef = useRef<HTMLButtonElement | null>(null);
-  const reviewPronounceRef = useRef<HTMLSpanElement | null>(null);
-  const reviewSubmittingRef = useRef(false);
-  const reviewRatedRef = useRef(false);
 
   const learningCardConfig = useMemo(
     () => parseCardDesignConfig(settings.learning_card_config),
@@ -325,22 +292,6 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   const allEntries = useMemo(() => mergeVocabWords(words, primaryOverrides), [words, primaryOverrides]);
   const bookCounts = useMemo(() => bookCountsByWord(words), [words]);
   const dueEntries = useMemo(() => dueMergedEntries(allEntries, now), [allEntries, now]);
-
-  const reviewing = reviewQueue[reviewIndex] ?? null;
-  // Every context this word was saved with — the pool "use another" draws from.
-  const reviewContexts = useMemo(
-    () => reviewing ? reviewing.rows.filter((row) => (row.context_sentence?.trim() ?? "") !== "") : [],
-    [reviewing],
-  );
-  const reviewRow = reviewContexts[reviewContextIndex] ?? reviewing?.representative ?? null;
-  const reviewCloze = useMemo(() => reviewRow ? contextualReviewCloze(reviewRow.context_sentence, reviewRow.word) : null, [reviewRow]);
-  const reviewAnswer = useMemo(() => reviewRow ? contextualReviewAnswer(reviewRow.context_sentence, reviewRow.word) : null, [reviewRow]);
-  const reviewMeaning = useMemo(() => reviewRow ? contextualSentenceMeaning(reviewRow.context_explanation) : null, [reviewRow]);
-  const reviewProgress = useMemo(() => contextualReviewProgress(reviewIndex, reviewQueue.length), [reviewIndex, reviewQueue.length]);
-  const reviewSource = useMemo(
-    () => reviewRow ? contextualReviewSource(reviewRow.book_title, reviewRow.chapter, t("common.unknownBook")) : null,
-    [reviewRow, t],
-  );
 
   const filtered = useMemo(() => {
     let result = words;
@@ -496,150 +447,6 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
     await updateMastery(entry.primary.id, mastery, mastery === "learning" ? now + 24 * 60 * 60 * 1000 : null);
     if (entry.rows.length > 1) await refreshWords();
   }, [now, refreshWords, updateMastery]);
-  const closeReview = useCallback(() => {
-    if (reviewSubmittingRef.current) return;
-    setReviewQueue([]);
-    setReviewIndex(0);
-    setReviewComplete(false);
-    setReviewError(false);
-    reviewSubmittingRef.current = false;
-    setReviewSubmitting(false);
-    if (reviewRatedRef.current) {
-      reviewRatedRef.current = false;
-      void refreshWords();
-    }
-    window.requestAnimationFrame(() => reviewOpenerRef.current?.focus());
-  }, [refreshWords]);
-  const openReview = (entry: MergedVocabEntry) => {
-    reviewOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setReviewQueue([entry, ...dueEntries.filter((candidate) => candidate.key !== entry.key)]);
-    setReviewIndex(0);
-    setReviewComplete(false);
-    setReviewError(false);
-  };
-  const completeReview = useCallback(async (rating: "again" | "hard" | "good" | "easy") => {
-    if (!reviewing || reviewSubmittingRef.current) return;
-    reviewSubmittingRef.current = true;
-    setReviewSubmitting(true);
-    setReviewError(false);
-    try {
-      // One rating for the word. The backend writes the resulting schedule
-      // through to the word's other records.
-      await recordReview(reviewing.representative.id, rating);
-      reviewRatedRef.current = true;
-      const nextIndex = reviewIndex + 1;
-      if (nextIndex < reviewQueue.length) setReviewIndex(nextIndex);
-      else {
-        setReviewQueue([]);
-        setReviewIndex(0);
-        setReviewComplete(true);
-        reviewRatedRef.current = false;
-        await refreshWords();
-      }
-    } catch {
-      setReviewError(true);
-    } finally {
-      reviewSubmittingRef.current = false;
-      setReviewSubmitting(false);
-    }
-  }, [recordReview, refreshWords, reviewIndex, reviewQueue.length, reviewing]);
-
-  // "只看，不测": the genuine exit from being quizzed. It reveals the
-  // definition (if not already visible) and moves on — never recordReview,
-  // never an FSRS rating, not even a disguised "again". Available the whole
-  // time the card is up, same as the rating buttons.
-  const justLook = useCallback(() => {
-    if (!reviewing) return;
-    if (!reviewAnswerVisible) {
-      setReviewAnswerVisible(true);
-      return;
-    }
-    const nextIndex = reviewIndex + 1;
-    if (nextIndex < reviewQueue.length) setReviewIndex(nextIndex);
-    else {
-      setReviewQueue([]);
-      setReviewIndex(0);
-      setReviewComplete(true);
-    }
-  }, [reviewing, reviewAnswerVisible, reviewIndex, reviewQueue.length]);
-
-  // "获取提示" is one action with two possible carriers: the saved sentence
-  // meaning when the row has one, otherwise the pronunciation, which every
-  // card can offer. Keeping the fallback means the advertised shortcut always
-  // does something. Clicking the rendered pronounce button (rather than
-  // calling the speech hook here) keeps the button's own playback state and
-  // the keyboard path identical.
-  const revealReviewHint = useCallback(() => {
-    // The meaning box only exists on the contextual card, so a word-first
-    // fallback row with a saved explanation still gets the audio hint rather
-    // than a toggle nothing renders.
-    if (reviewCloze && reviewMeaning) {
-      setReviewMeaningVisible((visible) => !visible);
-      return;
-    }
-    reviewPronounceRef.current?.querySelector("button")?.click();
-  }, [reviewCloze, reviewMeaning]);
-
-  useEffect(() => {
-    setReviewAnswerVisible(false);
-    setReviewMeaningVisible(false);
-    setReviewError(false);
-    setReviewContextIndex(0);
-    setReviewContextPickerOpen(false);
-    const frame = window.requestAnimationFrame(() => reviewing ? reviewRevealRef.current?.focus() : reviewDialogRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [reviewComplete, reviewing]);
-
-  useEffect(() => {
-    if (!reviewing && !reviewComplete) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeReview();
-        return;
-      }
-      if (event.key === "Tab") {
-        trapTabKey(event, reviewDialogRef.current, { recoverOutsideFocus: true });
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      // The hint key is checked before the "focus is on a control" guard
-      // below: the reveal button holds focus by default, and H does nothing
-      // native on a button, so deferring there would make the advertised
-      // shortcut dead exactly where the reader starts. Typing targets are
-      // still excluded.
-      if (
-        reviewing
-        && !reviewAnswerVisible
-        && !event.metaKey && !event.ctrlKey && !event.altKey
-        && (event.key === "h" || event.key === "H")
-        && !target?.closest("input, select, textarea, [contenteditable='true']")
-      ) {
-        event.preventDefault();
-        revealReviewHint();
-        return;
-      }
-      if (target?.closest("button, input, select, textarea, [contenteditable='true']")) return;
-      if (reviewing && !reviewAnswerVisible && event.code === "Space") {
-        event.preventDefault();
-        setReviewAnswerVisible(true);
-        return;
-      }
-      if (reviewing && reviewAnswerVisible && !reviewSubmitting && /^[1-4]$/.test(event.key)) {
-        const ratings = ["again", "hard", "good", "easy"] as const;
-        event.preventDefault();
-        void completeReview(ratings[Number(event.key) - 1]);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [reviewing, reviewComplete, reviewAnswerVisible, reviewSubmitting, closeReview, completeReview, revealReviewHint]);
-
-  useEffect(() => {
-    if (!reviewing || !reviewAnswerVisible) return;
-    const frame = window.requestAnimationFrame(() => reviewDialogRef.current?.querySelector<HTMLButtonElement>('[data-review-rating]')?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [reviewAnswerVisible, reviewing]);
   const downloadCsv = (filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) => {
     const escape = (value: string | number | null | undefined) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const lines = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))];
@@ -919,6 +726,28 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
             )}
           </div>
           <div className="flex items-center gap-0">
+            {contentTab === "vocab" && (
+              <div className="flex items-center gap-2 mr-2">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  disabled={dueEntries.length === 0}
+                  onClick={() => navigate("/flashcards")}
+                >
+                  <RotateCcw size={15} />
+                  {t("flashcards.title")}
+                  {dueEntries.length > 0 && (
+                    <span className="ml-0.5 rounded-full bg-accent-bg px-1.5 py-0.5 text-[11px] font-medium text-accent-text tabular-nums">
+                      {dueEntries.length}
+                    </span>
+                  )}
+                </Button>
+                <Button variant="primary" size="md" onClick={() => navigate("/quiz")}>
+                  <FileText size={15} />
+                  {t("vocab.entry.quiz")}
+                </Button>
+              </div>
+            )}
             {contentTab === "vocab" ? (
               <>
                 <div className="relative">
@@ -1459,7 +1288,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                             {due && (
                               <button
                                 type="button"
-                                onClick={(event) => { event.stopPropagation(); openReview(entry); }}
+                                onClick={(event) => { event.stopPropagation(); navigate(`/flashcards?word=${encodeURIComponent(entry.key)}`); }}
                                 title={t("vocab.review")}
                                 className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
                               >
@@ -1590,159 +1419,6 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
               <Button variant="ghost" size="md" onClick={() => setDeleteEntry(null)}>{t("common.cancel")}</Button>
               <button type="button" onClick={() => deleteMergedEntry(deleteEntry).catch(() => {})} disabled={bulkBusy} className="h-9 rounded-md bg-red-500 px-3 text-[13px] font-medium text-white hover:bg-red-600 disabled:opacity-50 cursor-pointer">{t("vocab.merged.deleteAll")}</button>
             </div>
-          </div>
-        </div>
-      )}
-      {(reviewing || reviewComplete) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={closeReview}>
-          <div ref={reviewDialogRef} role="dialog" aria-modal="true" aria-labelledby="vocab-review-title" tabIndex={-1} className="w-[520px] max-w-[calc(100vw-32px)] bg-bg-surface border border-border rounded-lg shadow-popover p-5 outline-none" onClick={(event) => event.stopPropagation()}>
-            {reviewComplete ? (
-              <div className="py-10 text-center">
-                <CheckCircle2 size={34} className="mx-auto text-accent" />
-                <h2 id="vocab-review-title" className="mt-3 text-[16px] font-semibold text-text-primary">{t("vocab.reviewComplete")}</h2>
-                <p className="mt-2 text-[13px] text-text-secondary">{t("vocab.reviewCompleteSub")}</p>
-                <Button className="mt-6" variant="primary" size="md" onClick={closeReview}>{t("common.close")}</Button>
-              </div>
-            ) : reviewing && (
-              <>
-                <div className="flex items-center gap-2 text-text-primary">
-                  <RotateCcw size={17} className="text-accent" />
-                  <h2 id="vocab-review-title" className="text-[16px] font-semibold">{reviewCloze ? t("vocab.contextReview") : t("vocab.review")}</h2>
-                  <span className="ml-auto text-[12px] tabular-nums text-text-muted">{reviewProgress.position} / {reviewProgress.total}</span>
-                  <button type="button" disabled={reviewSubmitting} aria-label={t("common.close")} onClick={closeReview} className="size-7 rounded-md text-text-muted hover:bg-bg-input hover:text-text-primary disabled:cursor-wait disabled:opacity-40"><X size={16} /></button>
-                </div>
-                <div
-                  role="progressbar"
-                  aria-valuemin={1}
-                  aria-valuemax={reviewProgress.total}
-                  aria-valuenow={reviewProgress.position}
-                  aria-valuetext={t("vocab.reviewProgressLabel", { position: reviewProgress.position, total: reviewProgress.total })}
-                  className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-bg-muted"
-                >
-                  <div className="h-full rounded-full bg-accent transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${reviewProgress.ratio * 100}%` }} />
-                </div>
-                {reviewing.books.length > 1 && (
-                  <p className="mt-3 flex items-start gap-1.5 rounded-md bg-accent-bg px-3 py-2 text-[11px] leading-4 text-accent-text">
-                    <RotateCcw size={12} className="mt-px shrink-0" />
-                    {t("vocab.review.mergedBanner", { count: reviewing.books.length })}
-                  </p>
-                )}
-                {!reviewAnswerVisible ? (
-                  <div className="flex min-h-[300px] flex-col text-center">
-                    <p className="mt-6 flex items-center justify-center gap-1.5 text-[12px] text-text-muted">
-                      <BookOpen size={12} className="shrink-0" />
-                      {reviewContexts.length > 1 && <span className="shrink-0">{t("vocab.review.contextFrom")}</span>}
-                      <span className="max-w-[220px] truncate">{reviewSource?.bookTitle}</span>
-                      {reviewSource?.chapter && <>
-                        <span aria-hidden="true" className="text-text-muted/60">·</span>
-                        <span className="max-w-[180px] truncate">{reviewSource.chapter}</span>
-                      </>}
-                      {reviewContexts.length > 1 && (
-                        <button
-                          type="button"
-                          aria-expanded={reviewContextPickerOpen}
-                          onClick={() => setReviewContextPickerOpen((open) => !open)}
-                          className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text cursor-pointer"
-                        >
-                          <RotateCcw size={11} />
-                          {t("vocab.review.swapContext")}
-                        </button>
-                      )}
-                    </p>
-                    {reviewContextPickerOpen && reviewContexts.length > 1 && (
-                      <div className="mx-auto mt-3 flex w-full max-w-md flex-col gap-1.5 rounded-md border border-border-light bg-bg-muted p-2 text-left">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
-                          {t("vocab.review.otherContexts", { count: reviewContexts.length - 1 })}
-                        </p>
-                        {reviewContexts.map((row, index) => (
-                          <button
-                            key={row.id}
-                            type="button"
-                            aria-pressed={index === reviewContextIndex}
-                            onClick={() => { setReviewContextIndex(index); setReviewContextPickerOpen(false); }}
-                            className={`rounded-md border px-2 py-1.5 text-left cursor-pointer ${
-                              index === reviewContextIndex
-                                ? "border-accent bg-accent-bg"
-                                : "border-border bg-bg-surface hover:border-accent"
-                            }`}
-                          >
-                            <span className="block text-[10px] text-text-muted">
-                              {row.book_title || t("common.unknownBook")}
-                              {row.chapter ? ` · ${row.chapter}` : ""}
-                            </span>
-                            <span className="mt-0.5 block font-serif text-[12px] leading-[1.6] text-text-secondary line-clamp-2">
-                              {row.context_sentence}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {reviewCloze ? <>
-                      <p className="mt-4 text-[12px] text-text-muted">{t("vocab.contextReviewPrompt")}</p>
-                      <p className="mt-3 font-serif text-[20px] leading-9 text-text-primary">
-                        {reviewCloze.segments.map((segment, index) => segment.hidden
-                          ? <span key={index} aria-label={t("vocab.hiddenWord")} className="mx-1 inline-block w-28 border-b-2 border-accent align-baseline" />
-                          : <span key={index}>{segment.text}</span>)}
-                      </p>
-                      <div className="mt-5 flex justify-center gap-2">
-                        <span ref={reviewPronounceRef} className="inline-flex"><PronounceButton text={reviewing.word} size="md" /></span>
-                        {reviewMeaning && <button type="button" onClick={() => setReviewMeaningVisible((visible) => !visible)} className="h-7 rounded-md border border-border px-2 text-[12px] text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text">{t(reviewMeaningVisible ? "vocab.hideSentenceMeaning" : "vocab.showSentenceMeaning")}</button>}
-                      </div>
-                      {reviewMeaningVisible && <p className="mx-auto mt-3 max-w-md rounded-md bg-accent-bg px-3 py-2 text-[13px] leading-5 text-text-secondary">{reviewMeaning}</p>}
-                    </> : <>
-                      <div className="mt-12 flex items-center justify-center gap-2">
-                        <p className="text-[24px] font-semibold text-text-primary">{reviewing.word}</p>
-                        <span ref={reviewPronounceRef} className="inline-flex"><PronounceButton text={reviewing.word} size="md" /></span>
-                      </div>
-                      <p className="mt-3 text-[12px] text-text-muted">{t("vocab.reviewNoContext")}</p>
-                    </>}
-                    <Button ref={reviewRevealRef} className="mx-auto mt-auto" variant="primary" size="md" onClick={() => setReviewAnswerVisible(true)}>{t("vocab.showAnswer")}</Button>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="mt-5 flex items-center justify-center gap-2">
-                      <p className="text-[22px] font-semibold text-text-primary">{reviewing.word}</p>
-                      <PronounceButton text={reviewing.word} size="md" />
-                    </div>
-                    {!reviewCloze && <p className="mt-3 rounded-md bg-bg-muted px-3 py-2 text-center text-[12px] text-text-muted">{t("vocab.reviewNoContext")}</p>}
-                    {reviewAnswer && <p className="mt-4 text-center font-serif text-[17px] leading-7 text-text-secondary">{reviewAnswer.before}<mark className="rounded bg-accent-bg px-0.5 font-semibold text-accent-text">{reviewAnswer.answer}</mark>{reviewAnswer.after}</p>}
-                    <div className="mt-4 rounded-md bg-bg-muted p-3">
-                      <p className="text-[14px] leading-6 text-text-secondary whitespace-pre-line">{reviewing.primary.definition}</p>
-                      {reviewMeaning && <p className="mt-3 border-t border-border pt-3 text-[13px] leading-5 text-text-muted">{reviewMeaning}</p>}
-                    </div>
-                    {reviewError && <p role="alert" className="mt-4 text-center text-[12px] text-danger-text">{t("vocab.reviewSaveFailed")}</p>}
-                    <div className="mt-5 grid grid-cols-4 gap-2" aria-busy={reviewSubmitting}>
-                      {(["again", "hard", "good", "easy"] as const).map((rating, index) => (
-                        <button key={rating} data-review-rating type="button" disabled={reviewSubmitting} onClick={() => void completeReview(rating)} className="h-10 rounded-md border border-border bg-bg-surface text-[12px] font-medium text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text disabled:cursor-wait disabled:opacity-50 cursor-pointer">
-                          {t(`vocab.rating.${rating}`)} <span className="text-text-muted">{index + 1}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <div className="mt-4 flex items-center gap-2 border-t border-border-light pt-3.5">
-                  <button
-                    type="button"
-                    onClick={justLook}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[13.5px] font-medium text-text-muted hover:text-accent-text cursor-pointer"
-                  >
-                    <Eye size={14} />
-                    {t("vocab.reviewJustLook")}
-                  </button>
-                </div>
-                <div role="group" aria-label={t("vocab.reviewShortcuts")} className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-3 text-[11px] text-text-muted">
-                  <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    {!reviewAnswerVisible ? <>
-                      <ReviewShortcut cap="Space" label={t("vocab.showAnswer")} />
-                      <ReviewShortcut cap="H" label={t("vocab.reviewHint")} />
-                    </> : (["again", "hard", "good", "easy"] as const).map((rating, index) => (
-                      <ReviewShortcut key={rating} cap={String(index + 1)} label={t(`vocab.rating.${rating}`)} />
-                    ))}
-                  </span>
-                  <ReviewShortcut cap="Esc" label={t("common.close")} />
-                </div>
-              </>
-            )}
           </div>
         </div>
       )}

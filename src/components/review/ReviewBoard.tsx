@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 import { RotateCcw } from "lucide-react";
 import Button from "../ui/Button";
 import PileCard from "./PileCard";
@@ -20,6 +21,7 @@ interface ReviewBoardProps {
  */
 export default function ReviewBoard({ totalWordCount, onSeeAllWords }: ReviewBoardProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [piles, setPiles] = useState<ReviewPile[] | null>(null);
 
   useEffect(() => {
@@ -60,14 +62,22 @@ export default function ReviewBoard({ totalWordCount, onSeeAllWords }: ReviewBoa
           {cards.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
               {cards.map((pile) => (
-                <PileCard key={pileKey(pile)} pile={pile} />
+                <PileCard
+                  key={pileKey(pile)}
+                  pile={pile}
+                  onOpen={() => navigate(`/flashcards?pile=${encodeURIComponent(pileKey(pile))}`)}
+                />
               ))}
             </div>
           )}
           {longUnseen && (
             <div className="mt-3.5 border-t border-border pt-3.5">
               <p className="mb-[9px] text-[12.5px] text-text-muted">{t("reviewBoard.also")}</p>
-              <PileCard pile={longUnseen} quiet />
+              <PileCard
+                pile={longUnseen}
+                quiet
+                onOpen={() => navigate(`/flashcards?pile=${encodeURIComponent(pileKey(longUnseen))}`)}
+              />
             </div>
           )}
         </>

@@ -14,9 +14,11 @@ interface PileCardProps {
   pile: ReviewPile;
   /** The "还有" section's long_unseen pile: dashed border, no chips — its 来由 has no story to illustrate. */
   quiet?: boolean;
+  /** Navigates to the flashcards page filtered to this pile. */
+  onOpen: () => void;
 }
 
-export default function PileCard({ pile, quiet = false }: PileCardProps) {
+export default function PileCard({ pile, quiet = false, onOpen }: PileCardProps) {
   const { t } = useTranslation();
   const Icon = PILE_ICONS[pile.kind.kind];
   const title = pileTitleKey(pile.kind);
@@ -28,7 +30,16 @@ export default function PileCard({ pile, quiet = false }: PileCardProps) {
 
   return (
     <div
-      className={`flex flex-col gap-[9px] rounded-[14px] border p-4 pb-[14px] transition-colors ${
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className={`flex cursor-pointer flex-col gap-[9px] rounded-[14px] border p-4 pb-[14px] transition-colors ${
         quiet
           ? "border-dashed border-border bg-transparent hover:border-text-muted hover:shadow-none"
           : "border-border bg-bg-surface hover:border-lavender hover:shadow-[0_2px_10px_rgba(124,58,237,0.09)]"
