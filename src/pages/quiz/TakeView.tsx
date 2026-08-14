@@ -236,7 +236,8 @@ export default function TakeView(props: {
           {t('quiz.paper.exit')}
         </button>
         <span className="text-[14px] font-semibold text-text-primary">{t('quiz.paper.take.title')}</span>
-        <span className="text-[12.5px] text-text-muted">
+        {/* 窄屏让位：生成中头部还有「x/y 篇就绪」和用时，这行次要元数据先隐藏 */}
+        <span className="hidden text-[12.5px] text-text-muted md:inline">
           {t('quiz.paper.take.meta', { date: dateLabel, difficulty: difficultyLabel, count: wordsCount })}
         </span>
         <span className="flex-1" />

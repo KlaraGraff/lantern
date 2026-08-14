@@ -16,7 +16,9 @@ export type SlotState = 'open' | 'locked' | 'pending' | 'failed'
 
 /**
  * pending 槽位的活阶段，来自生成会话的按篇事件。'pending'（拆词建行到
- * 流水线首个事件之间的瞬时态）归入 writing——对用户它就是「开始写了」。
+ * 流水线首个事件之间的瞬时态）归入 writing——对用户它就是「开始写了」；
+ * 'done'（已生成完、排队等落库，落库后槽位才翻 open）归入 checking——
+ * 文章确实写完了，说「写稿中」反而是倒退。
  */
 export type PendingStep = 'writing' | 'checking' | 'regenerating'
 
@@ -44,7 +46,12 @@ export function deriveSlots(
     prefixDone = false
     const live = session?.running ? session.articles[i]?.step : undefined
     if (session?.running && live !== 'failed') {
-      const step: PendingStep = live === 'checking' || live === 'regenerating' ? live : 'writing'
+      const step: PendingStep =
+        live === 'checking' || live === 'regenerating'
+          ? live
+          : live === 'done'
+            ? 'checking'
+            : 'writing'
       return { state: 'pending', wordCount: g.words.length, step }
     }
     return { state: 'failed', wordCount: g.words.length }
