@@ -33,6 +33,7 @@ import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import { notifyReaders } from "../utils/notifyReaders";
+import { pickedFilePath } from "../utils/picked-file";
 import MergedVocabDetails from "./vocab/MergedVocabDetails";
 import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
@@ -537,7 +538,8 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
       fileAccessMode: "scoped",
     });
     if (typeof selected !== "string") return;
-    const extension = selected.split(".").pop()?.toLowerCase();
+    const path = pickedFilePath(selected);
+    const extension = path.split(".").pop()?.toLowerCase();
     const format: BackupFormat | null = extension === "json" || extension === "csv" ? extension : null;
     if (!format) {
       setImportError(t("vocab.backup.unsupportedFile"));
@@ -545,7 +547,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
     }
     setImporting(true);
     try {
-      const data = await readTextFile(selected);
+      const data = await readTextFile(path);
       const preview = await invoke<VocabImportPreview>("preview_vocab_import", { data, format });
       setImportData(data);
       setImportFormat(format);

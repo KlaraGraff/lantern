@@ -6,6 +6,7 @@ import { ImagePlus, Loader2 } from "lucide-react";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { updateBookCover, updateBookMetadata } from "../hooks/useBooks";
+import { pickedFilePath } from "../utils/picked-file";
 
 interface EditMetadataModalProps {
   bookId: string;
@@ -70,8 +71,9 @@ export default function EditMetadataModal({
       filters: [{ name: t("editInfo.cover"), extensions: ["jpg", "jpeg", "png", "webp"] }],
     });
     if (!selected || Array.isArray(selected)) return;
-    setCoverPath(selected);
-    setCoverPreview(convertFileSrc(selected));
+    const path = pickedFilePath(selected);
+    setCoverPath(path);
+    setCoverPreview(convertFileSrc(path));
   };
 
   return (
