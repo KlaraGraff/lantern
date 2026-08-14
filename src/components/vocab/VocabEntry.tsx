@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { DictionaryWord } from "../../hooks/useDictionary";
 import PronounceButton from "../speech/PronounceButton";
 import { entryClipboardText, glossOf, parseDefinition } from "./entry-text";
+import { vocabSourceText } from "./source-label";
 import { copyToClipboard } from "../../utils/clipboard";
 
 // The markdown renderer it pulls in is only worth paying for once a row is
@@ -42,7 +43,7 @@ export default function VocabEntry({
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const gloss = glossOf(parseDefinition(word.definition).definition);
-  const source = bookTitle ?? word.book_title ?? t("vocab.detail.unknownBook");
+  const source = bookTitle ?? vocabSourceText(word, t, "vocab.detail.unknownBook");
 
   const handleCopy = async () => {
     // Copies the whole entry even when collapsed — the row is a summary, not

@@ -48,7 +48,14 @@ interface BackendNote {
 
 interface LearningCardControllerProps {
   interaction: ReaderInteraction;
-  bookId: string;
+  /**
+   * Omitted when the card was opened somewhere that is not a book — the quiz
+   * paper's grade view is the only such surface today. The AI call itself never
+   * needed a book, so the card still works: what goes away is everything
+   * addressed *by* book — the lookup cache, the context notes, the memory hint —
+   * and a save filed under this book (see `docs/impls/quiz-word-lookup.md` §一).
+   */
+  bookId?: string;
   bookTitle?: string;
   bookAuthor?: string;
   chapter?: string;
@@ -66,6 +73,10 @@ interface LearningCardControllerProps {
   onAskAi: (quote: string, location?: string, analysis?: string) => void;
   onViewAllNotes?: () => void;
   onLookupSuccess?: (interaction: ReaderInteraction) => void;
+  /** Passed through to a save from this card: `"quiz"` for the quiz paper. */
+  vocabSource?: string;
+  /** Display-only provenance stored beside a bookless save. */
+  vocabSourceLabel?: string;
 }
 
 interface LearningCardStreamChunk {
@@ -94,6 +105,8 @@ export default function LearningCardController({
   onAskAi,
   onViewAllNotes,
   onLookupSuccess,
+  vocabSource,
+  vocabSourceLabel,
 }: LearningCardControllerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
@@ -139,6 +152,13 @@ export default function LearningCardController({
   const [copied, setCopied] = useState(false);
 
   const refreshNotes = useCallback(async () => {
+    // Notes are anchored in a book. Without one there is nothing to list and
+    // nothing to write, so the whole notes affordance stands down (see the
+    // `note` action state below).
+    if (!bookId) {
+      setNotes([]);
+      return;
+    }
     const values = await invoke<BackendNote[]>("list_context_notes", {
       bookId,
       word: interaction.kind === "word" ? interaction.text : null,
@@ -191,7 +211,9 @@ export default function LearningCardController({
 
     const run = async () => {
       try {
-        if (retry === 0) {
+        // The lookup cache is keyed by book, so a bookless card asks the model
+        // every time rather than reading somebody else's cached answer.
+        if (retry === 0 && bookId) {
           const cached = await invoke<{ result_json?: string | null } | null>("get_cached_lookup", {
             bookId,
             lookupText: interaction.text,
@@ -273,6 +295,8 @@ export default function LearningCardController({
           setPartial(true);
           return;
         }
+        // Same reason as the read above: a lookup record belongs to a book.
+        if (!bookId) return;
         const projected = projection(response);
         invoke("save_lookup_record", {
           bookId,
@@ -319,14 +343,21 @@ export default function LearningCardController({
   useEffect(() => {
     refreshNotes().catch(() => {});
     if (interaction.kind === "word") {
-      invoke<string | null>("check_vocab_exists", { bookId, word: interaction.text })
-        .then((id) => setCollected(Boolean(id)))
-        .catch(() => {});
+      // Without a book the question changes from "is this word saved out of
+      // this book" to "is it in the vocabulary list at all" — which is also the
+      // rule a bookless save deduplicates by.
+      const exists = bookId
+        ? invoke<string | null>("check_vocab_exists", { bookId, word: interaction.text })
+        : invoke<boolean>("check_vocab_exists_global", { word: interaction.text });
+      exists.then((found) => setCollected(Boolean(found))).catch(() => {});
       // Read on mount, before this lookup's own record is written, so the
-      // counts here are the ones the prompt was built from.
-      invoke<WordMemoryHint | null>("word_memory_hint", { word: interaction.text })
-        .then(setMemoryHint)
-        .catch(() => {});
+      // counts here are the ones the prompt was built from. The hint is built
+      // from reading history, so a card opened outside a book has none.
+      if (bookId) {
+        invoke<WordMemoryHint | null>("word_memory_hint", { word: interaction.text })
+          .then(setMemoryHint)
+          .catch(() => {});
+      }
     }
   }, [bookId, interaction.kind, interaction.text, refreshNotes]);
 
@@ -466,9 +497,10 @@ export default function LearningCardController({
   const actionStates = useMemo(() => ({
     collect: { collected, disabled: unusable },
     ask_ai: { disabled: unusable },
-    note: { disabled: false },
+    // A note is anchored in a book; there is nowhere to hang one without it.
+    note: { disabled: !bookId },
     copy: { copied, disabled: unusable },
-  }), [collected, copied, unusable]);
+  }), [bookId, collected, copied, unusable]);
 
   const onAction = useCallback(async (action: LearningCardActionId) => {
     if (action === "ask_ai") {
@@ -499,21 +531,23 @@ export default function LearningCardController({
       // panel's regenerate, which has to land on the same two values.
       const fields = cardVocabFields(result);
       await saveVocabWord({
-        bookId,
+        bookId: bookId ?? null,
         word: interaction.text,
         gloss: fields.gloss,
         contextSentence: interaction.context || null,
         contextExplanation: fields.contextExplanation,
         cfi: interaction.location || null,
         cardSnapshot: serializeCardSnapshot(result),
+        source: vocabSource,
+        sourceLabel: vocabSourceLabel,
       });
       setCollected(true);
       window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi: interaction.location } }));
     }
-  }, [bookId, interaction, onAskAi, result]);
+  }, [bookId, interaction, onAskAi, result, vocabSource, vocabSourceLabel]);
 
   const saveNote = useCallback(async () => {
-    if (!noteDraft.trim()) return;
+    if (!noteDraft.trim() || !bookId) return;
     setNoteSaving(true);
     try {
       await invoke("save_note", {

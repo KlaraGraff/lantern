@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   BookmarkPlus,
+  Check,
   CircleHelp,
   Copy,
   Highlighter,
@@ -57,6 +58,12 @@ interface ReaderContextMenuProps {
   text: string;
   kind: InteractionKind;
   marked?: boolean;
+  /**
+   * The word is already in the vocabulary list, so the save row says so and
+   * stops offering the action. Only the callers that know the answer before the
+   * menu opens pass it — the reader's own menu does not ask.
+   */
+  saved?: boolean;
   hasBookWordMark?: boolean;
   markStateLoading?: boolean;
   showTranslate?: boolean;
@@ -93,6 +100,7 @@ export default function ReaderContextMenu({
   text,
   kind,
   marked = false,
+  saved = false,
   hasBookWordMark = false,
   markStateLoading = false,
   showTranslate = false,
@@ -345,8 +353,10 @@ export default function ReaderContextMenu({
       run: onQuote,
     },
     save: {
-      label: t("contextMenu.save", { defaultValue: "收藏" }),
-      icon: BookmarkPlus,
+      label: saved
+        ? t("contextMenu.saved", { defaultValue: "已收藏" })
+        : t("contextMenu.save", { defaultValue: "收藏" }),
+      icon: saved ? Check : BookmarkPlus,
       run: onSave,
     },
     highlight: {
@@ -463,9 +473,11 @@ export default function ReaderContextMenu({
               type="button"
               role="menuitem"
               onClick={definition.run}
-              disabled={action === "highlight" && markStateLoading}
+              disabled={(action === "highlight" && markStateLoading) || (action === "save" && saved)}
               aria-busy={action === "highlight" && markStateLoading ? true : undefined}
-              className={`${MENU_ROW_CLASS} disabled:cursor-wait disabled:opacity-50`}
+              className={`${MENU_ROW_CLASS} disabled:opacity-50 ${
+                action === "save" && saved ? "disabled:cursor-default" : "disabled:cursor-wait"
+              }`}
             >
               <Icon size={16} className="shrink-0 text-text-muted" />
               <span className="min-w-0 flex-1 truncate">{definition.label}</span>

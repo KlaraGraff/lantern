@@ -1,4 +1,6 @@
 import type { DictionaryWord } from "../../hooks/useDictionary";
+// 带扩展名：node --experimental-strip-types 跑的单测直接解析这条路径。
+import { isBooklessVocabRow, vocabGroupId } from "./source-label.ts";
 
 /**
  * The same word saved from three books is three rows in `vocab_words` but one
@@ -10,8 +12,21 @@ export function vocabMergeKey(word: string): string {
 }
 
 export interface MergedVocabBook {
+  /** `vocabGroupId(row)`: a real book's UUID, or `QUIZ_VOCAB_GROUP_ID`. */
   id: string;
   title: string | null;
+  /**
+   * A quiz-sourced pseudo-book. It has no title on purpose — print it via
+   * `mergedVocabBookLabel`, never through `title || 未知书籍`, and switch any
+   * "N 本书" copy to the source-neutral variant when one of these is present.
+   */
+  quiz: boolean;
+  sourceLabel: string | null;
+}
+
+/** Whether any of an entry's sources is a quiz paper rather than a book. */
+export function hasQuizSource(books: MergedVocabBook[]): boolean {
+  return books.some((book) => book.quiz);
 }
 
 export interface MergedVocabEntry {
@@ -89,8 +104,14 @@ export function mergeVocabWords(
 
     const books: MergedVocabBook[] = [];
     for (const row of entryRows) {
-      if (!books.some((book) => book.id === row.book_id)) {
-        books.push({ id: row.book_id, title: row.book_title });
+      const groupId = vocabGroupId(row);
+      if (!books.some((book) => book.id === groupId)) {
+        books.push({
+          id: groupId,
+          title: row.book_title ?? null,
+          quiz: isBooklessVocabRow(row),
+          sourceLabel: row.source_label ?? null,
+        });
       }
     }
 
@@ -128,12 +149,15 @@ export function mergeVocabWords(
  * though its own group only shows one of them.
  */
 export function bookCountsByWord(rows: DictionaryWord[]): Map<string, number> {
+  // A quiz paper is not a book, but it is a distinct place the word was saved
+  // from, and this count only ever answers "does this word live somewhere
+  // else too" — so it counts as one source, keyed apart from every book id.
   const books = new Map<string, Set<string>>();
   for (const row of rows) {
     const key = vocabMergeKey(row.word);
     const bucket = books.get(key);
-    if (bucket) bucket.add(row.book_id);
-    else books.set(key, new Set([row.book_id]));
+    if (bucket) bucket.add(vocabGroupId(row));
+    else books.set(key, new Set([vocabGroupId(row)]));
   }
   return new Map([...books].map(([key, ids]) => [key, ids.size]));
 }

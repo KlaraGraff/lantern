@@ -4,7 +4,13 @@ import { createUuid } from "../../utils/randomUuid";
 import { clampGloss, condenseGloss, isShortGloss } from "./gloss.ts";
 
 export interface SaveVocabWordArgs {
-  bookId: string;
+  /**
+   * The book this word came out of, or `null` when it came from somewhere that
+   * is not a book — currently the quiz paper. A null book means the row is
+   * deduplicated across the whole table rather than per book, and carries no
+   * CFI to navigate back to (see `docs/impls/quiz-word-lookup.md` §二).
+   */
+  bookId: string | null;
   word: string;
   contextSentence?: string | null;
   cfi?: string | null;
@@ -21,6 +27,10 @@ export interface SaveVocabWordArgs {
    * detail surface. Nothing reads this yet.
    */
   cardSnapshot?: string | null;
+  /** Where the save came from: omitted means `"book"`, the quiz passes `"quiz"`. */
+  source?: string | null;
+  /** Display-only provenance for a bookless row, e.g. `"8/14 今日词卷"`. */
+  sourceLabel?: string | null;
 }
 
 /**
@@ -86,6 +96,8 @@ export async function saveVocabWord<T = unknown>(args: SaveVocabWordArgs) {
     contextExplanation: args.contextExplanation || null,
     cfi: args.cfi || null,
     cardSnapshot: args.cardSnapshot || null,
+    source: args.source || null,
+    sourceLabel: args.sourceLabel || null,
   });
 }
 

@@ -123,6 +123,9 @@ export default function AskDrawer(props: {
         {activeThread.messages.map((m, i) => (
           <div
             key={i}
+            // 消息气泡本身也在取词范围内：选中 AI 回答里的一段再问一次，走的是
+            // 与卷面同一套菜单。
+            data-quiz-lookup=""
             data-ask-from={t('quiz.paper.ask.messageFrom', {
               role: m.role === 'user' ? t('quiz.paper.ask.roleUser') : t('quiz.paper.ask.roleAi'),
             })}

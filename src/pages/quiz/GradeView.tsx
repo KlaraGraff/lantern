@@ -8,8 +8,9 @@
  */
 import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, ChevronDown, Loader2, MessageCircleQuestion, RotateCw } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Loader2, RotateCw } from 'lucide-react'
 import AskDrawer from './AskDrawer.tsx'
+import QuizLookupLayer from './QuizLookupLayer.tsx'
 import { useAskThread } from './useAskThread.ts'
 import { explanationTriState, type ExplanationTriState } from './useQuizPaper.ts'
 import type { ExplanationSessionState } from './explanation-session.ts'
@@ -173,9 +174,12 @@ export default function GradeView(props: {
   const ask = useAskThread({
     quizId: quiz.id,
     initialThreads: quiz.askThreads ?? [],
-    enabled: true,
     onPersist: (threads) => void saveAskThreads(threads),
   })
+
+  // 收藏进生词本时记下的来源，如「8/14 今日词卷」——这张卷子没有书名可写，
+  // 存的是一段展示文本的快照（见 docs/impls/quiz-word-lookup.md §二）。
+  const vocabSourceLabel = t('quizLookup.sourceLabel', { date: dateLabel })
 
   const activePassage = quiz.passages.find((p) => `p:${p.id}` === activeTab)
   const vocabCount = quiz.words.filter((w) => w.origin === 'vocab').length
@@ -276,8 +280,13 @@ export default function GradeView(props: {
           {activePassage && (
             <div className="rounded-b-lg rounded-tr-lg border border-border bg-bg-surface p-6">
               <h3 className="font-serif text-[17px] font-semibold text-text-primary">{activePassage.title}</h3>
-              {/* 与 TakeView 同款：真题卷面惯例两端对齐 + 浏览器连字符断词 */}
-              <div lang="en" className="mt-3 max-w-[62ch] text-justify font-serif text-[14px] leading-[1.85] text-text-body hyphens-auto">
+              {/* 与 TakeView 同款：真题卷面惯例两端对齐 + 浏览器连字符断词。
+                  data-quiz-lookup 圈定取词手势的作用范围（见 lookup-scope.ts）。 */}
+              <div
+                lang="en"
+                data-quiz-lookup=""
+                className="mt-3 max-w-[62ch] text-justify font-serif text-[14px] leading-[1.85] text-text-body hyphens-auto"
+              >
                 {activePassage.paragraphs.map((para, i) => {
                   const key = `${activePassage.id}-${i + 1}`
                   return (
@@ -305,13 +314,17 @@ export default function GradeView(props: {
                     if (!v) return null
                     const isOpen = expanded[q.id] ?? false
                     const state = explainState(q.passageId)
+                    // 出处/上下文挂在整道题上，讲解正文没有更近的标注就继承它；
+                    // 选项与原文引句各自带更贴身的一份，就近覆盖。
                     return (
-                      <div key={q.id} className="py-4">
-                        <div
-                          className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
-                          data-ask-from={t('quiz.paper.ask.fromReading', { n: i + 1 })}
-                          data-ask-ctx={readingAskCtx(q)}
-                        >
+                      <div
+                        key={q.id}
+                        className="py-4"
+                        data-quiz-lookup=""
+                        data-ask-from={t('quiz.paper.ask.fromReading', { n: i + 1 })}
+                        data-ask-ctx={readingAskCtx(q)}
+                      >
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                           <VerdictBadge correct={v.correct} t={t} />
                           <span className="font-serif text-[14px] leading-[1.6] text-text-primary">
                             <span className="mr-1 font-semibold text-accent-text">{t('quiz.paper.take.qPrefix', { n: i + 1 })}</span>
@@ -454,12 +467,14 @@ export default function GradeView(props: {
                   const wrongTitleKey =
                     matchedWrong.length > 0 ? 'quiz.paper.grade.whyWrong' : 'quiz.paper.grade.commonWrong'
                   return (
-                    <div key={q.id} className="py-4">
-                      <div
-                        className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
-                        data-ask-from={t('quiz.paper.ask.fromGrammar', { n: i + 1 })}
-                        data-ask-ctx={grammarAskCtx(q)}
-                      >
+                    <div
+                      key={q.id}
+                      className="py-4"
+                      data-quiz-lookup=""
+                      data-ask-from={t('quiz.paper.ask.fromGrammar', { n: i + 1 })}
+                      data-ask-ctx={grammarAskCtx(q)}
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <VerdictBadge correct={v.correct} t={t} />
                         <span className="font-serif text-[14px] leading-[1.6] text-text-primary">
                           <span className="mr-1 font-semibold text-accent-text">{t('quiz.paper.take.gPrefix', { n: i + 1 })}</span>
@@ -572,18 +587,9 @@ export default function GradeView(props: {
         </div>
       </div>
 
-      {ask.askPop && (
-        <button
-          type="button"
-          style={{ left: ask.askPop.x, top: ask.askPop.y }}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={ask.openThread}
-          className="fixed z-50 flex -translate-x-1/2 -translate-y-full items-center gap-1 rounded-full bg-text-primary px-2.5 py-1.5 text-[12px] font-medium text-white shadow-context"
-        >
-          <MessageCircleQuestion size={13} />
-          {t('quiz.paper.ask.trigger')}
-        </button>
-      )}
+      {/* 单击/双击/三击/拖选，四种手势一个菜单。「问 AI」也从这里进抽屉——
+          评卷页原来那只独立的「问 AI」小气泡已并入（§一）。 */}
+      <QuizLookupLayer enabled sourceLabel={vocabSourceLabel} onAsk={ask.openThreadFor} />
 
       {ask.drawerOpen && (
         <AskDrawer

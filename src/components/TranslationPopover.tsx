@@ -32,7 +32,13 @@ interface TranslationPopoverProps {
   y: number;
   text: string;
   context?: string;
-  bookId: string;
+  /**
+   * Omitted when the passage is not in a book — the quiz paper. The translation
+   * itself never needed one (the backend ignores the argument), so what stands
+   * down is only the save button: filing a paragraph under no book is the word
+   * menu's 收藏 row's job, and it is the one that carries the quiz provenance.
+   */
+  bookId?: string;
   bookTitle?: string;
   bookAuthor?: string;
   chapter?: string;
@@ -64,7 +70,7 @@ const LANG_NAMES: Record<string, string> = {
 function useStreamingTranslation(
   text: string,
   context: string | undefined,
-  bookId: string,
+  bookId: string | undefined,
   bookTitle: string | undefined,
   bookAuthor: string | undefined,
   chapter: string | undefined,
@@ -130,7 +136,9 @@ function useStreamingTranslation(
         await invoke("ai_translate_passage", {
           text,
           context: context || null,
-          bookId,
+          // The command takes a plain string and does not read it; an empty one
+          // is the honest spelling of "this passage is not in a book".
+          bookId: bookId ?? "",
           bookTitle: bookTitle || null,
           bookAuthor: bookAuthor || null,
           chapter: chapter || null,
@@ -214,12 +222,14 @@ export default function TranslationPopover({
 
   // Check if this text is already saved to the vocab list
   useEffect(() => {
+    if (!bookId) return;
     invoke<string | null>("check_vocab_exists", { bookId, word: text }).then((id) => {
       if (id) setSaved(true);
     }).catch(() => {});
   }, [bookId, text]);
 
   const handleSave = async () => {
+    if (!bookId) return;
     try {
       // A short selection's translation *is* the gloss and is stored as-is; a
       // paragraph's translation is not, and gets a real gloss instead while
@@ -363,14 +373,18 @@ export default function TranslationPopover({
   const translationFooter = allDone && hasContent && !hasConfigurationError && !streamError && (
     <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40 touch:flex-wrap touch:gap-y-2">
       <div className="flex items-center gap-3 touch:flex-wrap touch:gap-y-2">
-        <button
-          onClick={handleSave}
-          disabled={saved}
-          className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
-        >
-          {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
-          {saved ? t("lookup.saved") : t("lookup.saveToDict")}
-        </button>
+        {/* No book, no place to save it back to — the quiz paper's own menu
+            carries the save row instead, with the paper as provenance. */}
+        {bookId && (
+          <button
+            onClick={handleSave}
+            disabled={saved}
+            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
+          >
+            {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+            {saved ? t("lookup.saved") : t("lookup.saveToDict")}
+          </button>
+        )}
         {onAskFollowUp && (
           <button
             onClick={() => {

@@ -7,7 +7,12 @@ import { platform } from "../services/platform";
 export type ReaderNotification = "vocab-changed" | "lookup-record-changed";
 
 export interface ReaderNotificationDetail {
-  bookId?: string;
+  /**
+   * Null for a change to something no book owns — a vocabulary word saved
+   * from a quiz paper. Same effect as omitting it: no window to address, so
+   * only this window's listeners hear it.
+   */
+  bookId?: string | null;
   cfi?: string | null;
 }
 

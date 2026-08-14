@@ -1,14 +1,17 @@
 /**
  * 评卷页「选中文本 → 问 AI」追问抽屉的状态与行为，迁自
- * labs/cijuan/src/ui/QuizView.tsx 的追问部分（selectionchange 监听 + 线程列表），
- * 换掉的是持久化（save_quiz_ask_threads 整体覆盖）与传输（transport.completeText
- * 多轮 messages，而非 labs 自带 key 的 profile/callChat）。
+ * labs/cijuan/src/ui/QuizView.tsx 的追问部分，换掉的是持久化
+ * （save_quiz_ask_threads 整体覆盖）与传输（transport.completeText 多轮
+ * messages，而非 labs 自带 key 的 profile/callChat）。
  *
- * 选区识别：卷面上任何想被追问的区域打 `data-ask-from`（人类可读出处标注）与
- * `data-ask-ctx`（发给模型的上下文全文）两个 data attribute，选中其中的文字会
- * 浮出「问 AI」气泡；不在这类区域内的选区不触发。抽屉里的消息气泡本身也打了
- * 这两个属性，所以「选中 AI 回答里的文字继续追问」和「选中原文/讲解追问」走
- * 同一条路径。
+ * 入口只有一个：卷面的统一取词菜单（`useQuizLookup` + `QuizLookupLayer`）里的
+ * 「问 AI」那一行，调 `openThreadFor`。这里不再自己监听 selectionchange——两套
+ * 手势叠在同一段文字上会互相抢选区。
+ *
+ * 出处与上下文仍然读卷面上的 `data-ask-from`（人类可读出处标注）与
+ * `data-ask-ctx`（发给模型的上下文全文）两个 data attribute，只是改由菜单那侧
+ * 顺着 DOM 往上找、连同选中的文字一起交过来。抽屉里的消息气泡本身也打了这两个
+ * 属性，所以「选中 AI 回答里的文字继续追问」和「选中原文/讲解追问」走同一条路径。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createUuid } from '../../utils/randomUuid.ts'
@@ -16,12 +19,11 @@ import { completeText, parseQuizAiProfileId } from '../../quiz/transport.ts'
 import { useSettings } from '../../hooks/useSettings.ts'
 import type { AskMessage, AskThread } from '../../quiz/types.ts'
 
-export interface AskPop {
+/** 一次追问的全部素材：选中的文字、它的出处标注、以及要交给模型的上下文全文。 */
+export interface AskTarget {
   quote: string
   quoteFrom: string
   context: string
-  x: number
-  y: number
 }
 
 /** 追问的系统提示词：把选中片段与其上下文交代清楚，答案要求简洁、中文。 */
@@ -43,28 +45,25 @@ ${opts.context}
 export interface UseAskThreadResult {
   threads: AskThread[]
   activeThread: AskThread | null
-  askPop: AskPop | null
   drawerOpen: boolean
   sendingThreadId: string | null
   error: { threadId: string; message: string } | null
   selectThread: (id: string) => void
-  openThread: () => void
+  openThreadFor: (target: AskTarget) => void
   closeDrawer: () => void
   sendMessage: (text: string) => void
   retry: () => void
 }
 
 /**
- * @param enabled 只在评卷模式下监听选区（做题态不该弹「问 AI」）
  * @param onPersist 整体覆盖式保存；线程列表每次变化后调用（除了「还没发过消息的空线程」）
  */
 export function useAskThread(opts: {
   quizId: number | undefined
   initialThreads: AskThread[]
-  enabled: boolean
   onPersist: (threads: AskThread[]) => void
 }): UseAskThreadResult {
-  const { quizId, enabled, onPersist } = opts
+  const { quizId, onPersist } = opts
   const { settings } = useSettings()
   // sendToApi 是空依赖数组的 useCallback（见下方定义处的说明），靠 ref 拿到最新
   // 设置值——每次渲染后同步一次，不需要因为设置变化而重建这个回调本身。
@@ -77,7 +76,6 @@ export function useAskThread(opts: {
   const threadsRef = useRef(threads)
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [askPop, setAskPop] = useState<AskPop | null>(null)
   const [sendingThreadId, setSendingThreadId] = useState<string | null>(null)
   const [error, setError] = useState<{ threadId: string; message: string } | null>(null)
 
@@ -94,7 +92,6 @@ export function useAskThread(opts: {
     setThreads(initialThreadsRef.current)
     setActiveThreadId(null)
     setDrawerOpen(false)
-    setAskPop(null)
     setError(null)
   }, [quizId])
 
@@ -104,53 +101,19 @@ export function useAskThread(opts: {
     if (persist) onPersist(next)
   }
 
-  useEffect(() => {
-    if (!enabled) return
-    function onSelectionChange() {
-      const sel = window.getSelection()
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-        setAskPop(null)
-        return
-      }
-      const text = sel.toString().trim()
-      if (!text) {
-        setAskPop(null)
-        return
-      }
-      const range = sel.getRangeAt(0)
-      const node = range.commonAncestorContainer
-      const el = node.nodeType === 1 ? (node as Element) : node.parentElement
-      const from = el?.closest<HTMLElement>('[data-ask-from]')
-      if (!from) {
-        setAskPop(null)
-        return
-      }
-      const rect = range.getBoundingClientRect()
-      if (rect.width === 0 && rect.height === 0) {
-        setAskPop(null)
-        return
-      }
-      setAskPop({
-        quote: text,
-        quoteFrom: from.dataset.askFrom ?? '',
-        context: from.dataset.askCtx ?? text,
-        x: rect.left + rect.width / 2,
-        y: rect.top,
-      })
-    }
-    document.addEventListener('selectionchange', onSelectionChange)
-    return () => document.removeEventListener('selectionchange', onSelectionChange)
-  }, [enabled])
-
-  // 副作用不能塞进 setAskPop 的函数式 updater——StrictMode 下 updater 会被双调，
-  // 建线程/开抽屉跑两遍就多出一条幽灵空线程。这里直接读 state、末尾清 pop。
-  const openThread = useCallback(() => {
-    if (!askPop) return
+  /**
+   * 建一条新线程并开抽屉。素材由菜单那侧交过来，这里不碰选区识别。
+   *
+   * 副作用不塞进任何函数式 updater——StrictMode 下 updater 会被双调，建线程/开
+   * 抽屉跑两遍就多出一条幽灵空线程。
+   */
+  const openThreadFor = useCallback((target: AskTarget) => {
+    if (!target.quote.trim()) return
     const thread: AskThread = {
       id: createUuid(),
-      quote: askPop.quote,
-      quoteFrom: askPop.quoteFrom,
-      context: askPop.context,
+      quote: target.quote,
+      quoteFrom: target.quoteFrom,
+      context: target.context || target.quote,
       messages: [],
       createdAt: new Date().toISOString(),
     }
@@ -159,9 +122,8 @@ export function useAskThread(opts: {
     setActiveThreadId(thread.id)
     setDrawerOpen(true)
     window.getSelection()?.removeAllRanges()
-    setAskPop(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [askPop])
+  }, [])
 
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false)
@@ -236,12 +198,11 @@ export function useAskThread(opts: {
   return {
     threads,
     activeThread,
-    askPop,
     drawerOpen,
     sendingThreadId,
     error,
     selectThread: setActiveThreadId,
-    openThread,
+    openThreadFor,
     closeDrawer,
     sendMessage,
     retry,

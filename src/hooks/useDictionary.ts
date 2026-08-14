@@ -5,7 +5,12 @@ import { saveVocabWord } from "../components/vocab/collect";
 
 export interface DictionaryWord {
   id: string;
-  book_id: string;
+  /**
+   * Null for a word that came from somewhere other than a book — a quiz paper
+   * is the only such source today. Those rows have no book title and no CFI, so
+   * every "back to the source" affordance has to be left off them.
+   */
+  book_id: string | null;
   word: string;
   definition: string;
   context_sentence: string | null;
@@ -32,6 +37,10 @@ export interface DictionaryWord {
   created_at: number;
   updated_at: number;
   book_title: string | null;
+  /** `"book"` for everything saved while reading, `"quiz"` for the quiz paper. */
+  source?: string;
+  /** What to print instead of a book title, e.g. `"8/14 今日词卷"`. */
+  source_label?: string | null;
   /**
    * Derived by the backend from lookup history, so it is only present on the
    * full vocabulary listing and absent (undefined) on partial updates such as

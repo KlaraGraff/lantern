@@ -1,12 +1,13 @@
 import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { BookOpen } from "lucide-react";
+import { BookOpen, ClipboardList } from "lucide-react";
 import type { DictionaryWord } from "../../hooks/useDictionary";
 import { timeAgo } from "../../utils/timeAgo";
 import { contextualReviewAnswer } from "./contextual-review";
 import { glossOf, parseDefinition } from "./entry-text";
 import MasteryPanel, { type MasteryLevel } from "./MasteryPanel";
-import type { MergedVocabEntry } from "./merge";
+import { hasQuizSource, type MergedVocabEntry } from "./merge";
+import { isBooklessVocabRow, vocabSourceText } from "./source-label";
 
 // Same deferral as the single-book entry — the markdown renderer only loads
 // once this merged panel is actually opened.
@@ -32,24 +33,28 @@ function Encounter({
   const { t } = useTranslation();
   const sentence = row.context_sentence?.trim() || null;
   const marked = contextualReviewAnswer(sentence, row.word);
+  // 词卷那一遇没有书也没有 CFI，「回到原文」无处可去，整个按钮不出现。
+  const bookless = isBooklessVocabRow(row);
   return (
     <div className="rounded-md border border-border-light bg-bg-muted px-2.5 py-2">
       <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
-        <BookOpen size={10} className="shrink-0" />
-        <span className="max-w-[180px] truncate">{row.book_title || t("common.unknownBook")}</span>
+        {bookless ? <ClipboardList size={10} className="shrink-0" /> : <BookOpen size={10} className="shrink-0" />}
+        <span className="max-w-[180px] truncate">{vocabSourceText(row, t)}</span>
         {row.chapter && <>
           <span aria-hidden="true">·</span>
           <span className="max-w-[150px] truncate">{row.chapter}</span>
         </>}
         <span aria-hidden="true">·</span>
         <span className="shrink-0">{timeAgo(row.created_at)}</span>
-        <button
-          type="button"
-          onClick={onOpen}
-          className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-accent-text hover:bg-accent-bg cursor-pointer"
-        >
-          {t("vocab.merged.backToSource")}
-        </button>
+        {!bookless && (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="ml-auto flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-accent-text hover:bg-accent-bg cursor-pointer"
+          >
+            {t("vocab.merged.backToSource")}
+          </button>
+        )}
       </div>
       {sentence && (
         <p className="mt-1.5 font-serif text-[12px] leading-[1.7] text-text-secondary">
@@ -75,11 +80,13 @@ export default function MergedVocabDetails({
 }: MergedVocabDetailsProps) {
   const { t } = useTranslation();
   const bookCount = entry.books.length;
+  // 来源里混着词卷时，「N 本书」的文案全部换成「N 处」的中性说法
+  const mixedSources = hasQuizSource(entry.books);
   return (
     <>
       <Suspense fallback={null}><VocabEntryDetails
         word={entry.primary}
-        onOpenInReader={() => onOpenRow(entry.primary)}
+        onOpenInReader={isBooklessVocabRow(entry.primary) ? undefined : () => onOpenRow(entry.primary)}
         afterDefinition={entry.altRows.length > 0 && (
           <details className="rounded-md border border-dashed border-border bg-bg-muted px-2.5 py-2">
             <summary className="cursor-pointer text-[11px] text-accent-text">
@@ -92,7 +99,7 @@ export default function MergedVocabDetails({
                 </p>
                 <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
                   <span className="min-w-0 truncate">
-                    {t("vocab.entry.savedIn", { source: row.book_title || t("common.unknownBook") })}
+                    {t("vocab.entry.savedIn", { source: vocabSourceText(row, t) })}
                   </span>
                   <button
                     type="button"
@@ -110,7 +117,7 @@ export default function MergedVocabDetails({
         encounters={(
           <section className="flex flex-col gap-1.5">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
-              {t("vocab.merged.encounters", { count: bookCount })}
+              {t(mixedSources ? "vocab.merged.encountersMixed" : "vocab.merged.encounters", { count: bookCount })}
             </h3>
             {entry.rows.map((row) => (
               <Encounter key={row.id} row={row} onOpen={() => onOpenRow(row)} />
@@ -122,6 +129,7 @@ export default function MergedVocabDetails({
         word={entry.primary}
         onSetMastery={onSetMastery}
         sharedBookCount={bookCount}
+        sharedSourcesMixed={mixedSources}
       />
     </>
   );

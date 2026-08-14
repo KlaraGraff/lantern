@@ -7,6 +7,7 @@ import { notifyReaders } from "../../utils/notifyReaders";
 import { timeAgo } from "../../utils/timeAgo";
 import AiMarkdown from "../ai-markdown/AiMarkdown";
 import { parseDefinition, truncateMiddle } from "./entry-text";
+import { vocabSourceText } from "./source-label";
 import PronounceButton from "../speech/PronounceButton";
 import VocabCardSnapshot from "./VocabCardSnapshot";
 import { canRegenerateCard, regenerateVocabCard } from "./regenerateCard";
@@ -73,7 +74,7 @@ export default function VocabEntryDetails({
   const { definition } = parseDefinition(word.definition);
   const contextSentence = word.context_sentence?.trim() || null;
   const contextExplanation = word.context_explanation?.trim() || null;
-  const source = bookTitle ?? word.book_title ?? t("vocab.detail.unknownBook");
+  const source = bookTitle ?? vocabSourceText(word, t, "vocab.detail.unknownBook");
   const [dictionary, setDictionary] = useState<string | null>(null);
   const [notes, setNotes] = useState<WordNote[]>([]);
 

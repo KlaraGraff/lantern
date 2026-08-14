@@ -27,6 +27,7 @@ import {
   RotateCcw,
   BookmarkPlus,
   BookmarkCheck,
+  ClipboardList,
   Loader2,
 } from "lucide-react";
 import Button from "./ui/Button";
@@ -37,11 +38,13 @@ import { pickedFilePath } from "../utils/picked-file";
 import MergedVocabDetails from "./vocab/MergedVocabDetails";
 import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
+import { isBooklessVocabRow, mergedVocabBookLabel, vocabGroupId, vocabGroupLabel, vocabSourceText } from "./vocab/source-label";
 import { saveVocabWord } from "./vocab/collect";
 import {
   bookCountsByWord,
   dueMergedEntries,
   daysUntilDue,
+  hasQuizSource,
   mergeVocabWords,
   vocabMergeKey,
   type MergedVocabEntry,
@@ -77,7 +80,8 @@ type ImportConflictPolicy = "skip" | "overwrite";
 
 interface VocabBackupWord {
   id: string;
-  book_id: string;
+  /** Null for the rows saved outside a book — a quiz paper today. */
+  book_id: string | null;
   word: string;
   definition: string;
   context_sentence: string | null;
@@ -298,12 +302,12 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
     let result = words;
     if (search) {
       const q = search.toLowerCase();
-      result = result.filter((w) => [w.word, w.definition, w.context_sentence, w.book_title]
+      result = result.filter((w) => [w.word, w.definition, w.context_sentence, w.book_title, w.source_label]
         .filter(Boolean)
         .some((value) => value!.toLowerCase().includes(q)));
     }
     if (bookFilter) {
-      result = result.filter((w) => w.book_id === bookFilter);
+      result = result.filter((w) => vocabGroupId(w) === bookFilter);
     }
     if (reviewOnly) {
       result = result.filter((w) => w.next_review_at !== null && w.next_review_at <= now);
@@ -332,10 +336,13 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
       // also lives elsewhere says so.
       const map = new Map<string, VocabListGroup>();
       for (const row of sorted) {
-        let group = map.get(row.book_id);
+        // 词卷收藏的词没有书，自成一组「词卷」——不混进任何一本书，也不落到
+        // 「未知书籍」里（docs/impls/quiz-word-lookup.md §五）。
+        const groupId = vocabGroupId(row);
+        let group = map.get(groupId);
         if (!group) {
-          group = { id: row.book_id, label: row.book_title || t("common.unknownBook"), kind: "book", entries: [] };
-          map.set(row.book_id, group);
+          group = { id: groupId, label: vocabGroupLabel(row, t), kind: "book", entries: [] };
+          map.set(groupId, group);
         }
         group.entries.push({
           entryKey: row.id,
@@ -365,10 +372,11 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   const bookPills = useMemo(() => {
     const map = new Map<string, { title: string; count: number }>();
     for (const w of words) {
-      if (!map.has(w.book_id)) {
-        map.set(w.book_id, { title: w.book_title || t("common.unknownBook"), count: 0 });
+      const groupId = vocabGroupId(w);
+      if (!map.has(groupId)) {
+        map.set(groupId, { title: vocabGroupLabel(w, t), count: 0 });
       }
-      map.get(w.book_id)!.count++;
+      map.get(groupId)!.count++;
     }
     return Array.from(map.entries()).map(([id, { title, count }]) => ({ id, title, count }));
   }, [words, t]);
@@ -619,7 +627,9 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   const entryDetails = (entry: MergedVocabEntry) => (entry.rows.length > 1 ? (
     <MergedVocabDetails
       entry={entry}
-      onOpenRow={(row) => openInReader(row.book_id, { openVocab: true, cfi: row.cfi ?? undefined })}
+      onOpenRow={(row) => {
+        if (row.book_id) openInReader(row.book_id, { openVocab: true, cfi: row.cfi ?? undefined });
+      }}
       onSetPrimary={(rowId) => setPrimaryRow(entry.key, rowId)}
       onSetMastery={(mastery) => { void setEntryMastery(entry, mastery); }}
     />
@@ -628,7 +638,8 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
       <Suspense fallback={null}>
         <VocabEntryDetails
           word={entry.primary}
-          onOpenInReader={() => openInReader(entry.primary.book_id, {
+          // 词卷收藏没有书也没有 CFI，「去阅读器」无处可去，按钮整个不出。
+          onOpenInReader={isBooklessVocabRow(entry.primary) ? undefined : () => openInReader(entry.primary.book_id!, {
             openVocab: true,
             cfi: entry.primary.cfi ?? undefined,
           })}
@@ -1209,7 +1220,8 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                               {entry.books.length > 1 && (
                                 <span className="flex items-center gap-1 rounded-full bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
                                   <BookOpen size={10} />
-                                  {t("vocab.merged.bookCount", { count: entry.books.length })}
+                                  {/* 来源里混着词卷时不能说「N 本书」——词卷不是书 */}
+                                  {t(hasQuizSource(entry.books) ? "vocab.merged.sourceCount" : "vocab.merged.bookCount", { count: entry.books.length })}
                                 </span>
                               )}
                               {sameWordOtherBook && (
@@ -1272,7 +1284,13 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                               {entry.books.length > 1 ? (
                                 <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
                                   <BookOpen size={10} />
-                                  <span className="truncate">{t("vocab.merged.bookCount", { count: entry.books.length })}</span>
+                                  <span className="truncate">{t(hasQuizSource(entry.books) ? "vocab.merged.sourceCount" : "vocab.merged.bookCount", { count: entry.books.length })}</span>
+                                </span>
+                              ) : isBooklessVocabRow(entry.primary) ? (
+                                // 词卷收藏：没有书名可印，印「词卷 · 卷名」。
+                                <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
+                                  <ClipboardList size={10} />
+                                  <span className="truncate">{vocabSourceText(entry.primary, t)}</span>
                                 </span>
                               ) : entry.primary.book_title && (
                                 <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
@@ -1428,7 +1446,8 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
             <p className="mt-2 text-[13px] leading-5 text-text-secondary">
               {t("vocab.merged.deleteBody", {
                 books: formatBookList(
-                  deleteEntry.books.map((book) => book.title || t("common.unknownBook")),
+                  // 词卷伪书走 source-label 的口径印「词卷 · 卷名」，不落回「未知书籍」
+                  deleteEntry.books.map((book) => mergedVocabBookLabel(book, t)),
                   i18n.language,
                 ),
               })}

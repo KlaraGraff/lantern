@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   bookCountsByWord,
   dueMergedEntries,
+  hasQuizSource,
   mergeVocabWords,
   vocabMergeKey,
 } from "../src/components/vocab/merge.ts";
+import { QUIZ_VOCAB_GROUP_ID, mergedVocabBookLabel } from "../src/components/vocab/source-label.ts";
 import type { DictionaryWord } from "../src/hooks/useDictionary.ts";
 
 function row(overrides: Partial<DictionaryWord> & { id: string; word: string }): DictionaryWord {
@@ -111,6 +113,42 @@ test("a due count counts words, not records", () => {
     row({ id: "3", word: "solitude", next_review_at: 5_000, book_id: "b" }),
   ]);
   assert.deepEqual(dueMergedEntries(entries, 200).map((entry) => entry.key), ["courage"]);
+});
+
+test("a quiz row merges as a pseudo-book that never reads 「未知书籍」", () => {
+  const entries = mergeVocabWords([
+    row({ id: "1", word: "courage", book_id: "a", book_title: "A" }),
+    row({ id: "2", word: "courage", book_id: null, book_title: null, source_label: "8/14 今日词卷" }),
+    row({ id: "3", word: "courage", book_id: null, book_title: null, source_label: "8/15 今日词卷" }),
+  ]);
+
+  // 两条词卷行归并成同一个伪书组——它们都属于「词卷」这一处来源
+  assert.deepEqual(
+    entries[0].books.map((book) => book.id),
+    ["a", QUIZ_VOCAB_GROUP_ID],
+  );
+  assert.equal(hasQuizSource(entries[0].books), true);
+
+  // 删除弹窗等处印的名字：真书印书名，词卷印「词卷 · 卷名」，不落回未知书籍
+  const t = (key: string, values?: Record<string, string>) =>
+    key === "quizLookup.vocabSource" ? `词卷 · ${values?.label}` : key;
+  assert.deepEqual(
+    entries[0].books.map((book) => mergedVocabBookLabel(book, t)),
+    ["A", "词卷 · 8/14 今日词卷"],
+  );
+});
+
+test("an all-book entry has no quiz source and labels fall back to 未知书籍", () => {
+  const entries = mergeVocabWords([
+    row({ id: "1", word: "courage", book_id: "a", book_title: "A" }),
+    row({ id: "2", word: "courage", book_id: "b", book_title: null }),
+  ]);
+  assert.equal(hasQuizSource(entries[0].books), false);
+  const t = (key: string) => key;
+  assert.deepEqual(
+    entries[0].books.map((book) => mergedVocabBookLabel(book, t)),
+    ["A", "common.unknownBook"],
+  );
 });
 
 test("book counts see the whole library, not one group of it", () => {

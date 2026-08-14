@@ -24,7 +24,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { useEdgeSwipeBack } from "../hooks/useEdgeSwipeBack";
 import type { DictionaryWord } from "../hooks/useDictionary";
-import { dueMergedEntries, mergeVocabWords, type MergedVocabEntry } from "../components/vocab/merge";
+import { dueMergedEntries, hasQuizSource, mergeVocabWords, type MergedVocabEntry } from "../components/vocab/merge";
 import {
   contextualReviewAnswer,
   contextualReviewCloze,
@@ -32,6 +32,7 @@ import {
   contextualReviewSource,
   contextualSentenceMeaning,
 } from "../components/vocab/contextual-review";
+import { vocabSourceText } from "../components/vocab/source-label";
 import { pileKey, type ReviewPile, type ReviewPileKind } from "../components/review/review-piles";
 import { notifyReaders } from "../utils/notifyReaders";
 import { TOP_INSET } from "../utils/top-inset";
@@ -202,7 +203,8 @@ export default function FlashcardReview() {
   const reviewMeaning = useMemo(() => (reviewRow ? contextualSentenceMeaning(reviewRow.context_explanation) : null), [reviewRow]);
   const reviewProgress = useMemo(() => contextualReviewProgress(reviewIndex, queue?.length ?? 0), [reviewIndex, queue]);
   const reviewSource = useMemo(
-    () => (reviewRow ? contextualReviewSource(reviewRow.book_title, reviewRow.chapter, t("common.unknownBook")) : null),
+    // 词卷收藏的词没有书名，出处印「词卷 · 卷名」而不是「未知书籍」。
+    () => (reviewRow ? contextualReviewSource(vocabSourceText(reviewRow, t), reviewRow.chapter, t("common.unknownBook")) : null),
     [reviewRow, t],
   );
 
@@ -387,7 +389,7 @@ export default function FlashcardReview() {
             {reviewing.books.length > 1 && (
               <p className="mb-3 flex items-start gap-1.5 rounded-md bg-accent-bg px-3 py-2 text-[11px] leading-4 text-accent-text">
                 <RotateCcw size={12} className="mt-px shrink-0" />
-                {t("vocab.review.mergedBanner", { count: reviewing.books.length })}
+                {t(hasQuizSource(reviewing.books) ? "vocab.review.mergedBannerMixed" : "vocab.review.mergedBanner", { count: reviewing.books.length })}
               </p>
             )}
             {!reviewAnswerVisible ? (
@@ -430,7 +432,7 @@ export default function FlashcardReview() {
                         }`}
                       >
                         <span className="block text-[10px] text-text-muted">
-                          {row.book_title || t("common.unknownBook")}
+                          {vocabSourceText(row, t)}
                           {row.chapter ? ` · ${row.chapter}` : ""}
                         </span>
                         <span className="mt-0.5 block font-serif text-[12px] leading-[1.6] text-text-secondary line-clamp-2">

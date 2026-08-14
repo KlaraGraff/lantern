@@ -71,6 +71,8 @@ export interface MasteryPanelProps {
    * names one book should not look like it only touched that book.
    */
   sharedBookCount?: number;
+  /** 来源里混着词卷（不全是书）时为 true，提示文案换成「N 处来源」。 */
+  sharedSourcesMixed?: boolean;
 }
 
 /**
@@ -82,7 +84,7 @@ export interface MasteryPanelProps {
  * it renders for every saved word, whether that word was saved from one book
  * or five — an automatic judgement nobody can find is not overrulable.
  */
-export default function MasteryPanel({ word, onSetMastery, sharedBookCount }: MasteryPanelProps) {
+export default function MasteryPanel({ word, onSetMastery, sharedBookCount, sharedSourcesMixed }: MasteryPanelProps) {
   const { t } = useTranslation();
   const [events, setEvents] = useState<MasteryEvent[]>([]);
   const because = masteryBecauseExplanation(word.mastery_reason);
@@ -153,7 +155,7 @@ export default function MasteryPanel({ word, onSetMastery, sharedBookCount }: Ma
         {sharedBookCount !== undefined && sharedBookCount > 1 && (
           <span className="ml-auto flex items-center gap-1.5 text-[10px] text-text-muted">
             <RotateCcw size={10} className="shrink-0" />
-            {t("vocab.merged.masterySharedHint", { count: sharedBookCount })}
+            {t(sharedSourcesMixed ? "vocab.merged.masterySharedHintMixed" : "vocab.merged.masterySharedHint", { count: sharedBookCount })}
           </span>
         )}
       </div>
