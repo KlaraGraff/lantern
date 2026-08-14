@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>出题后台化 · 返回与完成提醒样张</title>
+<style>
+  :root {
+    --bg-page: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-input: #f4f4f5;
+    --border: rgba(0,0,0,0.12);
+    --border-light: rgba(0,0,0,0.07);
+    --text-primary: #18181b;
+    --text-secondary: #3f3f46;
+    --text-muted: #8e8e93;
+    --accent: #8b5cf6;
+    --accent-bg: #f3eeff;
+    --accent-text: #7c4dd6;
+    --ok: #16a34a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg-page); color: var(--text-primary);
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .pagehint { font-size: 13px; color: var(--text-muted); margin-bottom: 36px; line-height: 1.7; }
+  .state { margin-bottom: 52px; }
+  .state-tag {
+    display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent-text);
+    background: var(--accent-bg); border-radius: 6px; padding: 3px 10px; margin-bottom: 6px;
+  }
+  .state-note { font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.7; max-width: 640px; }
+
+  .screen {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 13px 18px; border-bottom: 1px solid var(--border-light); font-size: 13.5px;
+  }
+  .topbar .back { color: var(--text-secondary); cursor: pointer; }
+  .topbar b { font-size: 14px; }
+  .topbar .meta { color: var(--text-muted); font-size: 12.5px; }
+  .topbar .spacer { flex: 1; }
+  .topbar .cancel { color: var(--text-muted); cursor: pointer; }
+
+  .genbody { padding: 44px 40px 40px; }
+  .step { display: flex; gap: 12px; margin-bottom: 18px; }
+  .step .dot {
+    width: 20px; height: 20px; border-radius: 50%; flex: none; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center; font-size: 11px;
+  }
+  .step .dot.ok { border: 1.5px solid var(--ok); color: var(--ok); }
+  .step .dot.run { border: 1.5px solid var(--accent); color: var(--accent); }
+  .step .dot.idle { border: 1.5px solid var(--border); color: var(--border); }
+  .step .t { font-size: 14px; font-weight: 600; }
+  .step .d { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; line-height: 1.7; }
+  .bar { height: 4px; border-radius: 2px; background: var(--bg-input); margin: 26px 0 10px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 42%; background: var(--accent); border-radius: 2px; }
+  .foot { text-align: center; font-size: 12.5px; color: var(--text-muted); }
+
+  /* 阅读页 + 顶部横幅 */
+  .reader { position: relative; height: 300px; background: #fbf9f4; }
+  .reader .page {
+    max-width: 480px; margin: 44px auto 0; font-family: Georgia, "Songti SC", serif;
+    font-size: 13.5px; line-height: 1.9; color: #3a3733; text-align: justify; padding: 0 20px;
+  }
+  .banner {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.14); font-size: 13px; white-space: nowrap;
+  }
+  .banner .ok { color: var(--ok); font-size: 14px; }
+  .banner .go {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    font-size: 12.5px; padding: 6px 13px; cursor: pointer; font-family: inherit;
+  }
+  .banner .x { color: var(--text-muted); cursor: pointer; padding: 0 2px; }
+
+  /* 出卷页就绪横幅 */
+  .setupbanner {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 15px 17px; max-width: 620px;
+  }
+  .setupbanner .txt { flex: 1; }
+  .setupbanner .t { font-size: 14px; font-weight: 600; }
+  .setupbanner .d { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+  .setupbanner .go {
+    background: var(--bg-input); border: none; border-radius: 9px;
+    font-size: 13px; padding: 8px 15px; cursor: pointer; font-family: inherit; color: var(--text-primary);
+  }
+  .setupbanner.generating .t::after {
+    content: "出题中"; margin-left: 8px; font-size: 11px; font-weight: 600;
+    color: var(--accent-text); background: var(--accent-bg); border-radius: 5px; padding: 2px 7px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>出题后台化 · 返回与完成提醒</h1>
+  <div class="pagehint">
+    出题会话本来就跨页面存活（渐进发卷的架构），这次补三个口子：出题中屏可以<b>返回</b>去看书、
+    出好后<b>顶部横幅提醒</b>（点击跳转做题）、不跳转的话词卷页里放着<b>已出好</b>的状态随时可进。
+  </div>
+
+  <!-- A 出题中屏加返回 -->
+  <div class="state">
+    <div class="state-tag">A · 出题中屏：顶栏加「返回」</div>
+    <div class="state-note">返回=离开这一屏去干别的（看书、翻生词本），出题在后台继续；「取消」语义不变（放弃这次出题）。底部说明改成告知去向。</div>
+    <div class="screen">
+      <div class="topbar">
+        <span class="back">← 返回</span>
+        <b>正在出卷</b><span class="meta">9 个词 · CET-4</span>
+        <span class="spacer"></span>
+        <span class="cancel">取消</span>
+      </div>
+      <div class="genbody">
+        <div class="step">
+          <div class="dot ok">✓</div>
+          <div><div class="t">拆词</div><div class="d">词组算一个词，虚词剔掉 · 拆成 1 篇</div></div>
+        </div>
+        <div class="step">
+          <div class="dot run">◌</div>
+          <div><div class="t">第 1 篇 · 9 个词</div><div class="d">撰写文章与题目</div></div>
+        </div>
+        <div class="step">
+          <div class="dot idle">·</div>
+          <div><div class="t">发卷</div><div class="d">这一步亮起就可以开始做题；讲解会在你做题时于后台补齐</div></div>
+        </div>
+        <div class="bar"><i></i></div>
+        <div class="foot">可以返回去看书，出好后顶部会提醒你</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B 阅读时顶部横幅 -->
+  <div class="state">
+    <div class="state-tag">B · 出好后：顶部横幅提醒（全应用任何页面）</div>
+    <div class="state-note">首篇就绪即提醒——这一刻就能开始做题，其余篇在做题时后台补齐（渐进发卷既有设计）。「去做题」跳到卷子；「×」或十秒不理会自动收起，之后靠词卷页的状态兜底（状态 C）。横幅是应用层浮层，读书页上也能出。</div>
+    <div class="screen">
+      <div class="reader">
+        <div class="banner">
+          <span class="ok">✓</span>
+          <span>今日词卷已出好，可以开始做题</span>
+          <button class="go">去做题</button>
+          <span class="x">×</span>
+        </div>
+        <div class="page">It was a bright cold day in April, and the clocks were striking thirteen. Winston Smith, his chin nuzzled into his breast in an effort to escape the vile wind, slipped quickly through the glass doors of Victory Mansions, though not quickly enough to prevent a swirl of gritty dust from entering along with him.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C 词卷页就绪状态 -->
+  <div class="state">
+    <div class="state-tag">C · 词卷出卷页：已出好 / 出题中 两种停靠状态</div>
+    <div class="state-note">不点横幅也不丢：回到词卷页，顶部这条卡片（现有「未做完的卷」横幅的扩展）显示卷子的当前状态。出题中也照样显示，点进去回到出题中屏看进度。</div>
+    <div class="setupbanner" style="margin-bottom:12px">
+      <div class="txt">
+        <div class="t">今日词卷已出好</div>
+        <div class="d">8/14 · CET-4 · 13 题就绪</div>
+      </div>
+      <button class="go">开始做题</button>
+    </div>
+    <div class="setupbanner generating">
+      <div class="txt">
+        <div class="t">今日词卷</div>
+        <div class="d">8/14 · CET-4 · 第 1 篇撰写中</div>
+      </div>
+      <button class="go">看进度</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

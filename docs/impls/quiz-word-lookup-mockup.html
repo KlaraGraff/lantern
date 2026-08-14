@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词卷查词 · 评卷页复用正文交互样张</title>
+<style>
+  :root {
+    --bg-page: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-input: #f4f4f5;
+    --border: rgba(0,0,0,0.12);
+    --border-light: rgba(0,0,0,0.07);
+    --text-primary: #18181b;
+    --text-secondary: #3f3f46;
+    --text-body: #27272a;
+    --text-muted: #8e8e93;
+    --accent: #8b5cf6;
+    --accent-bg: #f3eeff;
+    --accent-text: #7c4dd6;
+    --ok: #16a34a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .pagehint { font-size: 13px; color: var(--text-muted); margin-bottom: 36px; line-height: 1.7; }
+  .state { margin-bottom: 52px; }
+  .state-tag {
+    display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent-text);
+    background: var(--accent-bg); border-radius: 6px; padding: 3px 10px; margin-bottom: 6px;
+  }
+  .state-note { font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.7; max-width: 640px; }
+
+  /* —— 评卷页文章卡（与 GradeView 同版式，两端对齐已上线） —— */
+  .paper {
+    position: relative;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 0 12px 12px 12px; padding: 24px;
+  }
+  .paper h3 { font-family: Georgia, "Songti SC", serif; font-size: 17px; margin-bottom: 10px; }
+  .para {
+    font-family: Georgia, "Songti SC", serif; font-size: 14px; line-height: 1.85;
+    color: var(--text-body); text-align: justify; hyphens: auto; max-width: 62ch; margin-bottom: 12px;
+  }
+  .pno { font-size: 11px; color: var(--text-muted); margin-right: 6px; user-select: none; }
+  .hit { background: var(--accent-bg); border-radius: 3px; box-shadow: 0 0 0 2px var(--accent-bg); }
+  .sel { background: #d9ccff66; }
+
+  /* —— 单击词菜单（正文 ReaderContextMenu 同款） —— */
+  .menu {
+    position: absolute; width: 300px; z-index: 3;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.16); overflow: hidden;
+  }
+  .dictcard { padding: 13px 15px 11px; border-bottom: 1px solid var(--border-light); }
+  .dictcard .w { font-family: Georgia, serif; font-size: 17px; font-weight: 600; }
+  .dictcard .ipa { font-size: 12px; color: var(--text-muted); margin-left: 7px; }
+  .dictcard .def { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; margin-top: 5px; }
+  .menu .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 15px; font-size: 13.5px; cursor: pointer; border-bottom: 1px solid var(--border-light);
+  }
+  .menu .row:last-child { border-bottom: none; }
+  .menu .row:hover { background: var(--bg-input); }
+  .menu .row .ic { width: 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
+  .menu .row.primary { color: var(--accent-text); font-weight: 600; }
+  .menu .row small { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+
+  /* —— 学习卡浮层（双击） —— */
+  .lcard {
+    position: absolute; width: 360px; z-index: 3;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.16); overflow: hidden;
+  }
+  .lcard .head { padding: 15px 17px 0; }
+  .lcard .head .w { font-family: Georgia, serif; font-size: 21px; font-weight: 700; }
+  .lcard .head .meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .lcard .mod { padding: 12px 17px; border-bottom: 1px solid var(--border-light); }
+  .lcard .mod .t { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .04em; margin-bottom: 5px; }
+  .lcard .mod .b { font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
+  .lcard .mod .b em { font-style: normal; background: var(--accent-bg); border-radius: 3px; padding: 0 2px; }
+  .lcard .actions { display: flex; padding: 9px 12px; gap: 4px; }
+  .lcard .actions button {
+    flex: 1; border: none; background: none; font-size: 12.5px; color: var(--text-secondary);
+    padding: 7px 0; border-radius: 8px; cursor: pointer; font-family: inherit;
+  }
+  .lcard .actions button:hover { background: var(--bg-input); }
+  .lcard .actions button.done { color: var(--ok); }
+
+  /* —— 追问抽屉入口提示（三击/划选 → 问 AI） —— */
+  .drawerhint {
+    margin-top: 14px; border: 1px dashed var(--border); border-radius: 12px;
+    padding: 12px 15px; font-size: 12.5px; color: var(--text-muted); line-height: 1.7; max-width: 62ch;
+  }
+
+  /* —— 生词本行（来源=词卷） —— */
+  .vrow {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 16px; max-width: 560px;
+  }
+  .vrow .w { font-family: Georgia, serif; font-size: 15px; font-weight: 600; min-width: 110px; }
+  .vrow .def { flex: 1; font-size: 12.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vrow .src { font-size: 11.5px; color: var(--text-muted); flex: none; }
+  .toast {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: #18181b; color: #fff; font-size: 12.5px;
+    border-radius: 10px; padding: 8px 14px; margin-bottom: 14px;
+  }
+  .toast .ok { color: #6ee7a0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>词卷查词 · 评卷页复用正文交互</h1>
+  <div class="pagehint">
+    交卷判分后（评卷页），文章、题干、选项、讲解里的文字获得与正文阅读完全一致的手势：
+    <b>单击词出菜单，双击词出学习卡，三击选整句/整段</b>。现有的「划选文字 → 问 AI」并入同一套菜单，不再是独立的小气泡。
+    做题中（未交卷）不开启——考试时不该有词典。
+  </div>
+
+  <!-- A 单击词 -->
+  <div class="state">
+    <div class="state-tag">A · 单击词 → 菜单（与正文同款）</div>
+    <div class="state-note">词典卡内嵌在菜单顶部（本地词典，无 AI 成本）。「问 AI」进的是评卷页现有的追问抽屉——用出题模型、对话随卷保存，与正文的 AI 面板互不混线。没有「标记」行：高亮是书的功能，卷面不需要。</div>
+    <div class="paper" style="padding-bottom:170px">
+      <h3>What Lay Beneath the Shopping District</h3>
+      <p class="para"><span class="pno">¶1</span>For decades, the Riverside district was known mainly for department stores and parking structures. When a luxury mall was proposed on the site of a nineteenth-century market, officials initially treated the buried remains as a technical obstacle. Yet local historian Mara Chen argued that the city's planning philosophy deserved <span class="hit">scrutiny</span>. She believed that choosing to build first and ask historical questions later was not a neutral decision.</p>
+      <div class="menu" style="left: 340px; top: 150px;">
+        <div class="dictcard">
+          <span class="w">scrutiny</span><span class="ipa">/ˈskruːtəni/</span>
+          <div class="def">n. 细察，审查；监督</div>
+        </div>
+        <div class="row primary"><span class="ic">✦</span>解释<small>AI 学习卡</small></div>
+        <div class="row"><span class="ic">💬</span>问 AI<small>追问抽屉</small></div>
+        <div class="row"><span class="ic">☆</span>收藏<small>进生词本</small></div>
+        <div class="row"><span class="ic">译</span>仅翻译</div>
+        <div class="row"><span class="ic">⧉</span>复制</div>
+        <div class="row"><span class="ic">▷</span>朗读</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B 双击词 -->
+  <div class="state">
+    <div class="state-tag">B · 双击词 → 学习卡（快速查询）</div>
+    <div class="state-note">与正文双击完全一致的 AI 学习卡；上下文取词所在的句子，所以释义是贴着卷面语境的。卡内文字同样可以再点击、再划选——正文里已有的套娃能力照搬。</div>
+    <div class="paper" style="padding-bottom:230px">
+      <p class="para"><span class="pno">¶2</span>The team excavated a courtyard behind what had once been a workers' hostel. Because the shaft was too narrow for modern machinery, workers <span class="hit">rigged</span> a pulley over it and raised baskets by hand.</p>
+      <div class="lcard" style="left: 250px; top: 90px;">
+        <div class="head">
+          <div class="w">rig</div>
+          <div class="meta">动词 · 原文形态 rigged · CET-6</div>
+        </div>
+        <div class="mod">
+          <div class="t">语境释义</div>
+          <div class="b">（临时地）装配、搭设。文中指工人在井口<em>临时架起</em>一套滑轮装置——强调因地制宜、手工拼装，而不是安装标准设备。</div>
+        </div>
+        <div class="mod">
+          <div class="t">例句</div>
+          <div class="b">They rigged a shelter from branches and a tarp.<br>他们用树枝和一块防水布搭了个临时遮蔽处。</div>
+        </div>
+        <div class="actions">
+          <button>复制</button>
+          <button class="done">✓ 已收藏</button>
+          <button>问 AI</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C 三击 -->
+  <div class="state">
+    <div class="state-tag">C · 三击 → 选中整句/整段 → 选段菜单</div>
+    <div class="state-note">三击选句、再三击扩到整段（与正文一致）。选段菜单没有词典卡和收藏（收藏以词为单位），问 AI 会把选中段连同「出自第几段」一起带进追问抽屉。手动划选任意文字出的也是这个菜单——取代现在评卷页的独立「问 AI」小气泡。</div>
+    <div class="paper" style="padding-bottom:150px">
+      <p class="para"><span class="pno">¶3</span><span class="sel">Merchant records complicated the popular image of a society united by thrift. Some scholars credit the potters' guild with reducing waste.</span> The exhibition's curator discussed these records with reference to modern consumerism, while cautioning against treating the past as a ready-made moral lesson.</p>
+      <div class="menu" style="left: 300px; top: 105px; width: 240px;">
+        <div class="row primary"><span class="ic">💬</span>问 AI<small>追问抽屉</small></div>
+        <div class="row"><span class="ic">译</span>仅翻译</div>
+        <div class="row"><span class="ic">⧉</span>复制</div>
+        <div class="row"><span class="ic">▷</span>朗读</div>
+      </div>
+    </div>
+    <div class="drawerhint">讲解、题干、选项里的文字同样支持这三种手势——比如双击讲解里的生词、三击选中「判定链」问 AI 为什么这样判。</div>
+  </div>
+
+  <!-- D 收藏进生词本 -->
+  <div class="state">
+    <div class="state-tag">D · 收藏落生词本（来源显示词卷）</div>
+    <div class="state-note">收藏成功出轻提示。生词本里这类词条的来源列显示「词卷」+ 卷名，没有「定位原文」（那是书的能力）；点击词条照常打开词卡、照常进复习队列——与书里收藏的词完全同权。</div>
+    <div class="toast"><span class="ok">✓</span>已收藏 scrutiny · 来自今日词卷</div>
+    <div class="vrow">
+      <span class="w">scrutiny</span>
+      <span class="def">n. 细察，审查 —— the city's planning philosophy deserved scrutiny</span>
+      <span class="src">词卷 · 8/14 今日词卷</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>
