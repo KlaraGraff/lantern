@@ -26,7 +26,7 @@ import type { AnswerSheet, Passage, Quiz, QuizResult } from '../../quiz/types.ts
 import type { GenerationSessionState } from './generation-session.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
 import { ActiveTimer } from './active-timer.ts'
-import { deriveSlots, type SlotState } from './take-slots.ts'
+import { deriveSlots, type PendingStep, type SlotState } from './take-slots.ts'
 
 type Tab = {
   key: string
@@ -37,6 +37,8 @@ type Tab = {
   passage?: Passage
   /** 生成计划里的篇号，failed 槽位的重生成按钮用 */
   groupIndex?: number
+  /** pending 槽位的活阶段（写稿/复核/重出），页签小字与占位面板用 */
+  step?: PendingStep
 }
 
 export default function TakeView(props: {
@@ -72,10 +74,15 @@ export default function TakeView(props: {
         state: slot.state,
         passage: slot.passage,
         groupIndex: i,
+        step: slot.step,
       }
       if (slot.state === 'open') {
         const count = quiz.readingQuestions.filter((q) => q.passageId === slot.passage!.id).length
         return { ...base, sub: t('quiz.paper.take.questionCount', { count }) }
+      }
+      if (slot.state === 'pending') {
+        // 生成中的篇报出流水线的活阶段（写稿中/复核中/重出中），不再是笼统的「生成中」
+        return { ...base, sub: t(`quiz.paper.take.slot.step.${slot.step ?? 'writing'}`) }
       }
       return { ...base, sub: t(`quiz.paper.take.slot.${slot.state}`) }
     })
@@ -198,6 +205,14 @@ export default function TakeView(props: {
           {t('quiz.paper.take.meta', { date: dateLabel, difficulty: difficultyLabel, count: wordsCount })}
         </span>
         <span className="flex-1" />
+        {quiz.status === 'generating' && quiz.generation && (
+          <span className="text-[12.5px] text-text-muted">
+            {t('quiz.paper.take.readyCount', {
+              ready: slots.filter((s) => s.state === 'open' || s.state === 'locked').length,
+              total: quiz.generation.groups.length,
+            })}
+          </span>
+        )}
         <span className="text-[12.5px] text-text-muted">
           {t('quiz.paper.take.elapsed', { time: formatElapsed(timer.elapsedMs(now)) })}
         </span>
@@ -236,8 +251,15 @@ export default function TakeView(props: {
                 <Loader2 size={20} className="mx-auto mb-3 animate-spin text-text-muted" />
               )}
               <p className="mx-auto max-w-[42ch] text-[13.5px] leading-[1.8] text-text-secondary">
-                {t(`quiz.paper.take.slot.${activeSlot.state}Body`)}
+                {activeSlot.state === 'pending'
+                  ? t(`quiz.paper.take.slot.stepBody.${activeSlot.step ?? 'writing'}`)
+                  : t(`quiz.paper.take.slot.${activeSlot.state}Body`)}
               </p>
+              {activeSlot.state === 'pending' && (
+                <p className="mx-auto mt-1.5 max-w-[42ch] text-[12.5px] leading-[1.8] text-text-muted">
+                  {t('quiz.paper.take.slot.pendingBody')}
+                </p>
+              )}
               {activeSlot.state === 'failed' && onRegenerateArticles && (
                 <button
                   type="button"

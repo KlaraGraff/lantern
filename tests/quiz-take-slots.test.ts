@@ -67,8 +67,30 @@ describe("deriveSlots", () => {
     const slots = deriveSlots(makeQuiz("generating", plan), session);
     assert.deepEqual(slots.map((s) => s.state), ["open", "pending"]);
     assert.equal(slots[0].passage?.id, "p1");
+    assert.equal(slots[0].step, undefined);
     assert.equal(slots[1].passage, undefined);
     assert.equal(slots[1].wordCount, 2);
+    assert.equal(slots[1].step, "writing");
+  });
+
+  it("pending 槽位带活阶段：checking/regenerating 原样透出，瞬时的 pending 归入 writing", () => {
+    const plan: QuizGenerationPlan = {
+      groups: [
+        { words: [w("alpha")], state: "pending" },
+        { words: [w("beta")], state: "pending" },
+        { words: [w("gamma")], state: "pending" },
+      ],
+    };
+    const session = makeSession({
+      articles: [
+        { wordCount: 1, step: "checking" },
+        { wordCount: 1, step: "regenerating" },
+        { wordCount: 1, step: "pending" },
+      ],
+    });
+    const slots = deriveSlots(makeQuiz("generating", plan), session);
+    assert.deepEqual(slots.map((s) => s.state), ["pending", "pending", "pending"]);
+    assert.deepEqual(slots.map((s) => s.step), ["checking", "regenerating", "writing"]);
   });
 
   it("锁的是做题顺序：第 2 篇先生成好，第 1 篇没好时它是 locked 不是 open", () => {

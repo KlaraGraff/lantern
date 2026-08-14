@@ -14,10 +14,18 @@ import type { GenerationSessionState } from './generation-session.ts'
 
 export type SlotState = 'open' | 'locked' | 'pending' | 'failed'
 
+/**
+ * pending 槽位的活阶段，来自生成会话的按篇事件。'pending'（拆词建行到
+ * 流水线首个事件之间的瞬时态）归入 writing——对用户它就是「开始写了」。
+ */
+export type PendingStep = 'writing' | 'checking' | 'regenerating'
+
 export interface PassageSlot {
   state: SlotState
   passage?: Passage
   wordCount: number
+  /** 仅 state === 'pending' 时有值 */
+  step?: PendingStep
 }
 
 export function deriveSlots(
@@ -35,7 +43,10 @@ export function deriveSlots(
     }
     prefixDone = false
     const live = session?.running ? session.articles[i]?.step : undefined
-    const state: SlotState = session?.running && live !== 'failed' ? 'pending' : 'failed'
-    return { state, wordCount: g.words.length }
+    if (session?.running && live !== 'failed') {
+      const step: PendingStep = live === 'checking' || live === 'regenerating' ? live : 'writing'
+      return { state: 'pending', wordCount: g.words.length, step }
+    }
+    return { state: 'failed', wordCount: g.words.length }
   })
 }
