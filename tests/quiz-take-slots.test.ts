@@ -5,9 +5,9 @@ import type { GenerationSessionState } from "../src/pages/quiz/generation-sessio
 import type { Quiz, QuizConfig, QuizGenerationPlan, QuizWord } from "../src/quiz/types.ts";
 
 // 渐进发卷做题屏的槽位推导（docs/impls/quiz-progressive-delivery.md §五）。
-// 核心语义：open = 本篇 done 且前面每篇都 done（按篇序解锁，与生成先后无关）；
-// pending/failed 的分界只看「会话是否在跑且该篇未终局」——重启后没有会话，
-// 未完成篇一律当 failed（可重生成）。
+// 核心语义：open = 本篇 done，谁就绪谁开放，与前面的篇是否就绪无关（不按篇序
+// 锁）；pending/failed 的分界只看「会话是否在跑且该篇未终局」——重启后没有
+// 会话，未完成篇一律当 failed（可重生成）。
 
 const config: QuizConfig = {
   difficulty: "cet6",
@@ -95,7 +95,7 @@ describe("deriveSlots", () => {
     assert.deepEqual(slots.map((s) => s.step), ["checking", "regenerating", "writing", "checking"]);
   });
 
-  it("锁的是做题顺序：第 2 篇先生成好，第 1 篇没好时它是 locked 不是 open", () => {
+  it("谁就绪谁开放：第 2 篇先生成好，第 1 篇还在写时第 2 篇已经是 open", () => {
     const plan: QuizGenerationPlan = {
       groups: [
         { words: [w("alpha")], state: "pending" },
@@ -104,11 +104,11 @@ describe("deriveSlots", () => {
     };
     const session = makeSession({ articles: [{ wordCount: 1, step: "writing" }, { wordCount: 1, step: "done" }] });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
-    assert.deepEqual(slots.map((s) => s.state), ["pending", "locked"]);
+    assert.deepEqual(slots.map((s) => s.state), ["pending", "open"]);
     assert.equal(slots[1].passage?.id, "p2");
   });
 
-  it("会话在跑但该篇已终局失败 → failed；其后的 done 篇仍是 locked", () => {
+  it("第 1 篇失败 → failed；第 2 篇已就绪照样 open，不受牵连", () => {
     const plan: QuizGenerationPlan = {
       groups: [
         { words: [w("alpha")], state: "failed", errorCode: "AI_STREAM_FAILED" },
@@ -117,7 +117,47 @@ describe("deriveSlots", () => {
     };
     const session = makeSession({ articles: [{ wordCount: 1, step: "failed" }, { wordCount: 1, step: "done" }] });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
-    assert.deepEqual(slots.map((s) => s.state), ["failed", "locked"]);
+    assert.deepEqual(slots.map((s) => s.state), ["failed", "open"]);
+  });
+
+  it("第 1 篇还 pending（未终局）→ pending；第 2 篇已就绪照样 open", () => {
+    const plan: QuizGenerationPlan = {
+      groups: [
+        { words: [w("alpha")], state: "pending" },
+        { words: [w("beta")], state: "done", passageId: "p2" },
+      ],
+    };
+    const session = makeSession({ articles: [{ wordCount: 1, step: "checking" }, { wordCount: 1, step: "done" }] });
+    const slots = deriveSlots(makeQuiz("generating", plan), session);
+    assert.deepEqual(slots.map((s) => s.state), ["pending", "open"]);
+  });
+
+  it("retrying 态带出 attempt", () => {
+    const plan: QuizGenerationPlan = {
+      groups: [{ words: [w("alpha")], state: "pending" }],
+    };
+    const session = makeSession({ articles: [{ wordCount: 1, step: "retrying", attempt: 2 }] });
+    const slots = deriveSlots(makeQuiz("generating", plan), session);
+    assert.equal(slots[0].state, "pending");
+    assert.equal(slots[0].step, "retrying");
+    assert.equal(slots[0].attempt, 2);
+  });
+
+  it("失败篇带出失败原因：错误码优先，认不出时给失败原文", () => {
+    const plan: QuizGenerationPlan = {
+      groups: [
+        { words: [w("alpha")], state: "failed", errorCode: "AI_STREAM_FAILED", errorMessage: "boom" },
+        { words: [w("beta")], state: "failed", errorMessage: "模型返回了空响应" },
+        { words: [w("gamma")], state: "failed", errorCode: "NOT_A_REAL_CODE" },
+      ],
+    };
+    const slots = deriveSlots(makeQuiz("generating", plan), undefined);
+    assert.equal(slots[0].errorCode, "AI_STREAM_FAILED");
+    assert.equal(slots[0].errorMessage, "boom");
+    assert.equal(slots[1].errorCode, undefined);
+    assert.equal(slots[1].errorMessage, "模型返回了空响应");
+    // 认不出的错误码不往下传，界面不会拿它去查一条不存在的文案
+    assert.equal(slots[2].errorCode, undefined);
   });
 
   it("重启冷启动（无会话）：未完成篇一律 failed，不管计划里记的是 pending 还是 failed", () => {

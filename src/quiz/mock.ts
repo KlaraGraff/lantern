@@ -36,8 +36,9 @@ export async function generateMockQuiz(opts: {
   progress({ type: 'split', articles: [{ wordCount: 5 }, { wordCount: 4 }] })
   const steps: ArticleStep[] = ['writing', 'checking', 'done']
   for (const s of steps) {
-    progress({ type: 'article', index: 0, step: s })
-    progress({ type: 'article', index: 1, step: s })
+    // 样卷永远一次成，没有重试这回事——两篇都固定停在第 1 次尝试
+    progress({ type: 'article', index: 0, step: s, attempt: 1 })
+    progress({ type: 'article', index: 1, step: s, attempt: 1 })
     if (s !== 'done') await wait()
   }
   progress({ type: 'done' })

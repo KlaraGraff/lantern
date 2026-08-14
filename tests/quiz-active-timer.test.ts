@@ -85,4 +85,55 @@ describe('quiz · 前台活跃计时', () => {
     t.activity(MIN)
     assert.equal(t.elapsedMs(MIN), 8 * MIN)
   })
+
+  // 第二道闸（setAvailable，语义「有可做的篇」）：两道闸都开着才计时
+  it('前台但没有可做的篇（available 闭）：不累计', () => {
+    const t = new ActiveTimer(0)
+    t.setAvailable(false, 0)
+    t.activity(2 * MIN)
+    assert.equal(t.elapsedMs(2 * MIN), 0)
+  })
+
+  it('两闸都开：正常累计', () => {
+    const t = new ActiveTimer(0)
+    t.setAvailable(false, 0)
+    t.activity(2 * MIN)
+    assert.equal(t.elapsedMs(2 * MIN), 0)
+    t.setAvailable(true, 2 * MIN)
+    t.activity(3 * MIN)
+    assert.equal(t.elapsedMs(3 * MIN), MIN)
+  })
+
+  it('关一闸再开：关闭期间那段不计', () => {
+    const t = new ActiveTimer(0)
+    t.setAvailable(true, 0)
+    t.activity(MIN)
+    assert.equal(t.elapsedMs(MIN), MIN)
+    t.setAvailable(false, MIN)
+    // 关闸期间挂起 10 分钟，读数冻结
+    assert.equal(t.elapsedMs(11 * MIN), MIN)
+    t.setAvailable(true, 11 * MIN)
+    t.activity(12 * MIN)
+    // 只有关闸前的 1 分钟 + 重新开闸后的 1 分钟，中间那段不计
+    assert.equal(t.elapsedMs(12 * MIN), 2 * MIN)
+  })
+
+  it('两道闸都关时，只开一道不会重新起锚，等另一道也开才起', () => {
+    const t = new ActiveTimer(0)
+    t.setForeground(false, MIN)
+    t.setAvailable(false, MIN)
+    t.setAvailable(true, 5 * MIN)
+    assert.equal(t.elapsedMs(6 * MIN), MIN)
+    t.setForeground(true, 6 * MIN)
+    t.activity(7 * MIN)
+    assert.equal(t.elapsedMs(7 * MIN), 2 * MIN)
+  })
+
+  it('available 闭着时操作起不了作用，不会隐式重新起锚', () => {
+    const t = new ActiveTimer(0)
+    t.setAvailable(false, MIN)
+    t.activity(5 * MIN)
+    t.activity(6 * MIN)
+    assert.equal(t.elapsedMs(6 * MIN), MIN)
+  })
 })

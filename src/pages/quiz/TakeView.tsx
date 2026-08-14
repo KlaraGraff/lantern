@@ -6,12 +6,13 @@
  * 作答态不给任何正误线索——选项不变色、不判分、不显示答案。判分只在交卷后发生。
  *
  * 渐进发卷（docs/impls/quiz-progressive-delivery.md §五）：status === 'generating'
- * 时篇位标签来自生成计划（generation.groups，篇号 = 组下标），四种槽位状态——
- * open（就绪且前篇全就绪，可做）/ locked（就绪但有前篇未就绪，按篇序解锁）/
- * pending（会话在跑，该篇还在生成）/ failed（没生成成或上次中断，可单篇重生成）。
- * 计数（页脚已答/总数、语法页）只算 open 篇的题；交卷前后端双重门（这里禁用
- * 按钮 + 提示，后端 submit_quiz_paper 对 generating 卷拒绝）。全部就绪翻 ready
- * 后静默换快照，槽位 key 按组下标不变，用户停在哪个标签就还在哪个标签。
+ * 时篇位标签来自生成计划（generation.groups，篇号 = 组下标），三种槽位状态——
+ * open（该篇 done，可做，与前面的篇是否就绪无关——谁就绪谁开放，不按篇序锁）/
+ * pending（会话在跑，该篇还在生成，含写稿/复核/题目重出/整篇自动重试四个阶段）/
+ * failed（自动重试耗尽或上次中断，可单篇重生成）。计数（页脚已答/总数、语法页）
+ * 只算 open 篇的题；交卷前后端双重门（这里禁用按钮 + 提示，后端 submit_quiz_paper
+ * 对 generating 卷拒绝）。全部就绪翻 ready 后静默换快照，槽位 key 按组下标不变，
+ * 用户停在哪个标签就还在哪个标签。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,6 +24,8 @@ import { parseQuizAiProfileId } from '../../quiz/transport.ts'
 import { useSettings } from '../../hooks/useSettings.ts'
 import { TOP_INSET } from '../../utils/top-inset.ts'
 import type { AnswerSheet, Passage, Quiz, QuizDraft, QuizResult } from '../../quiz/types.ts'
+import { QUIZ_ARTICLE_MAX_ATTEMPTS } from '../../quiz/generate.ts'
+import { aiErrorMessageKey, type AiErrorCode } from '../../utils/aiError.ts'
 import type { GenerationSessionState } from './generation-session.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
 import { ActiveTimer, QUIZ_IDLE_TIMEOUT_MS } from './active-timer.ts'
@@ -37,8 +40,13 @@ type Tab = {
   passage?: Passage
   /** 生成计划里的篇号，failed 槽位的重生成按钮用 */
   groupIndex?: number
-  /** pending 槽位的活阶段（写稿/复核/重出），页签小字与占位面板用 */
+  /** pending 槽位的活阶段（写稿/复核/题目重出/整篇重试），页签小字与占位面板用 */
   step?: PendingStep
+  /** 仅 step === 'retrying' 时有值：当前是第几次尝试 */
+  attempt?: number
+  /** 仅 state === 'failed' 时有值：失败原因（错误码优先，其次失败原文） */
+  errorCode?: AiErrorCode
+  errorMessage?: string
 }
 
 export default function TakeView(props: {
@@ -56,7 +64,7 @@ export default function TakeView(props: {
 
   const slots = useMemo(() => deriveSlots(quiz, generationSession), [quiz, generationSession])
 
-  // 计数与作答只认 open 篇：locked/pending/failed 篇的题不进总数，
+  // 计数与作答只认 open 篇：pending/failed 篇的题不进总数，
   // 全部就绪翻 ready 后 slots 全 open，总数自然长上去
   const openPassageIds = useMemo(
     () => new Set(slots.filter((s) => s.state === 'open').map((s) => s.passage!.id)),
@@ -66,6 +74,9 @@ export default function TakeView(props: {
     () => quiz.grammarQuestions.filter((q) => openPassageIds.has(q.passageId)),
     [quiz, openPassageIds],
   )
+  // 有没有可做的篇——驱动计时器的可用闸（active-timer.ts）；一篇都没就绪时
+  // 头部「用时」整个不渲染，不显示冻结的 00:00
+  const hasOpen = useMemo(() => slots.some((s) => s.state === 'open'), [slots])
 
   const tabs = useMemo<Tab[]>(() => {
     const list: Tab[] = slots.map((slot, i) => {
@@ -77,14 +88,24 @@ export default function TakeView(props: {
         passage: slot.passage,
         groupIndex: i,
         step: slot.step,
+        attempt: slot.attempt,
+        errorCode: slot.errorCode,
+        errorMessage: slot.errorMessage,
       }
       if (slot.state === 'open') {
         const count = quiz.readingQuestions.filter((q) => q.passageId === slot.passage!.id).length
         return { ...base, sub: t('quiz.paper.take.questionCount', { count }) }
       }
       if (slot.state === 'pending') {
-        // 生成中的篇报出流水线的活阶段（写稿中/复核中/重出中），不再是笼统的「生成中」
-        return { ...base, sub: t(`quiz.paper.take.slot.step.${slot.step ?? 'writing'}`) }
+        // 生成中的篇报出流水线的活阶段（写稿中/复核中/题目重出中/整篇重试中），
+        // 不再是笼统的「生成中」；重试态带出当前次数/上限
+        return {
+          ...base,
+          sub: t(`quiz.paper.take.slot.step.${slot.step ?? 'writing'}`, {
+            attempt: slot.attempt,
+            total: QUIZ_ARTICLE_MAX_ATTEMPTS,
+          }),
+        }
       }
       return { ...base, sub: t(`quiz.paper.take.slot.${slot.state}`) }
     })
@@ -115,6 +136,11 @@ export default function TakeView(props: {
     if (document.visibilityState === 'hidden') timerRef.current.setForeground(false, Date.now())
   }
   const timer = timerRef.current
+  // 兜底闸：没有可做的篇时不计时（正常情况下改动一落地后至少有一篇 open，
+  // 这里只是不让「全篇都没就绪」的边缘状态偷偷计时）
+  useEffect(() => {
+    timer.setAvailable(hasOpen, Date.now())
+  }, [timer, hasOpen])
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -244,14 +270,16 @@ export default function TakeView(props: {
         {quiz.status === 'generating' && quiz.generation && (
           <span className="text-[12.5px] text-text-muted">
             {t('quiz.paper.take.readyCount', {
-              ready: slots.filter((s) => s.state === 'open' || s.state === 'locked').length,
+              ready: slots.filter((s) => s.state === 'open').length,
               total: quiz.generation.groups.length,
             })}
           </span>
         )}
-        <span className="text-[12.5px] text-text-muted">
-          {t('quiz.paper.take.elapsed', { time: formatElapsed(timer.elapsedMs(now)) })}
-        </span>
+        {hasOpen && (
+          <span className="text-[12.5px] text-text-muted">
+            {t('quiz.paper.take.elapsed', { time: formatElapsed(timer.elapsedMs(now)) })}
+          </span>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -288,12 +316,27 @@ export default function TakeView(props: {
               )}
               <p className="mx-auto max-w-[42ch] text-[13.5px] leading-[1.8] text-text-secondary">
                 {activeSlot.state === 'pending'
-                  ? t(`quiz.paper.take.slot.stepBody.${activeSlot.step ?? 'writing'}`)
+                  ? t(`quiz.paper.take.slot.stepBody.${activeSlot.step ?? 'writing'}`, {
+                      attempt: activeSlot.attempt,
+                      total: QUIZ_ARTICLE_MAX_ATTEMPTS,
+                    })
                   : t(`quiz.paper.take.slot.${activeSlot.state}Body`)}
               </p>
               {activeSlot.state === 'pending' && (
                 <p className="mx-auto mt-1.5 max-w-[42ch] text-[12.5px] leading-[1.8] text-text-muted">
                   {t('quiz.paper.take.slot.pendingBody')}
+                </p>
+              )}
+              {/* 失败原因：认得出的错误码给现成文案（多半要改设置），认不出的
+                * 直接把失败原文摆出来——没有它，用户只能对着「未生成完成」反复
+                * 点重试，谁也不知道是模型没吐出内容还是请求被拒 */}
+              {activeSlot.state === 'failed' && (activeSlot.errorCode || activeSlot.errorMessage) && (
+                <p className="mx-auto mt-2 max-w-[42ch] text-[12.5px] leading-[1.7] text-text-muted">
+                  {t('quiz.paper.take.slot.failedReason', {
+                    reason: activeSlot.errorCode
+                      ? t(aiErrorMessageKey(activeSlot.errorCode))
+                      : activeSlot.errorMessage,
+                  })}
                 </p>
               )}
               {activeSlot.state === 'failed' && onRegenerateArticles && (

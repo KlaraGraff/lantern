@@ -31,6 +31,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import {
+  articleErrorMessage,
   generateArticle,
   generateQuiz,
   type ArticleOutcome,
@@ -59,10 +60,14 @@ export type GenerationStage = 'splitting' | 'articles' | 'done'
 /**
  * 按篇状态行。`pending` 存在于 split 建行到该篇首个 article 事件之间，以及
  * 重生成会话里「本轮没被点名」的篇——UI 对后者按落库的组状态展示，不看这里。
+ * `attempt`（1 起算）是这篇当前处在第几次尝试——整篇自动重试
+ * （generate.ts 的 QUIZ_ARTICLE_MAX_ATTEMPTS）时同一篇会连续经历多轮
+ * writing/checking/.../retrying，UI 靠这个字段判断「这是第几次在重试」。
  */
 export interface ArticleProgress {
   wordCount: number
   step: ArticleStep | 'pending'
+  attempt: number
 }
 
 export interface GenerationSessionState {
@@ -84,6 +89,8 @@ interface SessionGroup {
   words: QuizWord[]
   state: QuizGenerationGroupState
   errorCode?: AiErrorCode
+  /** failed 时的失败原文（截断），落进 generation_json 供做题页展示 */
+  errorMessage?: string
   passageId?: string
   trace?: GenerationTrace
   article?: {
@@ -237,6 +244,7 @@ function planJson(session: Session): string {
       state: g.state,
       ...(g.passageId ? { passageId: g.passageId } : {}),
       ...(g.errorCode ? { errorCode: g.errorCode } : {}),
+      ...(g.errorMessage ? { errorMessage: g.errorMessage } : {}),
     })),
   })
 }
@@ -334,7 +342,12 @@ async function persistStructural(session: Session): Promise<void> {
   }
 }
 
-/** 一条流水线 settle 的会话侧处理：更新组状态 → 入队落库 → （ok 时）排队解析 */
+/**
+ * 一条流水线 settle 的会话侧处理：更新组状态 → 入队落库 → （ok 时）排队解析。
+ * `outcome` 永远是终局结果——整篇自动重试（generate.ts 的 QUIZ_ARTICLE_MAX_ATTEMPTS）
+ * 完全发生在 generateQuiz/generateArticle 内部，这里（以及它落到的
+ * generation_json）只看得到「重试用尽/不可重试后」的最终成败，看不到中间轮次。
+ */
 function onArticleOutcome(session: Session, outcome: ArticleOutcome) {
   const group = session.groups[outcome.index]
   if (!group) return
@@ -346,6 +359,7 @@ function onArticleOutcome(session: Session, outcome: ArticleOutcome) {
     )
     group.state = 'done'
     group.errorCode = undefined
+    group.errorMessage = undefined
     group.passageId = outcome.passage.id
     group.trace = outcome.trace
     group.article = {
@@ -359,6 +373,9 @@ function onArticleOutcome(session: Session, outcome: ArticleOutcome) {
   } else {
     group.state = 'failed'
     group.errorCode = outcome.errorCode ?? undefined
+    // 错误码认不出的失败（解析不了模型输出、provider 返回 4xx 原文…）只剩这条
+    // 原文能说清出了什么事，做题页的失败面板据它给出原因行
+    group.errorMessage = articleErrorMessage(outcome.error)
     void enqueueWrite(session, async () => {
       // 建卷前的失败只活在会话状态里（届时 generation_json 随建卷一起写入）
       if (session.paperId == null) return
@@ -414,9 +431,9 @@ function queueExplanation(session: Session, passageId: string, trace: Generation
   })
 }
 
-function updateArticleStep(session: Session, index: number, step: ArticleStep) {
+function updateArticleStep(session: Session, index: number, step: ArticleStep, attempt: number) {
   setState(session, {
-    articles: session.state.articles.map((a, i) => (i === index ? { ...a, step } : a)),
+    articles: session.state.articles.map((a, i) => (i === index ? { ...a, step, attempt } : a)),
   })
 }
 
@@ -435,6 +452,8 @@ export function startGenerationSession(opts: {
   io?: GenerationIo
   /** 测试注入点，默认 runExplanationSession */
   runExplanations?: typeof runExplanationSession
+  /** 测试注入点：整篇自动重试的退避时长，穿透给 generateQuiz；默认 QUIZ_ARTICLE_RETRY_DELAYS_MS */
+  retryDelaysMs?: number[]
 }): void {
   // 出卷屏在生成中不给第二个入口，这里再兜一层。但只拦「还没建出卷」的会话：
   // 建卷后用户已被导航走，会话在 paperSessions 里继续跑剩余篇；此时回到出卷页
@@ -456,6 +475,8 @@ export function startGenerationSession(opts: {
         profileId: opts.profileId,
         complete: opts.complete,
         requestRegistry: session.registry,
+        shouldCancel: () => session.cancelled,
+        retryDelaysMs: opts.retryDelaysMs,
         onProgress: (p) => {
           if (session.cancelled) return
           if (p.type === 'splitting') {
@@ -463,10 +484,10 @@ export function startGenerationSession(opts: {
           } else if (p.type === 'split') {
             setState(session, {
               stage: 'articles',
-              articles: p.articles.map((a) => ({ wordCount: a.wordCount, step: 'pending' })),
+              articles: p.articles.map((a) => ({ wordCount: a.wordCount, step: 'pending', attempt: 1 })),
             })
           } else if (p.type === 'article') {
-            updateArticleStep(session, p.index, p.step)
+            updateArticleStep(session, p.index, p.step, p.attempt)
           } else {
             setState(session, { stage: 'done' })
           }
@@ -526,6 +547,8 @@ export function regenerateArticles(opts: {
   complete?: CompleteStructured
   io?: GenerationIo
   runExplanations?: typeof runExplanationSession
+  /** 测试注入点：整篇自动重试的退避时长，穿透给 generateArticle；默认 QUIZ_ARTICLE_RETRY_DELAYS_MS */
+  retryDelaysMs?: number[]
 }): void {
   let session = paperSessions.get(opts.paperId)
   if (session?.state.running) return
@@ -555,6 +578,7 @@ export function regenerateArticles(opts: {
           words: g.words,
           state: 'failed' as const,
           errorCode: isAiErrorCode(g.errorCode) ? g.errorCode : undefined,
+          errorMessage: g.errorMessage,
         }
       }
       const passage = opts.quiz.passages.find((p) => p.id === g.passageId)
@@ -601,6 +625,7 @@ export function regenerateArticles(opts: {
   for (const i of targets) {
     session.groups[i].state = 'pending'
     session.groups[i].errorCode = undefined
+    session.groups[i].errorMessage = undefined
   }
   setState(session, {
     running: true,
@@ -611,6 +636,7 @@ export function regenerateArticles(opts: {
     articles: session.groups.map((g) => ({
       wordCount: g.words.length,
       step: g.state === 'done' ? 'done' : g.state === 'failed' ? 'failed' : 'pending',
+      attempt: 1,
     })),
   })
 
@@ -622,10 +648,12 @@ export function regenerateArticles(opts: {
           words: fixed.groups[index].words,
           config: fixed.config,
           index,
-          onStep: (step) => updateArticleStep(fixed, index, step),
+          onStep: (step, attempt) => updateArticleStep(fixed, index, step, attempt),
           complete: fixed.complete,
           requestRegistry: fixed.registry,
           profileId: fixed.profileId,
+          shouldCancel: () => fixed.cancelled,
+          retryDelaysMs: opts.retryDelaysMs,
         }).then((outcome) => onArticleOutcome(fixed, outcome)),
       ),
     )

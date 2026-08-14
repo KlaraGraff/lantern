@@ -4,6 +4,13 @@
  * 不碰屏幕；间隔达到阈值整段剔除，「人走开的那段」不算用时。切到后台时把
  * blur 前的一段先封存（那段是真实做题），回前台重新起锚。
  *
+ * 两道独立的闸：前台闸（setForeground）与可用闸（setAvailable，语义是
+ * 「有可做的篇」——渐进发卷期间所有篇都没就绪时不该计时）。两道闸都开着
+ * 才计时，任一关着就封存；分别记两个标志位，不用单个 anchor 猜谁关了谁。
+ * activity() 里保留一个不对称：前台闸关着时冒出的操作仍视为回到前台（例如
+ * focus 事件早到/迟到的竞态，用户显然已经在看）；可用闸关着时操作起不了
+ * 作用——没有可做的篇，点击也变不出一篇来，原样忽略。
+ *
  * 与 session-tracker 不共享实现：那边的产物是落库的分段记录（segment +
  * checkpoint + 写库队列），这边只要一个实时可读的累计值，硬套会把简单事情
  * 复杂化。纯模块，node 测试直接 import。
@@ -12,9 +19,13 @@ export const QUIZ_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
 export class ActiveTimer {
   private activeMs = 0
-  /** 前台时为最近一次操作的时间戳；后台为 null（不计时） */
+  /** 两道闸都开时为最近一次操作的时间戳；任一闸关着为 null（不计时） */
   private anchor: number | null
   private readonly idleTimeoutMs: number
+  /** 前台闸 */
+  private foreground = true
+  /** 可用闸：有可做的篇。默认开——不调用 setAvailable 的调用方行为不变 */
+  private available = true
 
   /** initialActiveMs：草稿续做时带入上次已累计的用时（draft.elapsedMs） */
   constructor(now: number, idleTimeoutMs: number = QUIZ_IDLE_TIMEOUT_MS, initialActiveMs = 0) {
@@ -30,15 +41,33 @@ export class ActiveTimer {
     if (gap >= 0 && gap < this.idleTimeoutMs) this.activeMs += gap
   }
 
-  /** 用户操作（点击/按键/滚动/作答）。后台里冒出的操作视为回到前台。 */
+  /**
+   * 用户操作（点击/按键/滚动/作答）。可用闸关着时忽略——没有可做的篇，
+   * 操作起不了作用。可用闸开着时，前台闸关着（后台）冒出的操作视为回到
+   * 前台，从该操作起锚。
+   */
   activity(now: number): void {
+    if (!this.available) return
     this.fold(now)
     this.anchor = now
+    this.foreground = true
   }
 
   setForeground(foreground: boolean, now: number): void {
+    this.foreground = foreground
     if (foreground) {
-      if (this.anchor == null) this.anchor = now
+      if (this.available && this.anchor == null) this.anchor = now
+    } else {
+      this.fold(now)
+      this.anchor = null
+    }
+  }
+
+  /** available：是否有可做的篇。语义与 setForeground 对称。 */
+  setAvailable(available: boolean, now: number): void {
+    this.available = available
+    if (available) {
+      if (this.foreground && this.anchor == null) this.anchor = now
     } else {
       this.fold(now)
       this.anchor = null

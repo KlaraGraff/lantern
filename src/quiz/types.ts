@@ -193,6 +193,14 @@ export interface QuizGenerationGroup {
   passageId?: string
   /** failed 且能识别出 AI 错误码时记录，UI 据此把失败原因说对 */
   errorCode?: string
+  /**
+   * failed 时记录底层错误原文（截断到 QUIZ_ERROR_MESSAGE_MAX_CHARS）。
+   * errorCode 认得出的失败有现成文案，认不出的（模型输出解析不了、provider
+   * 返回 4xx/5xx 原文…）此前在界面上只剩一句「未生成完成」，用户和排查都无从下手
+   * ——这一条就是给那种情况兜底的。不含任何凭据：错误原文来自 provider 响应与
+   * 解析异常，密钥不在其中。
+   */
+  errorMessage?: string
 }
 
 /** generation_json 的形状（前端独占读写，见 paper-io.ts 顶注） */

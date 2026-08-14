@@ -193,6 +193,48 @@ describe("generation-session · 单组卷退化为旧行为", () => {
   })
 })
 
+describe("generation-session · 整篇自动重试透传（generate.ts 的重试引擎经会话层落地）", () => {
+  it("可重试错误码（AI_STREAM_FAILED）首次失败、自动重试后成功：state.articles 记下最终 attempt，落库不受影响", async () => {
+    resetGenerationSessions()
+    const { io, calls } = makeIo()
+    const expl = makeExplanations()
+    const groupWords = ["gammaA", "gammaB"]
+    let writeCalls = 0
+    const complete = (async (callOpts: any) => {
+      if (callOpts.schema === generatedPaperStage1Schema) {
+        writeCalls++
+        if (writeCalls === 1) throw new Error("AI_STREAM_FAILED")
+        return structured(structuredClone(makeReadingPaper(groupWords)))
+      }
+      if (callOpts.schema === answerCheckSchema)
+        return structured({
+          readingAnswers: groupWords.map((_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
+      throw new Error("未预期的调用")
+    }) as CompleteStructured
+
+    startGenerationSession({
+      words: groupWords.map((word) => ({ word, origin: "today" as const })),
+      config,
+      complete,
+      io,
+      runExplanations: expl.run,
+      // 重试真实发生（AI_STREAM_FAILED 可重试）；退避清零，不然这条用例会真的等 3s
+      retryDelaysMs: [0, 0],
+    })
+
+    await waitFor(() => getNewPaperGeneration()?.running === false, "会话收尾")
+    assert.equal(writeCalls, 2, "第一次可重试失败后自动重试一次即成功，写稿共调用两次")
+    const state = getNewPaperGeneration()!
+    assert.equal(state.error, null, "重试对会话层透明，不该冒泡成整体错误")
+    assert.equal(state.paperId, 101)
+    assert.equal(state.articles[0].attempt, 2, "重试后的最终尝试序号要记进按篇状态")
+    assert.equal(calls.create.length, 1)
+    assert.equal(calls.create[0].status, "ready", "终局是成功篇，与非重试路径落库同形")
+  })
+})
+
 describe("generation-session · 首篇就绪即进卷（任意组序）", () => {
   it("第 2 组先就绪 → 建 generating 卷（组1 记 pending）；第 1 组补齐后按组序翻 ready", async () => {
     resetGenerationSessions()
@@ -270,6 +312,8 @@ describe("generation-session · 首篇就绪即进卷（任意组序）", () => 
     )
     assert.equal(plan.groups[0].state, "failed")
     assert.equal(plan.groups[0].errorCode, "AI_PROFILE_NOT_AVAILABLE")
+    // 失败原文一并落库：错误码认不出的失败全靠它在做题页说清出了什么事
+    assert.match(plan.groups[0].errorMessage, /AI_PROFILE_NOT_AVAILABLE/)
     assert.equal(plan.groups[1].state, "done")
     assert.equal(expl.calls.length, 1, "失败篇没有解析可排")
   })

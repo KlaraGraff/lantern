@@ -25,6 +25,7 @@ import { useSettings } from "../../hooks/useSettings.ts";
 import { parseWordInput, isWeakWord } from "../../quiz/split.ts";
 import { extractWordsFromImage, mergeExtractedWords, classifyExtractError } from "../../quiz/image-words.ts";
 import { parseQuizAiProfileId } from "../../quiz/transport.ts";
+import { QUIZ_ARTICLE_MAX_ATTEMPTS } from "../../quiz/generate.ts";
 import { aiErrorMessageKey, isAiSettingsError, type AiErrorCode } from "../../utils/aiError.ts";
 import { WORDS_PER_PASSAGE, type Difficulty, type QuestionType, type QuizWord, type WordOrigin } from "../../quiz/types.ts";
 import { compressImageToDataUri } from "./image-compress.ts";
@@ -335,7 +336,9 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
     if (!latestUnfinished || latestUnfinished.status !== "generating") return undefined;
     const slots = deriveSlots(latestUnfinished, genProgress);
     const index = slots.findIndex((s) => s.state === "pending");
-    return index === -1 ? undefined : { index, step: slots[index].step ?? "writing" };
+    return index === -1
+      ? undefined
+      : { index, step: slots[index].step ?? "writing", attempt: slots[index].attempt ?? 1 };
   }, [latestUnfinished, genProgress]);
 
   const progressStepKey = (step: PendingStep): string => {
@@ -344,6 +347,8 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
         return "quiz.setup.unfinishedBanner.progressChecking";
       case "regenerating":
         return "quiz.setup.unfinishedBanner.progressRegenerating";
+      case "retrying":
+        return "quiz.setup.unfinishedBanner.progressRetrying";
       case "writing":
         return "quiz.setup.unfinishedBanner.progressWriting";
     }
@@ -392,7 +397,13 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
                     ? // 会话已经从内存中消失（重启后的冷启动）时没有 activeSlot，退回
                       // 不带进度的静态副行——同旧版行为，不假装知道进度。
                       t("quiz.setup.unfinishedBanner.subtitleBase", { date: dateLabel, difficulty: difficultyLabel }) +
-                      (activeSlot ? ` · ${t(progressStepKey(activeSlot.step), { num: activeSlot.index + 1 })}` : "")
+                      (activeSlot
+                        ? ` · ${t(progressStepKey(activeSlot.step), {
+                            num: activeSlot.index + 1,
+                            attempt: activeSlot.attempt,
+                            total: QUIZ_ARTICLE_MAX_ATTEMPTS,
+                          })}`
+                        : "")
                     : t("quiz.setup.unfinishedBanner.subtitleReady", {
                         date: dateLabel,
                         difficulty: difficultyLabel,

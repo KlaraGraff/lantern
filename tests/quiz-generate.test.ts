@@ -1,7 +1,16 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ArticleOutcome, ArticleStep, CompleteStructured, GenerateProgress } from "../src/quiz/generate.ts";
-import { generateArticle, generateExplanations, generateQuiz, regroupForExplanations } from "../src/quiz/generate.ts";
+import {
+  articleErrorMessage,
+  generateArticle,
+  generateExplanations,
+  generateQuiz,
+  isRetryableArticleError,
+  QUIZ_ARTICLE_MAX_ATTEMPTS,
+  QUIZ_ERROR_MESSAGE_MAX_CHARS,
+  regroupForExplanations,
+} from "../src/quiz/generate.ts";
 import {
   answerCheckSchema,
   generatedExplanationsSchema,
@@ -126,9 +135,9 @@ describe("generateQuiz · 明答校验 + 遮词自检全部通过", () => {
     assert.deepEqual(events, [
       { type: "splitting" },
       { type: "split", articles: [{ wordCount: 2 }] },
-      { type: "article", index: 0, step: "writing" },
-      { type: "article", index: 0, step: "checking" },
-      { type: "article", index: 0, step: "done" },
+      { type: "article", index: 0, step: "writing", attempt: 1 },
+      { type: "article", index: 0, step: "checking", attempt: 1 },
+      { type: "article", index: 0, step: "done", attempt: 1 },
       { type: "done" },
     ])
 
@@ -926,7 +935,17 @@ describe("generateQuiz · requestRegistry 取消句柄注册表（docs/impls/cij
       throw new Error("不该走到这里")
     }) as CompleteStructured
 
-    await assert.rejects(() => generateQuiz({ words, config, complete, requestRegistry: registry }))
+    await assert.rejects(() =>
+      generateQuiz({
+        words,
+        config,
+        complete,
+        requestRegistry: registry,
+        // 「模拟出题请求失败」识别不出错误码 → 现在会自动重试到底，退避清零
+        // 避免这条用例真的等 2 * (3000+10000)ms
+        retryDelaysMs: [0, 0],
+      }),
+    )
 
     assert.ok(capturedDuringFailure, "失败前应已拿到 requestId")
     assert.equal(registry.size, 0, "请求失败也要清理 registry，不留孤儿 id")
@@ -1072,6 +1091,9 @@ describe("generateQuiz · 失败按篇隔离（渐进发卷语义，docs/impls/q
       config: { ...config, types: ["reading"], maskedCheck: false },
       onProgress: (e) => events.push(e),
       complete,
+      // 第 1 篇注定失败，会走满整条自动重试阶梯；不清零退避的话这一个用例
+      // 就要真等一分钟，把整个单测套件拖成 CI 上的长跑
+      retryDelaysMs: [0, 0, 0],
     })
 
     assert.equal(answerCheckCalls, 1, "第 2 篇必须照常发起明答校验，不受第 1 篇失败牵连")
@@ -1158,6 +1180,10 @@ describe("generateQuiz · 失败按篇隔离（渐进发卷语义，docs/impls/q
           words: manyWords,
           config: { ...config, types: ["reading"], maskedCheck: false },
           complete,
+          // 两组的写稿错误码都识别不出（errorCode:null）→ 现在会自动重试到底
+          // （见 isRetryableArticleError）；退避时长清零，不然这条用例会真的等
+          // 2 * (3000+10000)ms
+          retryDelaysMs: [0, 0],
         }),
       /第 1 篇写稿失败/,
     )
@@ -1233,6 +1259,163 @@ describe("generateArticle · 单组流水线独立入口（继续生成/单篇�
     assert.deepEqual(steps, ["writing", "failed"])
   })
 })
+
+describe("isRetryableArticleError · 可重试判据", () => {
+  it("设置类错误码不重试；AI_KEYS_COOLING_DOWN / AI_STREAM_FAILED / 识别不出（null）都重试", () => {
+    assert.equal(isRetryableArticleError(null), true, "解析失败/模型没吐文章等未识别错误应该重试")
+    assert.equal(isRetryableArticleError("AI_KEYS_COOLING_DOWN"), true)
+    assert.equal(isRetryableArticleError("AI_STREAM_FAILED"), true)
+    for (const code of [
+      "AI_NOT_CONFIGURED",
+      "AI_KEYS_DISABLED",
+      "AI_ALL_KEYS_INVALID",
+      "AI_NO_USABLE_KEYS",
+      "AI_PROFILE_NOT_AVAILABLE",
+    ] as const) {
+      assert.equal(isRetryableArticleError(code), false, `${code} 不改设置永远失败，不该重试`)
+    }
+  })
+})
+
+describe("generateArticle · 整篇自动重试（写稿异常/模型没给文章）", () => {
+  it("第 2 次尝试成功：最终 ok，'failed' 一次都不发，'retrying' 只发一次且 attempt=2", async () => {
+    const steps: { step: ArticleStep; attempt: number }[] = []
+    const groupWords = ["gammaA", "gammaB"]
+    const paper = makeReadingPaper(groupWords)
+    let writeCalls = 0
+    const complete: CompleteStructured = (async (opts: any) => {
+      if (opts.schema === generatedPaperStage1Schema) {
+        writeCalls++
+        if (writeCalls === 1) throw new Error("模拟第一次写稿失败")
+        return structured(structuredClone(paper), "req", JSON.stringify(paper))
+      }
+      if (opts.schema === answerCheckSchema) {
+        return structured({
+          readingAnswers: groupWords.map((_, i) => ({ questionIndex: i, answer: "A" })),
+          grammarAnswers: [],
+        })
+      }
+      throw new Error(`未预期的调用：${JSON.stringify(opts.messages?.[0]?.content).slice(0, 50)}`)
+    }) as CompleteStructured
+
+    const outcome = await generateArticle({
+      words: groupWords.map((word) => ({ word, origin: "today" as const })),
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onStep: (step, attempt) => steps.push({ step, attempt }),
+      complete,
+      retryDelaysMs: [0, 0],
+    })
+
+    assert.equal(outcome.ok, true)
+    assert.equal(writeCalls, 2, "第 1 次失败、第 2 次成功，写稿共调用两次")
+    assert.ok(!steps.some((s) => s.step === "failed"), "重试成功后不该出现终局失败事件")
+    const retrying = steps.filter((s) => s.step === "retrying")
+    assert.equal(retrying.length, 1, "只重试了一次")
+    assert.equal(retrying[0].attempt, 2)
+    // 第二轮的 writing/checking/done 都该带 attempt:2
+    assert.ok(steps.some((s) => s.step === "writing" && s.attempt === 2))
+    assert.ok(steps.some((s) => s.step === "done" && s.attempt === 2))
+  })
+
+  it("设置类错误码（如 AI_NOT_CONFIGURED）一次都不重试", async () => {
+    let writeCalls = 0
+    const complete: CompleteStructured = (async () => {
+      writeCalls++
+      throw new Error("AI_NOT_CONFIGURED")
+    }) as CompleteStructured
+    const steps: { step: ArticleStep; attempt: number }[] = []
+
+    const outcome = await generateArticle({
+      words: [{ word: "gammaA", origin: "today" as const }],
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onStep: (step, attempt) => steps.push({ step, attempt }),
+      complete,
+      retryDelaysMs: [0, 0],
+    })
+
+    assert.equal(outcome.ok, false)
+    assert.equal(outcome.errorCode, "AI_NOT_CONFIGURED")
+    assert.equal(writeCalls, 1, "设置类错误不许重试，重试只会让用户白等")
+    assert.deepEqual(steps, [
+      { step: "writing", attempt: 1 },
+      { step: "failed", attempt: 1 },
+    ])
+  })
+
+  it("尝试次数用尽都失败：ok:false 且 'failed' 只发一次（终局才发）", async () => {
+    let writeCalls = 0
+    const complete: CompleteStructured = (async () => {
+      writeCalls++
+      throw new Error("持续失败，识别不出错误码")
+    }) as CompleteStructured
+    const steps: { step: ArticleStep; attempt: number }[] = []
+
+    const outcome = await generateArticle({
+      words: [{ word: "gammaA", origin: "today" as const }],
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onStep: (step, attempt) => steps.push({ step, attempt }),
+      complete,
+      retryDelaysMs: [0, 0],
+    })
+
+    assert.equal(outcome.ok, false)
+    assert.equal(writeCalls, QUIZ_ARTICLE_MAX_ATTEMPTS, "首次 + 上限内的每一次自动重试")
+    const failedSteps = steps.filter((s) => s.step === "failed")
+    assert.equal(failedSteps.length, 1, "'failed' 只在重试用尽后发一次")
+    assert.equal(failedSteps[0].attempt, QUIZ_ARTICLE_MAX_ATTEMPTS)
+    assert.equal(steps.filter((s) => s.step === "retrying").length, QUIZ_ARTICLE_MAX_ATTEMPTS - 1)
+  })
+
+  it("shouldCancel 在重试前返回 true：不再发起第二次调用，也不发 'retrying'/'failed'", async () => {
+    let writeCalls = 0
+    const complete: CompleteStructured = (async () => {
+      writeCalls++
+      throw new Error("模拟写稿失败，识别不出错误码")
+    }) as CompleteStructured
+    const steps: { step: ArticleStep; attempt: number }[] = []
+
+    const outcome = await generateArticle({
+      words: [{ word: "gammaA", origin: "today" as const }],
+      config: { ...config, types: ["reading"], maskedCheck: false },
+      onStep: (step, attempt) => steps.push({ step, attempt }),
+      complete,
+      retryDelaysMs: [0, 0],
+      shouldCancel: () => true,
+    })
+
+    assert.equal(outcome.ok, false)
+    assert.equal(writeCalls, 1, "取消后不该再发起第二次调用")
+    assert.ok(!steps.some((s) => s.step === "retrying"), "取消收场不该发 'retrying'")
+    assert.ok(!steps.some((s) => s.step === "failed"), "取消收场不该发 'failed'（安静收场，不是报错收场）")
+  })
+})
+
+describe("articleErrorMessage：失败原文落库前的清洗", () => {
+  it("压平空白并截断，空错误返回 undefined", () => {
+    assert.equal(articleErrorMessage(new Error("  写稿  失败 \n 了 ")), "写稿 失败 了");
+    assert.equal(articleErrorMessage(new Error("   ")), undefined);
+    assert.equal(articleErrorMessage(null), undefined);
+    const long = articleErrorMessage(new Error("啊".repeat(QUIZ_ERROR_MESSAGE_MAX_CHARS + 50)));
+    assert.equal(long?.length, QUIZ_ERROR_MESSAGE_MAX_CHARS + 1, "截断后再补一个省略号");
+    assert.ok(long?.endsWith("…"));
+  });
+
+  it("抹掉网址与疑似密钥——这段文本要落进会同步的 lantern.db", () => {
+    assert.equal(
+      articleErrorMessage(new Error("error sending request for url (https://api.example.com/v1/chat?key=abc123)")),
+      "error sending request for url ([url])",
+    );
+    assert.equal(
+      articleErrorMessage(new Error("Incorrect API key provided: sk-abc123def456ghi789")),
+      "Incorrect API key provided: [redacted]",
+    );
+    assert.equal(
+      articleErrorMessage(new Error("模型返回了空响应")),
+      "模型返回了空响应",
+      "正常的失败原文不该被误伤",
+    );
+  });
+});
 
 function rq(id: string, passageId: string): ReadingQuestion {
   return {

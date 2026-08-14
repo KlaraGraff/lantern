@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { Check, ChevronLeft, Loader2 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import { TOP_INSET } from "../../utils/top-inset.ts";
+import { QUIZ_ARTICLE_MAX_ATTEMPTS } from "../../quiz/generate.ts";
 import type { ArticleProgress, GenerationStage } from "./useQuizGeneration.ts";
 
 interface GeneratingScreenProps {
@@ -41,6 +42,8 @@ const ARTICLE_FRACTION: Record<ArticleProgress["step"], number> = {
   writing: 0.3,
   checking: 0.7,
   regenerating: 0.9,
+  // 整篇失败后的自动重试：从头写，进度折算回接近 writing 的水位
+  retrying: 0.2,
   done: 1,
   failed: 1,
 };
@@ -94,6 +97,10 @@ export default function GeneratingScreen({
         return "quiz.generating.step.checking";
       case "regenerating":
         return "quiz.generating.step.regenerating";
+      // 整篇失败后的自动重试（与 regenerating 不同：那是题目没过复核在重出，
+      // 这是整篇没写成在从头重来）
+      case "retrying":
+        return "quiz.generating.step.retrying";
       case "done":
         return "quiz.generating.article.done";
       // 失败按篇隔离（渐进发卷）：这一篇没生成成，其余篇照常；做题页里可单篇重新生成
@@ -164,7 +171,7 @@ export default function GeneratingScreen({
                           {t("quiz.generating.article", { num: i + 1, count: a.wordCount })}
                         </div>
                         <div className="mt-0.5 text-[12.5px] leading-[1.6] text-text-muted">
-                          {t(articleSubKey(a.step))}
+                          {t(articleSubKey(a.step), { attempt: a.attempt, total: QUIZ_ARTICLE_MAX_ATTEMPTS })}
                         </div>
                       </div>
                     </div>

@@ -2046,6 +2046,9 @@ async fn stream_with_profile_inner<R: Runtime>(
                 // accumulates every delta into one buffer for the whole call, so a
                 // key swapped in after output has already landed appends a second
                 // copy of the answer to the first one's half.
+                // See the routed path: `kind` alone cannot say what went wrong,
+                // because `network` is where everything unrecognized lands.
+                let detail = sanitized_error_detail(&error, Some(key.as_str()));
                 if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                     update_profile_health(
                         db,
@@ -2054,10 +2057,16 @@ async fn stream_with_profile_inner<R: Runtime>(
                         retry_after,
                         Some(profile_started.elapsed().as_millis() as u64),
                     );
+                    log::warn!(
+                        "ai router: profile={} credential={} failed kind={} detail={detail}, giving up",
+                        profile.view.id,
+                        credential.view.id,
+                        kind.as_str()
+                    );
                     return Err(error);
                 }
                 log::warn!(
-                    "ai router: profile={} credential={} failed kind={}, trying next candidate",
+                    "ai router: profile={} credential={} failed kind={} detail={detail}, trying next candidate",
                     profile.view.id,
                     credential.view.id,
                     kind.as_str()
@@ -2367,16 +2376,29 @@ async fn stream_with_failover_inner<R: Runtime>(
                         update_credential_health(db, credential, Some(kind), retry_after);
                     }
                     profile_failure = Some((kind, retry_after));
+                    // The detail rides along with the kind: `network` is the
+                    // fallback class for anything unrecognized, so the kind
+                    // alone cannot tell a dropped connection from a provider
+                    // error frame — and the reader's own report is "it failed",
+                    // which leaves the log as the only account of why.
+                    let detail = sanitized_error_detail(&error, Some(key.as_str()));
+                    let credential_id = credential
+                        .as_ref()
+                        .map_or("-", |credential| credential.view.id.as_str());
                     if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         update_profile_health(db, &profile, Some(kind), retry_after, Some(latency));
+                        log::warn!(
+                            "ai router: profile={} credential={} failed kind={} detail={detail}, giving up",
+                            profile.view.id,
+                            credential_id,
+                            kind.as_str()
+                        );
                         return Err(error);
                     }
                     log::warn!(
-                        "ai router: profile={} credential={} failed kind={}, trying next candidate",
+                        "ai router: profile={} credential={} failed kind={} detail={detail}, trying next candidate",
                         profile.view.id,
-                        credential
-                            .as_ref()
-                            .map_or("-", |credential| credential.view.id.as_str()),
+                        credential_id,
                         kind.as_str()
                     );
                     last_error = Some(error);

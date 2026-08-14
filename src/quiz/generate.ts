@@ -27,7 +27,7 @@ import {
   type ChatMessage,
 } from './transport.ts'
 import { createUuid } from '../utils/randomUuid.ts'
-import { getAiErrorCode, type AiErrorCode } from '../utils/aiError.ts'
+import { getAiErrorCode, isAiRetryableError, type AiErrorCode } from '../utils/aiError.ts'
 
 /**
  * 测试注入点：Tauri 的 `invoke` 在 Node 测试环境里没有 IPC 桥（既不能连后端，
@@ -101,24 +101,108 @@ export interface GenerationTrace {
 
 /**
  * 一篇文章的流水线阶段：写稿 → 校验（明答+遮词） → 重出（如有） → 完成。
- * `failed` 是终态之一（写稿异常或模型没给出文章）——渐进发卷下失败按篇隔离
+ * `failed` 是终态之一——重试用尽后才会出现，渐进发卷下失败按篇隔离
  * （docs/impls/quiz-progressive-delivery.md §一.5），生成中屏与做题页占位共用这个状态。
+ * `retrying` 是**整篇**重试（写稿异常/模型没给文章/可重试的 AI 错误码），与
+ * `regenerating`（题目重出——已写出的文章里，没通过明答校验/遮词自检的**个别题**
+ * 在重出）是两件不同的事：前者整篇推倒重来，后者只重出几道题、文章本身不变。
+ * 两者都可能在同一篇流水线里发生，互不取代。
  */
-export type ArticleStep = 'writing' | 'checking' | 'regenerating' | 'done' | 'failed'
+export type ArticleStep = 'writing' | 'checking' | 'regenerating' | 'retrying' | 'done' | 'failed'
 
 /**
  * 生成进度（按篇流水线改版）：全卷不再有统一的「当前阶段」——同一时刻第 1 篇
  * 可能在校验、第 2 篇还在写稿——进度以事件流上报，UI 侧聚合成按篇状态。
  * `split` 事件把篇数与各篇词数一次性交给 UI，此后 `article` 事件的 index
- * 都落在这个数组范围内。
+ * 都落在这个数组范围内。`attempt`（1 起算）是这篇文章当前处在第几次尝试——
+ * 整篇自动重试（见 QUIZ_ARTICLE_MAX_ATTEMPTS）时同一篇会连续出现多组
+ * writing/checking/... 事件，attempt 是 UI 区分「这是第几轮」的唯一依据，
+ * 所以它是必填——少一个 attempt 的事件，UI 就只能猜。
  */
 export type GenerateProgress =
   | { type: 'splitting' }
   | { type: 'split'; articles: { wordCount: number }[] }
-  | { type: 'article'; index: number; step: ArticleStep }
+  | { type: 'article'; index: number; step: ArticleStep; attempt: number }
   | { type: 'done' }
 
 export type ProgressFn = (progress: GenerateProgress) => void
+
+/** 首次尝试 + 最多 3 次自动重试（写稿异常/模型没给文章/可重试的 AI 错误码）。 */
+export const QUIZ_ARTICLE_MAX_ATTEMPTS = 4
+
+/**
+ * 每次自动重试前的默认退避：3s → 15s → 45s，四次尝试铺开约一分钟。
+ *
+ * 时长按实测的失败形态定：线上抓到的整篇失败是连接在 0.7s 左右被掐断
+ * （日志 kind=network），而且成片出现——一分钟内连着九次全失败，两分钟后
+ * 又恢复正常。退避比这段坏时间短，三次重试只是把同一秒的故障重放三遍。
+ * 出题本来就在后台跑，等一分钟不挡用户做别的篇，所以宁可耐心一点。
+ */
+export const QUIZ_ARTICLE_RETRY_DELAYS_MS = [3000, 15000, 45000]
+
+/**
+ * 一篇文章值不值得自动重试。判据只看 errorCode，不看原始异常：
+ * - 识别不出的错误（`null`，比如解析失败、模型没吐出文章）——多半是这次调用
+ *   本身不稳定，值得重试。
+ * - `AI_KEYS_COOLING_DOWN`（限流冷却中）、`AI_STREAM_FAILED`（流式请求中断）
+ *   ——路由是通的，这次没扛住，值得重试。
+ * - 其余设置类错误码（未配置/密钥停用/密钥全部失效/无可用密钥/钉住的出题
+ *   模型不可用）——不改设置永远失败，重试只是让用户多等两轮退避时间。
+ *
+ * 不能直接套用 `isAiSettingsError` 取反：`AI_KEYS_COOLING_DOWN` 同时在 aiError.ts
+ * 的 settings 集合与 retryable 集合里出现（它既是一种「设置状态」也值得重试），
+ * 这里改用 `isAiRetryableError`（仅看 retryable 集合）作为可重试的权威判据。
+ */
+export function isRetryableArticleError(errorCode: AiErrorCode | null): boolean {
+  return errorCode === null || isAiRetryableError(errorCode)
+}
+
+/** 存进 generation_json 的失败原文上限，超出截断——它只是给人看的线索，不是日志 */
+export const QUIZ_ERROR_MESSAGE_MAX_CHARS = 300
+
+/**
+ * 失败原文：错误码认得出的失败有现成文案（aiErrorMessageKey），认不出的此前在
+ * 界面上只剩一句「未生成完成」——模型输出解析不了、provider 返回 4xx 原文这类
+ * 问题，用户看不到任何线索，重试多少次都是原地打转。这里把原始异常压成一行短
+ * 文本，落进 generation_json 供做题页展示。
+ *
+ * 只取 message（不含堆栈）、压平空白、截断：错误原文来自 provider 响应体与解析
+ * 异常，正常情况下不含凭据（密钥只走 Authorization 头，从不进 URL），但这段文本
+ * 会落进 lantern.db 的 generation_json，而那个库是要进 iCloud 同步容器的——所以
+ * 不赌「正常情况」：网址整段抹掉（自建 base_url 里可能被人塞进 token），长串
+ * 无空白的疑似密钥也抹掉。抹掉的是线索的一部分，但线索可以再抓一次，同步出去的
+ * 凭据收不回来。
+ */
+export function articleErrorMessage(error: unknown): string | undefined {
+  const raw =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : error == null ? '' : String(error)
+  const text = raw
+    .trim()
+    .replace(/\s+/g, ' ')
+    // 收尾不吃括号：reqwest 的错误原文是 `for url (https://…)`，把右括号一起
+    // 吞掉会让这句话看起来是被截断的
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s)\]}>"']*/gi, '[url]')
+    .replace(/\b(?:sk|pk|api|key|token|bearer)[-_a-z0-9]{12,}/gi, '[redacted]')
+  if (!text) return undefined
+  return text.length > QUIZ_ERROR_MESSAGE_MAX_CHARS
+    ? `${text.slice(0, QUIZ_ERROR_MESSAGE_MAX_CHARS)}…`
+    : text
+}
+
+/** 短间隔轮询 shouldCancel 的可打断 sleep：取消能在下一个轮询周期内唤醒，不必等满 ms。 */
+const CANCEL_POLL_INTERVAL_MS = 200
+
+async function cancelableSleep(ms: number, shouldCancel?: () => boolean): Promise<boolean> {
+  if (shouldCancel?.()) return true
+  let elapsed = 0
+  while (elapsed < ms) {
+    const step = Math.min(CANCEL_POLL_INTERVAL_MS, ms - elapsed)
+    await new Promise((resolve) => setTimeout(resolve, step))
+    elapsed += step
+    if (shouldCancel?.()) return true
+  }
+  return false
+}
 
 let idCounter = 0
 const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++idCounter}`
@@ -144,8 +228,15 @@ export async function generateQuiz(opts: {
    * 调用方自己兜好异常。
    */
   onArticle?: (outcome: ArticleOutcome) => void
+  /**
+   * 取消查询：整篇重试的退避等待靠它打断（见 runArticlePipeline）。
+   * 不传 = 永不取消，重试正常跑完 QUIZ_ARTICLE_MAX_ATTEMPTS 次。
+   */
+  shouldCancel?: () => boolean
+  /** 整篇重试的退避时长（毫秒），第 i 次重试前等 retryDelaysMs[i-1]；默认 QUIZ_ARTICLE_RETRY_DELAYS_MS。测试注入更短的值。 */
+  retryDelaysMs?: number[]
 }): Promise<{ quiz: Quiz; traces: GenerationTrace[]; articles: ArticleOutcome[] }> {
-  const { words, config, profileId, onArticle } = opts
+  const { words, config, profileId, onArticle, shouldCancel, retryDelaysMs } = opts
   const progress = opts.onProgress ?? (() => {})
   const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
 
@@ -157,7 +248,8 @@ export async function generateQuiz(opts: {
   // 某篇写稿失败只让该篇产出 ok:false 的 outcome，其余篇照常走完各自的
   // 校验/重出——每一篇现在都独立有价值（失败篇可单篇重生成），旧版「一篇
   // 失败整卷作废 + 共享 abort 闸」的存在理由已消失。runArticlePipeline 不再
-  // 抛出，Promise.all 必然 resolve 且保序。
+  // 抛出，Promise.all 必然 resolve 且保序。它内部已经把「可重试的错误」自动
+  // 重试到底（见函数注释），这里拿到的永远是重试用尽后的终局 outcome。
   const results = await Promise.all(
     groups.map((group, index) =>
       runArticlePipeline({
@@ -166,7 +258,9 @@ export async function generateQuiz(opts: {
         config,
         complete,
         profileId,
-        onStep: (step) => progress({ type: 'article', index, step }),
+        shouldCancel,
+        retryDelaysMs,
+        onStep: (step, attempt) => progress({ type: 'article', index, step, attempt }),
       }).then((outcome) => {
         onArticle?.(outcome)
         return outcome
@@ -237,13 +331,20 @@ export interface ArticleOutcome {
 }
 
 /**
- * 一篇文章的完整流水线：写稿 → 明答校验 + 遮词自检（并行）→ 失败题合并重出
- * （一轮止损）。各篇互不等待，一篇写完立刻进它自己的校验。
+ * 一篇文章的完整流水线（对外入口）：单次尝试跑 writeArticleOnce（写稿 → 校验 →
+ * 题目重出），失败时按 isRetryableArticleError 判断是否整篇自动重试
+ * （QUIZ_ARTICLE_MAX_ATTEMPTS 次为上限，重试间退避 QUIZ_ARTICLE_RETRY_DELAYS_MS，
+ * 可用 retryDelaysMs 覆盖）。`onStep` 的第二个参数是当前尝试序号（1 起算），
+ * 同一篇重试时会重新从头发出 writing/checking/... 事件，靠 attempt 分辨轮次。
  *
- * 缓存硬约束（DeepSeek 前缀缓存，命中约一折计价）：明答校验与阶段二解析靠把
- * 「写稿请求 + 模型原始回答」逐字节原样放在消息开头命中缓存。因此写稿提示词
- * 里不许出现任何会变的内容（时间戳/随机数/序号）——它只由词表与配置决定；
- * 题目 id（nextId 带时间戳）只存在于领域对象里，从不进提示词。
+ * `failed` 事件只在**终局失败**（重试用尽/不可重试/被取消）时发一次——中间
+ * 尝试的失败只发 `retrying`，不发 `failed`，否则生成中屏会在重试期间闪一下
+ * 「未生成完成」。
+ *
+ * 取消（shouldCancel）只打断重试之间的退避等待：每次决定要不要重试之前查一次，
+ * 退避 sleep 结束后再查一次；命中就原样返回当前这次失败的 outcome，不再发起
+ * 下一次尝试、也不再发任何新事件（包括 'failed'）——调用方（generation-session）
+ * 的取消语义是「安静地不再继续」，不是「报错收场」。
  */
 async function runArticlePipeline(opts: {
   group: QuizWord[]
@@ -252,26 +353,73 @@ async function runArticlePipeline(opts: {
   config: QuizConfig
   complete: CompleteStructured
   profileId?: string
+  onStep: (step: ArticleStep, attempt: number) => void
+  shouldCancel?: () => boolean
+  retryDelaysMs?: number[]
+}): Promise<ArticleOutcome> {
+  const { shouldCancel, onStep } = opts
+  const delays = opts.retryDelaysMs ?? QUIZ_ARTICLE_RETRY_DELAYS_MS
+
+  let attempt = 1
+  for (;;) {
+    const outcome = await runArticlePipelineOnce({ ...opts, onStep: (step) => onStep(step, attempt) })
+    if (outcome.ok) return outcome
+    // 失败原文只在这里活一次：outcome.error 之后会被会话层截断存进 generation_json，
+    // 但整份堆栈/长响应只有开发者工具里看得到，日志这一行不能省
+    console.error(`[quiz] 第 ${opts.index + 1} 篇第 ${attempt} 次尝试失败:`, outcome.error)
+    // 每次决定要不要重试之前查一次取消——命中就原样返回，不发 'failed'、不再重试
+    if (shouldCancel?.()) return outcome
+
+    const canRetry = isRetryableArticleError(outcome.errorCode) && attempt < QUIZ_ARTICLE_MAX_ATTEMPTS
+    if (!canRetry) {
+      onStep('failed', attempt)
+      return outcome
+    }
+
+    const nextAttempt = attempt + 1
+    onStep('retrying', nextAttempt)
+    const delayMs = delays[attempt - 1] ?? delays[delays.length - 1] ?? 0
+    const cancelledDuringSleep = await cancelableSleep(delayMs, shouldCancel)
+    // 退避 sleep 结束后再查一次——sleep 期间取消的话，同样原样返回，不发新事件
+    if (cancelledDuringSleep) return outcome
+    attempt = nextAttempt
+  }
+}
+
+/**
+ * 单次尝试的流水线本体：写稿 → 明答校验 + 遮词自检（并行）→ 失败题合并重出
+ * （一轮止损）。各篇互不等待，一篇写完立刻进它自己的校验。失败（写稿异常/
+ * 模型没给文章）时只返回 ok:false 的 outcome，不发 'failed' 事件——是否终局
+ * 失败、要不要重试由外层 runArticlePipeline 决定。
+ *
+ * 缓存硬约束（DeepSeek 前缀缓存，命中约一折计价）：明答校验与阶段二解析靠把
+ * 「写稿请求 + 模型原始回答」逐字节原样放在消息开头命中缓存。因此写稿提示词
+ * 里不许出现任何会变的内容（时间戳/随机数/序号）——它只由词表与配置决定；
+ * 题目 id（nextId 带时间戳）只存在于领域对象里，从不进提示词。
+ */
+async function runArticlePipelineOnce(opts: {
+  group: QuizWord[]
+  index: number
+  config: QuizConfig
+  complete: CompleteStructured
+  profileId?: string
   onStep: (step: ArticleStep) => void
 }): Promise<ArticleOutcome> {
   const { group, index, config, complete, profileId, onStep } = opts
 
-  // 写稿失败（调用异常/模型没给文章）→ 失败终态，不抛出：失败按篇隔离，
-  // 其余流水线照常走完（见 generateQuiz 顶部注释）
-  const failed = (error: unknown): ArticleOutcome => {
-    onStep('failed')
-    return {
-      index,
-      words: group,
-      ok: false,
-      errorCode: getAiErrorCode(error),
-      error,
-      passage: null,
-      trace: null,
-      readingQuestions: [],
-      grammarQuestions: [],
-    }
-  }
+  // 写稿失败（调用异常/模型没给文章）→ ok:false，不抛出、不发事件：终局判定与
+  // 事件发送全部交给外层 runArticlePipeline
+  const failed = (error: unknown): ArticleOutcome => ({
+    index,
+    words: group,
+    ok: false,
+    errorCode: getAiErrorCode(error),
+    error,
+    passage: null,
+    trace: null,
+    readingQuestions: [],
+    grammarQuestions: [],
+  })
 
   onStep('writing')
   let result
@@ -387,13 +535,17 @@ export async function generateArticle(opts: {
   config: QuizConfig
   /** 原篇位（组序）；省略时按单篇卷处理，记 0 */
   index?: number
-  onStep?: (step: ArticleStep) => void
+  onStep?: (step: ArticleStep, attempt: number) => void
   /** 测试注入点，见 CompleteStructured 说明；省略时用真实 transport */
   complete?: CompleteStructured
   /** 取消句柄注册表，见 withRequestRegistry 说明；不传则不生成取消句柄 */
   requestRegistry?: Set<string>
   /** 出题模型硬指定（设置项 quiz_ai_profile_id）；不传 = 跟随自动路由 */
   profileId?: string
+  /** 取消查询，见 generateQuiz 同名参数说明；打断整篇重试的退避等待 */
+  shouldCancel?: () => boolean
+  /** 整篇重试的退避时长（毫秒），见 generateQuiz 同名参数说明；默认 QUIZ_ARTICLE_RETRY_DELAYS_MS */
+  retryDelaysMs?: number[]
 }): Promise<ArticleOutcome> {
   const complete = withRequestRegistry(opts.complete ?? defaultCompleteStructured, opts.requestRegistry)
   return runArticlePipeline({
@@ -402,6 +554,8 @@ export async function generateArticle(opts: {
     config: opts.config,
     complete,
     profileId: opts.profileId,
+    shouldCancel: opts.shouldCancel,
+    retryDelaysMs: opts.retryDelaysMs,
     onStep: opts.onStep ?? (() => {}),
   })
 }
