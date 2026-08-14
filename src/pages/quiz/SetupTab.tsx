@@ -95,6 +95,7 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const rawTextRef = useRef(rawText);
   const imageJobsRef = useRef<ImageJob[]>(imageJobs);
+  const aliveRef = useRef(true);
   const pumpingRef = useRef(false);
   const jobIdRef = useRef(0);
   const jobSeqRef = useRef(0);
@@ -125,12 +126,26 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
     pumpingRef.current = true;
     try {
       for (;;) {
+        // 组件卸了（切标签会卸载本 tab）就停：剩下的图不再发请求计费；
+        // 泵留成孤儿还会与新实例的泵并发，破坏串行保证（互审 F3）。
+        if (!aliveRef.current) break;
         const job = imageJobsRef.current.find((j) => j.status === "queued");
         if (!job) break;
         updateJobs((jobs) => jobs.map((j) => (j.id === job.id ? { ...j, status: "running" as const } : j)));
+        // 压缩失败（文件损坏、SVG/HEIC 解不出位图）单独接住标 generic 失败
+        // ——浏览器的解码错误串里带 "image"，混进下面的分类会被 vision 启发式
+        // 误判成「模型看不了图」，把没跑的整批一起冤死（互审 F1）。
+        let dataUri: string;
         try {
-          const dataUri = await compressImageToDataUri(job.blob);
+          dataUri = await compressImageToDataUri(job.blob);
+        } catch {
+          updateJobs((jobs) => jobs.map((j) => (j.id === job.id ? { ...j, status: "failed" as const } : j)));
+          continue;
+        }
+        if (!aliveRef.current) break;
+        try {
           const words = await extractWordsFromImage(dataUri, profileIdRef.current);
+          if (!aliveRef.current) break;
           const merged = mergeExtractedWords(rawTextRef.current, words);
           if (merged.addedCount > 0) {
             rawTextRef.current = merged.nextRaw;
@@ -208,6 +223,10 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
 
   const handlePaste = useCallback(
     (e: ClipboardEvent<HTMLTextAreaElement>) => {
+      // 剪贴板同时带文本和图片（macOS 从 Excel/Numbers 复制单元格会附带
+      // 一份 TIFF 渲染图）时按文本粘贴——用户复制的是词表本身，拿附带的
+      // 表格截图去 OCR 是本末倒置（互审 F2）。纯截图没有 text/plain，不受影响。
+      if (e.clipboardData?.types.includes("text/plain")) return;
       const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
       if (files.length === 0) return;
       e.preventDefault();
@@ -222,20 +241,29 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
   useEffect(() => {
     if (!highlightRange) return;
     const el = textareaRef.current;
-    if (el) {
+    // 识别是异步的，落地时用户可能正在这个框里补词或在别的输入框里打字
+    // ——这时抢焦点选中新词段，下一个键直接把刚提出来的词整段替换掉
+    // （互审 F5）。只在没人打字（焦点不在任何文本输入上）时做高亮。
+    const active = document.activeElement;
+    const typing =
+      active instanceof HTMLElement && (active.tagName === "TEXTAREA" || active.tagName === "INPUT");
+    if (el && !typing) {
       el.focus();
       el.setSelectionRange(highlightRange.start, highlightRange.end);
     }
     setHighlightRange(null);
   }, [highlightRange]);
 
-  // 卸载时回收所有缩略图 objectURL（成功/移除的路径已各自回收）
-  useEffect(
-    () => () => {
+  // 卸载时让泵停下（见 pump 内的 aliveRef 检查）并回收所有缩略图
+  // objectURL（成功/移除的路径已各自回收）。true 在 effect 体里重置，
+  // 兼容 StrictMode 的挂载→卸载→再挂载。
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
       for (const job of imageJobsRef.current) URL.revokeObjectURL(job.thumbUrl);
-    },
-    [],
-  );
+    };
+  }, []);
 
   const difficulty = (settings.quiz_difficulty as Difficulty) || "cet6";
   const maskedCheck = settings.quiz_masked_check !== "false";

@@ -64,6 +64,11 @@ export interface MergeResult {
  * 把提取出的词追加进输入框文本：与既有词（按 parseWordInput 的切分口径）
  * 小写去重，新词一行一个接在末尾。输入框仍是唯一事实源——这里只产出
  * 新文本，不碰任何别的状态。
+ *
+ * 模型返回的每一项也先过一遍 parseWordInput 归一化——模型偶尔会带上
+ * 行首序号（「1. apple」）或把几个词塞进一项（「banana, cherry」），
+ * 不归一化的话查重口径与既有词对不上：框里出现字面的「1. apple」，
+ * 汇总数字也报错（互审 F4）。
  */
 export function mergeExtractedWords(existingRaw: string, words: string[]): MergeResult {
   const existing = new Set(parseWordInput(existingRaw).map((w) => w.toLowerCase()))
@@ -71,16 +76,16 @@ export function mergeExtractedWords(existingRaw: string, words: string[]): Merge
   const added: string[] = []
   let dupCount = 0
   for (const raw of words) {
-    const word = raw.trim().replace(/\s+/g, ' ')
-    if (!word || !/[a-z]/i.test(word)) continue
-    const key = word.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    if (existing.has(key)) {
-      dupCount += 1
-      continue
+    for (const word of parseWordInput(raw)) {
+      const key = word.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (existing.has(key)) {
+        dupCount += 1
+        continue
+      }
+      added.push(word)
     }
-    added.push(word)
   }
   const appendedText = added.join('\n')
   const trimmed = existingRaw.replace(/\s+$/, '')

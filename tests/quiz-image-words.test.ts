@@ -54,6 +54,20 @@ describe("mergeExtractedWords · 与输入框既有文本的合并", () => {
     assert.equal(r.dupCount, 0);
   });
 
+  it("模型返回的条目先过 parseWordInput 归一化：行首序号剥掉后再查重", () => {
+    const r = mergeExtractedWords("apple\nbanana", ["1. apple", "2. cherry"]);
+    assert.equal(r.nextRaw, "apple\nbanana\ncherry");
+    assert.equal(r.addedCount, 1);
+    assert.equal(r.dupCount, 1);
+  });
+
+  it("一个条目里塞了多个词（含分隔符）按 parseWordInput 口径拆开各自处理", () => {
+    const r = mergeExtractedWords("apple", ["banana, cherry", "Apple"]);
+    assert.equal(r.nextRaw, "apple\nbanana\ncherry");
+    assert.equal(r.addedCount, 2);
+    assert.equal(r.dupCount, 1);
+  });
+
   it("空串/纯符号/无英文字母的条目直接丢弃；词内空白压成单个空格", () => {
     const r = mergeExtractedWords("", ["  in   particular  ", "", "123", "！！"]);
     assert.equal(r.nextRaw, "in particular");
