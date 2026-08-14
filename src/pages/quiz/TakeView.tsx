@@ -25,6 +25,7 @@ import { TOP_INSET } from '../../utils/top-inset.ts'
 import type { AnswerSheet, Passage, Quiz, QuizResult } from '../../quiz/types.ts'
 import type { GenerationSessionState } from './generation-session.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
+import { ActiveTimer } from './active-timer.ts'
 import { deriveSlots, type SlotState } from './take-slots.ts'
 
 type Tab = {
@@ -95,13 +96,38 @@ export default function TakeView(props: {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  // 做题用时：只存内存，评卷页在交卷当次会话里展示，不落库（方案 §四.4）
-  const startRef = useRef(Date.now())
+  // 做题用时：只存内存，评卷页在交卷当次会话里展示，不落库（方案 §四.4）。
+  // 只算前台活跃时长——后台不计，超过阈值的发呆整段不计（active-timer.ts）。
+  const timerRef = useRef<ActiveTimer | null>(null)
+  if (timerRef.current == null) {
+    timerRef.current = new ActiveTimer(Date.now())
+    if (document.visibilityState === 'hidden') timerRef.current.setForeground(false, Date.now())
+  }
+  const timer = timerRef.current
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+  useEffect(() => {
+    const onActivity = () => timer.activity(Date.now())
+    const onBlur = () => timer.setForeground(false, Date.now())
+    const onFocus = () => timer.setForeground(true, Date.now())
+    const onVisibility = () => timer.setForeground(document.visibilityState !== 'hidden', Date.now())
+    // 与阅读统计同一组活动事件（useReadingSessionTracker）；capture 是为了
+    // 接住内层滚动容器不冒泡的 scroll
+    const events = ['pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart'] as const
+    for (const ev of events) window.addEventListener(ev, onActivity, { passive: true, capture: true })
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      for (const ev of events) window.removeEventListener(ev, onActivity, { capture: true })
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [timer])
 
   const allQuestionIds = useMemo(
     () => [
@@ -138,7 +164,7 @@ export default function TakeView(props: {
         profileId: parseQuizAiProfileId(settings['quiz_ai_profile_id']),
       })
       const result = gradeQuiz(quiz, answers, grammarVerdicts)
-      const elapsedMs = Date.now() - startRef.current
+      const elapsedMs = timer.elapsedMs(Date.now())
       await onSubmit(result, elapsedMs)
     } catch (error) {
       console.error('quiz submit failed:', error)
@@ -173,7 +199,7 @@ export default function TakeView(props: {
         </span>
         <span className="flex-1" />
         <span className="text-[12.5px] text-text-muted">
-          {t('quiz.paper.take.elapsed', { time: formatElapsed(now - startRef.current) })}
+          {t('quiz.paper.take.elapsed', { time: formatElapsed(timer.elapsedMs(now)) })}
         </span>
       </div>
 
