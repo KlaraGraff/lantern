@@ -28,10 +28,26 @@ fn request_body(
         api_messages.push(serde_json::json!({ "role": "system", "content": system }));
     }
     api_messages.extend(
-        messages
-            .iter()
-            .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
-            .map(|message| serde_json::json!({ "role": message.role, "content": message.content })),
+        crate::ai::merge_image_messages(messages.iter().filter(|message| {
+            !matches!(message.role.as_str(), "system" | "system_cache_variable")
+        }))
+        .into_iter()
+        .map(|message| {
+            if message.images.is_empty() {
+                // Image-free messages keep plain-string content — the shape
+                // every compatible server, however strict, already accepts.
+                return serde_json::json!({ "role": message.role, "content": message.text });
+            }
+            let mut parts: Vec<serde_json::Value> = message
+                .images
+                .iter()
+                .map(|uri| serde_json::json!({ "type": "image_url", "image_url": { "url": uri } }))
+                .collect();
+            if !message.text.is_empty() {
+                parts.push(serde_json::json!({ "type": "text", "text": message.text }));
+            }
+            serde_json::json!({ "role": "user", "content": parts })
+        }),
     );
     let mut body = serde_json::json!({
         "model": model,
@@ -282,6 +298,42 @@ mod tests {
         assert_eq!(
             body["messages"][1],
             serde_json::json!({ "role": "user", "content": "Question" })
+        );
+    }
+
+    #[test]
+    fn user_image_messages_become_image_url_parts_on_one_user_turn() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user_image".into(),
+                    content: "data:image/jpeg;base64,AAA".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "extract the words".into(),
+                },
+            ],
+            None,
+            None,
+            None,
+        );
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+        let parts = messages[0]["content"].as_array().unwrap();
+        assert_eq!(
+            parts[0],
+            serde_json::json!({
+                "type": "image_url",
+                "image_url": { "url": "data:image/jpeg;base64,AAA" }
+            })
+        );
+        assert_eq!(
+            parts[1],
+            serde_json::json!({ "type": "text", "text": "extract the words" })
         );
     }
 

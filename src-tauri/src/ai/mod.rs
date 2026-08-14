@@ -30,6 +30,84 @@ pub(crate) const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 const MAX_PROVIDER_ERROR_BYTES: usize = 64 * 1024;
 
+/// The image formats every wired provider family accepts as base64 input.
+/// Doubles as the allow-list `ai_complete_text` validates `user_image`
+/// messages against, so a typo'd or exotic media type fails at the command
+/// boundary instead of as an opaque provider 400.
+const IMAGE_MEDIA_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+/// Split a `data:image/...;base64,...` URI into `(media_type, base64_data)`.
+/// `None` for anything that isn't a well-formed data URI of an allowed image
+/// type — callers treat that as invalid input, never as text to send.
+pub(crate) fn parse_image_data_uri(content: &str) -> Option<(&str, &str)> {
+    let rest = content.strip_prefix("data:")?;
+    let (media_type, data) = rest.split_once(";base64,")?;
+    if !IMAGE_MEDIA_TYPES.contains(&media_type) || data.is_empty() {
+        return None;
+    }
+    Some((media_type, data))
+}
+
+/// One outgoing API message after in-band `user_image` merging.
+///
+/// `user_image` follows the `system_cache_variable` precedent: a role that
+/// exists only inside Lantern's `Vec<ChatMessage>` and is translated away at
+/// the wire boundary. Each provider's `request_body` turns an entry with
+/// images into its own multimodal content-parts shape; an entry without
+/// images stays a plain string so image-free requests are byte-identical to
+/// what they were before this channel existed.
+pub(crate) struct ApiMessage<'a> {
+    pub role: &'a str,
+    pub text: &'a str,
+    /// Data URIs in original order; non-empty only on merged user messages.
+    pub images: Vec<&'a str>,
+}
+
+/// Fold `user_image` messages into the next `user` turn (images first, text
+/// after), so providers with strict user/assistant alternation (Anthropic)
+/// still see one user message. Images not followed by a `user` turn — a
+/// trailing image, or one oddly placed before an `assistant` turn — are
+/// flushed as their own image-only user message rather than reordered past
+/// other turns.
+pub(crate) fn merge_image_messages<'a>(
+    messages: impl Iterator<Item = &'a crate::commands::ai::ChatMessage>,
+) -> Vec<ApiMessage<'a>> {
+    let mut out: Vec<ApiMessage<'a>> = Vec::new();
+    let mut pending: Vec<&'a str> = Vec::new();
+    for message in messages {
+        match message.role.as_str() {
+            "user_image" => pending.push(message.content.as_str()),
+            "user" => out.push(ApiMessage {
+                role: "user",
+                text: &message.content,
+                images: std::mem::take(&mut pending),
+            }),
+            role => {
+                if !pending.is_empty() {
+                    out.push(ApiMessage {
+                        role: "user",
+                        text: "",
+                        images: std::mem::take(&mut pending),
+                    });
+                }
+                out.push(ApiMessage {
+                    role,
+                    text: &message.content,
+                    images: Vec::new(),
+                });
+            }
+        }
+    }
+    if !pending.is_empty() {
+        out.push(ApiMessage {
+            role: "user",
+            text: "",
+            images: pending,
+        });
+    }
+    out
+}
+
 /// Join a provider base URL with a path such as `chat/completions`.
 ///
 /// Providers publish the base URL either with the version segment already in it
@@ -188,7 +266,96 @@ fn sanitized_error_field(value: Option<&serde_json::Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::compat_endpoint;
+    use super::{compat_endpoint, merge_image_messages, parse_image_data_uri};
+    use crate::commands::ai::ChatMessage;
+
+    fn message(role: &str, content: &str) -> ChatMessage {
+        ChatMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+        }
+    }
+
+    #[test]
+    fn parses_allowed_image_data_uris() {
+        assert_eq!(
+            parse_image_data_uri("data:image/jpeg;base64,abc123"),
+            Some(("image/jpeg", "abc123"))
+        );
+        assert_eq!(
+            parse_image_data_uri("data:image/png;base64,xyz"),
+            Some(("image/png", "xyz"))
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_or_disallowed_data_uris() {
+        // Not a data URI at all; text must never be mistaken for an image.
+        assert_eq!(parse_image_data_uri("hello words"), None);
+        // Right scheme, missing payload.
+        assert_eq!(parse_image_data_uri("data:image/jpeg;base64,"), None);
+        // Non-image and not-allow-listed media types.
+        assert_eq!(parse_image_data_uri("data:application/pdf;base64,aa"), None);
+        assert_eq!(parse_image_data_uri("data:image/tiff;base64,aa"), None);
+        // Not base64-marked.
+        assert_eq!(parse_image_data_uri("data:image/png,plain"), None);
+    }
+
+    #[test]
+    fn images_fold_into_the_following_user_turn_in_order() {
+        let messages = [
+            message("user_image", "data:image/png;base64,one"),
+            message("user_image", "data:image/png;base64,two"),
+            message("user", "what words are in these?"),
+        ];
+        let merged = merge_image_messages(messages.iter());
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].role, "user");
+        assert_eq!(merged[0].text, "what words are in these?");
+        assert_eq!(
+            merged[0].images,
+            vec!["data:image/png;base64,one", "data:image/png;base64,two"]
+        );
+    }
+
+    #[test]
+    fn a_trailing_image_becomes_its_own_user_message() {
+        let messages = [
+            message("user", "first"),
+            message("user_image", "data:image/png;base64,late"),
+        ];
+        let merged = merge_image_messages(messages.iter());
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].text, "first");
+        assert!(merged[0].images.is_empty());
+        assert_eq!(merged[1].role, "user");
+        assert_eq!(merged[1].text, "");
+        assert_eq!(merged[1].images, vec!["data:image/png;base64,late"]);
+    }
+
+    #[test]
+    fn an_image_before_an_assistant_turn_flushes_instead_of_reordering() {
+        let messages = [
+            message("user_image", "data:image/png;base64,img"),
+            message("assistant", "earlier reply"),
+            message("user", "follow-up"),
+        ];
+        let merged = merge_image_messages(messages.iter());
+        assert_eq!(
+            merged.iter().map(|m| m.role).collect::<Vec<_>>(),
+            vec!["user", "assistant", "user"]
+        );
+        assert_eq!(merged[0].images, vec!["data:image/png;base64,img"]);
+        assert!(merged[2].images.is_empty());
+    }
+
+    #[test]
+    fn image_free_conversations_pass_through_unchanged() {
+        let messages = [message("user", "q"), message("assistant", "a")];
+        let merged = merge_image_messages(messages.iter());
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().all(|m| m.images.is_empty()));
+    }
 
     #[test]
     fn appends_v1_when_base_has_no_version() {

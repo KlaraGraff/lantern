@@ -23,7 +23,19 @@ fn anthropic_effort(effort: &str) -> String {
 /// "cache everything up to and including this block," so each call site
 /// below is choosing where a shared prefix ends, not just marking "this one
 /// message."
+///
+/// Content that is already in array form (a merged `user_image` message) gets
+/// the breakpoint on its last block instead — re-wrapping it as a string
+/// would silently drop the image blocks. No current caller combines images
+/// with `cache`, but the two flags arrive independently, so this must not
+/// corrupt the request when they meet.
 fn mark_cache_control(message: &mut serde_json::Value) {
+    if let Some(blocks) = message["content"].as_array_mut() {
+        if let Some(last) = blocks.last_mut() {
+            last["cache_control"] = serde_json::json!({ "type": "ephemeral" });
+        }
+        return;
+    }
     let text = message["content"].as_str().unwrap_or_default().to_string();
     message["content"] = serde_json::json!([
         { "type": "text", "text": text, "cache_control": { "type": "ephemeral" } }
@@ -81,10 +93,33 @@ fn request_body(
     } else {
         serde_json::json!(format!("{stable}{variable}"))
     };
-    let mut api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
-        .map(|message| serde_json::json!({ "role": message.role, "content": message.content }))
+    let mut api_messages: Vec<serde_json::Value> =
+        crate::ai::merge_image_messages(messages.iter().filter(|message| {
+            !matches!(message.role.as_str(), "system" | "system_cache_variable")
+        }))
+        .into_iter()
+        .map(|message| {
+            if message.images.is_empty() {
+                // Image-free messages keep plain-string content, byte-identical
+                // to what this channel sent before images existed.
+                return serde_json::json!({ "role": message.role, "content": message.text });
+            }
+            let mut blocks: Vec<serde_json::Value> = message
+                .images
+                .iter()
+                .filter_map(|uri| crate::ai::parse_image_data_uri(uri))
+                .map(|(media_type, data)| {
+                    serde_json::json!({
+                        "type": "image",
+                        "source": { "type": "base64", "media_type": media_type, "data": data },
+                    })
+                })
+                .collect();
+            if !message.text.is_empty() {
+                blocks.push(serde_json::json!({ "type": "text", "text": message.text }));
+            }
+            serde_json::json!({ "role": "user", "content": blocks })
+        })
         .collect();
     if cache_last_message {
         let len = api_messages.len();
@@ -542,6 +577,74 @@ mod tests {
             "ephemeral"
         );
         assert_eq!(messages[1]["content"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn user_image_messages_merge_into_one_multimodal_user_turn() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user_image".into(),
+                    content: "data:image/jpeg;base64,AAA".into(),
+                },
+                ChatMessage {
+                    role: "user_image".into(),
+                    content: "data:image/png;base64,BBB".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "extract the words".into(),
+                },
+            ],
+            None,
+            None,
+            false,
+        );
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+        let blocks = messages[0]["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], "image");
+        assert_eq!(blocks[0]["source"]["type"], "base64");
+        assert_eq!(blocks[0]["source"]["media_type"], "image/jpeg");
+        assert_eq!(blocks[0]["source"]["data"], "AAA");
+        assert_eq!(blocks[1]["source"]["media_type"], "image/png");
+        assert_eq!(blocks[1]["source"]["data"], "BBB");
+        assert_eq!(
+            blocks[2],
+            serde_json::json!({ "type": "text", "text": "extract the words" })
+        );
+    }
+
+    #[test]
+    fn cache_last_message_on_a_multimodal_turn_marks_the_last_block_and_keeps_images() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user_image".into(),
+                    content: "data:image/jpeg;base64,AAA".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "extract the words".into(),
+                },
+            ],
+            None,
+            None,
+            true,
+        );
+        let blocks = body["messages"][0]["content"].as_array().unwrap();
+        // The image block survives, the breakpoint lands on the final block.
+        assert_eq!(blocks[0]["type"], "image");
+        assert_eq!(blocks[0]["source"]["data"], "AAA");
+        assert!(blocks[0]["cache_control"].is_null());
+        assert_eq!(blocks[1]["text"], "extract the words");
+        assert_eq!(blocks[1]["cache_control"]["type"], "ephemeral");
     }
 
     #[test]
