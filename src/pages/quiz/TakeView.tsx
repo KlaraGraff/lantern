@@ -303,6 +303,13 @@ export default function TakeView(props: {
                                 value={answers[q.id] ?? ''}
                                 onChange={(e) => setAnswer(q.id, e.target.value)}
                                 placeholder={t('quiz.paper.take.blankPlaceholder')}
+                                /* Autocorrect grading an answer before the
+                                 * grader sees it is the worst kind of wrong
+                                 * mark: the reader typed the right word and
+                                 * the keyboard replaced it. */
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                                spellCheck={false}
                                 className="mx-1 w-32 rounded-md border border-border bg-bg-input px-2 py-0.5 font-serif text-[14px] text-text-primary focus:border-accent focus:outline-none"
                               />
                             )}

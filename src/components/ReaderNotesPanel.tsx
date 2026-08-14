@@ -487,6 +487,9 @@ export default function ReaderNotesPanel({
             placeholder={t("common.search")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary outline-none placeholder:text-text-placeholder"
           />
         </div>

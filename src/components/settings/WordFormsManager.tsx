@@ -109,7 +109,7 @@ export default function WordFormsManager() {
       <div className="flex items-center gap-2">
         <label className="relative min-w-0 flex-1">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-placeholder" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("settings.tools.wordForms.search")} className="h-8 w-full rounded-md border border-border bg-bg-surface pl-8 pr-2 text-[11px] text-text-primary outline-none focus:border-accent" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("settings.tools.wordForms.search")} autoCapitalize="off" autoCorrect="off" spellCheck={false} className="h-8 w-full rounded-md border border-border bg-bg-surface pl-8 pr-2 text-[11px] text-text-primary outline-none focus:border-accent" />
         </label>
         {running ? <>
           <span className="text-[11px] tabular-nums text-text-muted">{progress.done}/{progress.total}</span>
@@ -128,7 +128,7 @@ export default function WordFormsManager() {
             <span className="w-[104px] shrink-0 truncate text-[11px] font-medium text-text-primary">{entry.display_word}</span>
             <input value={drafts[entry.normalized_word] ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [entry.normalized_word]: event.target.value }))} onBlur={(event) => {
               if (event.target.value !== entry.forms.join(", ")) void save(entry.normalized_word, event.target.value, "user");
-            }} placeholder={t("settings.tools.wordForms.unset")} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-bg-surface px-2 text-[11px] text-text-primary outline-none focus:border-accent" />
+            }} placeholder={t("settings.tools.wordForms.unset")} autoCapitalize="off" autoCorrect="off" spellCheck={false} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-bg-surface px-2 text-[11px] text-text-primary outline-none focus:border-accent" />
             <button type="button" title={t("settings.tools.wordForms.refetch")} disabled={busyWord !== null || running} onClick={() => void fetchOne(entry.normalized_word)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-30">
               {busyWord === entry.normalized_word ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             </button>

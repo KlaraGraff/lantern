@@ -683,6 +683,9 @@ export default function PersonAliasesSection({
                 value={query}
                 onChange={(event) => { setQuery(event.target.value); setSpotlight(null); }}
                 placeholder={t("indexManager.aliases.searchPlaceholder")}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
                 className="h-7 w-full rounded-md border border-border bg-bg-surface pl-7 pr-2.5 text-[12px] text-text-primary outline-none"
               />
             </div>

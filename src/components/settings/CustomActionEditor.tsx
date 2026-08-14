@@ -335,6 +335,9 @@ export default function CustomActionEditor({
           value={testText}
           onChange={(event) => setTestText(event.target.value)}
           placeholder={testPlaceholder}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           className="h-8 min-w-0 flex-1 rounded-md border border-border bg-bg-surface px-2 text-[11px] text-text-primary outline-none focus:border-accent"
         />
         <Button variant="secondary" size="sm" onClick={() => onTest(testText.trim() || testPlaceholder, draft)}>

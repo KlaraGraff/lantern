@@ -179,12 +179,20 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
                 </span>
               )}
             </div>
+            {/* A soft keyboard capitalises the first letter of every line and
+              * quietly rewrites what it thinks is a typo — habits that suit
+              * prose and ruin a word list. These words are matched against the
+              * vocab list and carried into the paper verbatim, so an
+              * autocapitalised 「acquaintance → Acquaintance」 is a different
+              * string than the one that was saved while reading. */}
             <textarea
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
               placeholder={t("quiz.setup.todayWords.placeholder")}
               rows={5}
               spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
               className="w-full resize-none rounded-lg border border-border bg-bg-surface px-3.5 py-3 font-serif text-[14px] leading-[1.6] text-text-primary outline-none placeholder:font-sans placeholder:text-text-placeholder focus:border-accent"
             />
 
