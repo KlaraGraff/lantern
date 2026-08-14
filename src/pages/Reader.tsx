@@ -189,6 +189,23 @@ export default function Reader() {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
+  /**
+   * Leaving the reader means going back where you came from, not going to the
+   * library. On a desktop the difference is invisible — the sidebar is always
+   * there, and one click puts you back in Q&A or Notes. On a phone the sidebar
+   * is a drawer, so a hardcoded `navigate("/")` costs three taps to return to a
+   * list you were halfway down, and loses your scroll position on the way.
+   *
+   * `history.state.idx` is the router's own count of entries it has pushed;
+   * anything above zero means there is an in-app page underneath this one to
+   * pop back to. A cold launch straight into a book — a deep link, a restored
+   * session — has no such entry and still lands on the shelf.
+   */
+  const leaveReader = useCallback(() => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx;
+    if (typeof idx === "number" && idx > 0) void navigate(-1);
+    else void navigate("/");
+  }, [navigate]);
   const [book, setBook] = useState<Book | null>(null);
   // The trip that brought the reader into this book from another one's chat,
   // and the two things that can go wrong with it: the sentence not being
@@ -1994,7 +2011,7 @@ export default function Reader() {
     if (isStandaloneWindow) {
       appWindow.close().catch(() => navigate("/"));
     } else {
-      navigate("/");
+      leaveReader();
     }
   };
 
@@ -2498,7 +2515,7 @@ export default function Reader() {
                     closeAllPanels();
                     return;
                   }
-                  navigate("/");
+                  leaveReader();
                 }}
                 aria-label={coveringPanel ? t("reader.panelBack") : t("reader.returnToLibrary")}
                 className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-lg text-text-muted"
@@ -2547,7 +2564,7 @@ export default function Reader() {
               {/* 36px is under the 44px both Apple and WCAG 2.5.5 ask for. The
                   header's icon buttons grow on a coarse pointer — a modality
                   question, unlike the layout above, so `touch:` and not `md:`. */}
-              <Button variant="icon" size="md" className="touch:size-11" onClick={() => navigate("/")}>
+              <Button variant="icon" size="md" className="touch:size-11" onClick={() => leaveReader()}>
                 <ArrowLeft size={16} />
               </Button>
               <div className="w-px h-6 bg-border" />
@@ -3265,7 +3282,7 @@ export default function Reader() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => navigate("/")}
+                  onClick={() => leaveReader()}
                   aria-label={t("reader.returnToLibrary")}
                   className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-text-muted"
                 >

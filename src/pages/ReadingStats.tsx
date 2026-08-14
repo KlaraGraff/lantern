@@ -20,6 +20,7 @@ import { ReadingReviewError } from "./reading-stats/types";
 import { TOP_INSET } from "../utils/top-inset";
 import type { LevelObservation } from "./reading-stats/level-observation";
 import { splitEmphasis } from "../i18n/emphasis";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 
 /**
  * What the OS puts above the header — traffic lights on macOS, the status bar
@@ -265,6 +266,7 @@ function BookHistory({
 
 function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; labels: ReadingStatsLabels }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const coarsePointer = useCoarsePointer();
   // Replaces the native `title` attribute, whose hover delay is a fixed OS
   // setting (~1s) no CSS or JS can shorten. `left`/`top` are pre-computed
   // against `containerRef` (not the grid's own scrolling box) at the moment
@@ -284,15 +286,25 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
   };
 
   const scheduleHover = (date: string, target: HTMLElement) => {
+    // A touch has no hover to preview with, but WKWebView synthesises
+    // `mouseenter` on tap anyway — so on a phone the tooltip appeared over the
+    // very day whose full detail was already unfolding underneath it, and did
+    // it half off the screen. Tapping is the whole interaction there.
+    if (coarsePointer) return;
     clearHoverTimer();
     hoverTimer.current = setTimeout(() => {
       const container = containerRef.current;
       if (!container) return;
       const dotRect = target.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
+      // Centred on the dot, but never past either edge of the card: the first
+      // column sits 13px in, and half a tooltip hangs off the left of a narrow
+      // one. Estimated from the text because the node is not in the DOM yet.
+      const half = Math.min(containerRect.width, 24 + labels.formatDate(date).length * 6.5) / 2;
+      const centre = dotRect.left - containerRect.left + dotRect.width / 2;
       setHover({
         date,
-        left: dotRect.left - containerRect.left + dotRect.width / 2,
+        left: Math.min(Math.max(centre, half), Math.max(half, containerRect.width - half)),
         top: dotRect.top - containerRect.top,
       });
     }, 150);

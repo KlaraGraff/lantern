@@ -207,8 +207,10 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
         )}
       </div>
 
-      {/* Input bar */}
-      <div className="border-t border-border px-6 pt-[17px] pb-4 flex flex-col gap-2">
+      {/* Input bar. The bottom padding carries the home-indicator inset: this
+        * view fills the screen on a phone, so 16px alone puts the send hint —
+        * and the bottom edge of a 60px-tall composer — inside the swipe strip. */}
+      <div className="flex flex-col gap-2 border-t border-border px-6 pt-[17px] pb-[calc(var(--spacing-safe-bottom)+1rem)]">
         <div className="flex gap-2 items-start">
           <textarea
             value={input}

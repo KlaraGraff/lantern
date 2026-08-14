@@ -96,11 +96,28 @@ function readStoredViewMode(): ViewMode {
     : "grid3";
 }
 
+/**
+ * 笔记 / 单词 / 问答 / 阅读记录 are not routes — they are this component's
+ * `activeFilter`, drawn over the same `/` page. On a desktop that costs
+ * nothing, because a book opens in a window of its own and this component
+ * never unmounts. In one window it does: opening a book replaces `/` with
+ * `/reader/:id`, and coming back re-mounts Home from scratch, dropping you on
+ * the shelf no matter which section you left from.
+ *
+ * Session storage, not local: the section you were in is a fact about this
+ * run of the app, and a cold launch should still open on the library.
+ */
+const ACTIVE_FILTER_SESSION_KEY = "library-active-filter";
+
+function readStoredFilter(): string {
+  return sessionStorage.getItem(ACTIVE_FILTER_SESSION_KEY) || "all";
+}
+
 export default function Home() {
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [activeFilter, setActiveFilter] = useState(readStoredFilter);
   // The former `复习`/review sidebar row is gone (docs/impls/home-ia-consolidation.md
   // step 1); its only remaining entry points are programmatic — the reader's
   // "review these" hand-off and the reading-stats page's review CTA. Both used
@@ -151,6 +168,13 @@ export default function Home() {
     drawerHandedOffRef.current = true;
     setDrawerOpen(false);
   }, [setDrawerOpen]);
+
+  // Written from the state rather than from `handleFilterChange`, because the
+  // section also changes from places that never touch the sidebar: the reader's
+  // hand-off event, and the reading-stats review CTA.
+  useEffect(() => {
+    sessionStorage.setItem(ACTIVE_FILTER_SESSION_KEY, activeFilter);
+  }, [activeFilter]);
 
   // A window dragged back out to desktop width unmounts the drawer; leaving the
   // controller open would mean the next drag back to narrow starts open.
