@@ -514,6 +514,7 @@
   "dictionary.collapse": "收起",
   "dictionary.askAiHint": "双击让 AI 告诉你这里是哪个意思",
   "dictionary.askAiHintTouch": "轻点两下，让 AI 告诉你这里是哪个意思",
+  "dictionary.askAiHintMenu": "点「{{action}}」，让 AI 告诉你这里是哪个意思",
   "dictionary.notFound": "词典里没有这个词",
   "dictionary.privacyToggleLabel": "单击查词",
   "dictionary.privacyToggleHint": "点词后会向有道词典发送请求获取释义；同一个词本次运行只请求一次。",

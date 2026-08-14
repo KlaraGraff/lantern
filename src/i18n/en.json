@@ -514,6 +514,7 @@
   "dictionary.collapse": "Collapse",
   "dictionary.askAiHint": "Double-click to let AI tell you which one fits here",
   "dictionary.askAiHintTouch": "Double-tap to let AI tell you which one fits here",
+  "dictionary.askAiHintMenu": "Tap “{{action}}” to let AI tell you which one fits here",
   "dictionary.notFound": "Not in the dictionary",
   "dictionary.privacyToggleLabel": "Single-click dictionary lookup",
   "dictionary.privacyToggleHint": "Clicking a word sends a request to Youdao Dictionary for its definition; the same word is only requested once per session.",

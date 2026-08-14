@@ -40,6 +40,7 @@ import {
   type ReaderMenuAction,
 } from "./reader-bindings";
 import { useSettings } from "../hooks/useSettings";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 
 export type { ReaderMenuAction };
 
@@ -119,11 +120,16 @@ export default function ReaderContextMenu({
   // reader's own `useReaderSettingsSync` is out of reach from a component
   // this self-contained, and a generic key-value fetch here is cheap.
   const { settings: dictionarySettings } = useSettings();
+  const isNarrow = useIsNarrow();
   const dictionaryEnabled = dictionarySettings.dictionary_lookup_enabled !== "false";
   // The card's closing line tells the reader to double-click. It may only say
   // so while double-click actually looks the word up — the same key
-  // `TextBookReader` and `useReaderInteractions` gate the gesture on.
-  const doubleClickLooksUp = dictionarySettings.double_click_quick_lookup !== "false";
+  // `TextBookReader` and `useReaderInteractions` gate the gesture on. Below the
+  // breakpoint that setting is beside the point: there is no double-click to
+  // switch off, and the line points at this menu's own 「Explain in context」
+  // row instead, which is there whatever the setting says.
+  const doubleClickLooksUp =
+    isNarrow || dictionarySettings.double_click_quick_lookup !== "false";
   const [dictionaryEntry, setDictionaryEntry] = useState<DictionaryEntry | null>(null);
   const [dictionaryLoading, setDictionaryLoading] = useState(false);
   // Single click already opens this menu after the double-click grace period

@@ -5,6 +5,7 @@ import { GLANCE_SAFE_ATTR } from "./dictionary-glance";
 import { prefersReducedMotion } from "./page-turn-transition";
 import { motionDuration, motionEasing } from "./motion";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 
 export interface DictionaryGroup {
   pos: string;
@@ -106,6 +107,7 @@ export default function DictionaryCard({
 }) {
   const { t } = useTranslation();
   const coarsePointer = useCoarsePointer();
+  const isNarrow = useIsNarrow();
   const [expanded, setExpanded] = useState(false);
   const [clippedSenses, setClippedSenses] = useState(0);
   const sensesRef = useRef<HTMLDivElement>(null);
@@ -207,11 +209,18 @@ export default function DictionaryCard({
     return () => animation.cancel();
   }, [expanded]);
 
-  // A finger does not double-click, it double-taps — and iOS names that
-  // gesture 「轻点两下」, not 「双击」.
-  const aiHint = coarsePointer
-    ? t("dictionary.askAiHintTouch")
-    : t("dictionary.askAiHint");
+  // Below the breakpoint the gesture does not exist to be named: the reader
+  // hands every tap straight to the lookup, so `useReaderInteractions` drops
+  // the `dblclick` before it reaches quick lookup, and a card that told a
+  // phone to tap twice would be describing a dead end. The same question is
+  // one row down as a menu item, so the hint points there instead. Above the
+  // breakpoint a coarse pointer is an iPad, where double-tap does run — it
+  // just is not called a double-click; iOS names that gesture 「轻点两下」.
+  const aiHint = isNarrow
+    ? t("dictionary.askAiHintMenu", { action: t("readerXray.menuAction") })
+    : coarsePointer
+      ? t("dictionary.askAiHintTouch")
+      : t("dictionary.askAiHint");
 
   return (
     <div className="mx-1 mb-1 border-b border-border-light px-2 pb-2 pt-1.5">
