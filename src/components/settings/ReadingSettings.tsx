@@ -486,8 +486,8 @@ export default function ReadingSettings({
       </div>
       <div className="h-px bg-border-light" />
       {/* Theme */}
-      <div className="flex items-center justify-between min-h-[88px] py-2">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[88px] py-2">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.theme")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.themeHint")}</p>
         </div>
@@ -538,8 +538,8 @@ export default function ReadingSettings({
         </div>
       )}
       {/* Font Family */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.fontFamily")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontFamilyHint")}</p>
         </div>
@@ -553,8 +553,8 @@ export default function ReadingSettings({
       {/* 中文字体 —— 和西文分开选。CSS 的字体匹配是逐字符的，一条链里排在
           通用关键字前面的中文字族会抢走它能渲染的西文字符，所以两边必须各自
           成链，不能共用一个下拉。 */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.cjkFontFamily")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.cjkFontFamilyHint")}</p>
         </div>
@@ -660,16 +660,16 @@ export default function ReadingSettings({
         </div>
       )}
       {/* Font Size */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.fontSize")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontSizeHint")}</p>
         </div>
         <NumberInput value={fontSize} onChange={setFontSize} {...numberRow("font_size", fontSize)} suffix="px" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} />
       </div>
       {/* Shrink the font on narrow windows */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.narrowFontShrink")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.narrowFontShrinkHint")}</p>
         </div>
@@ -686,8 +686,8 @@ export default function ReadingSettings({
       {/* Line Spacing —— 默认「自动」，按脚本分（中文 1.8 / 西文 1.6）。数字
           框没法表达「自动」，所以自动态下它显示两个默认值之间的落点，右边挂
           一句说明；一旦手输数字就接管成具体值，再想回自动点行尾的链接。 */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.lineSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">
             {isAutoLineSpacing(lineSpacing) ? t("settings.layout.lineSpacingAutoHint") : t("settings.layout.lineSpacingHint")}
@@ -719,16 +719,16 @@ export default function ReadingSettings({
         />
       </div>
       {/* Character Spacing */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.charSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.charSpacingHint")}</p>
         </div>
         <NumberInput value={charSpacing} onChange={setCharSpacing} {...numberRow("char_spacing", charSpacing)} suffix="%" min={-5} max={20} />
       </div>
       {/* Word Spacing */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.wordSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.wordSpacingHint")}</p>
         </div>
@@ -792,8 +792,8 @@ export default function ReadingSettings({
           </p>
         )}
       </div>
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.margins")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.marginsHint")}</p>
         </div>
@@ -807,8 +807,8 @@ export default function ReadingSettings({
       </div>
       <div className="h-px bg-border-light" />
       {/* Default Page Flow */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.readingMode")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.readingModeHint")}</p>
         </div>
@@ -828,8 +828,8 @@ export default function ReadingSettings({
         />
       </div>
       {/* Default Page Layout */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.pageLayout")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.pageLayoutHint")}</p>
         </div>
@@ -849,8 +849,8 @@ export default function ReadingSettings({
         />
       </div>
       {/* Page-turn Animation */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.pageTurnAnimation")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.pageTurnAnimationHint")}</p>
         </div>
@@ -876,8 +876,8 @@ export default function ReadingSettings({
           no tap zones to redirect, and offering the toggle there would promise
           a behavior the click never has. */}
       {coarsePointer && (
-        <div className="flex items-center justify-between min-h-[73px] py-3">
-          <div>
+        <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+          <div className="min-w-0">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.oneHandMode")}</p>
             <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.oneHandModeHint")}</p>
           </div>
@@ -908,8 +908,8 @@ export default function ReadingSettings({
           reads the stored setting and never asks what the pointer is. */}
       {!coarsePointer && (
       <>
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.previousPageBinding")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("readerSettings.pageTurnBindingsHint")}</p>
         </div>
@@ -932,8 +932,8 @@ export default function ReadingSettings({
         />
       </div>
       {/* Next-page Control */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.nextPageBinding")}</p>
         </div>
         <PageTurnBindingButton
@@ -960,7 +960,7 @@ export default function ReadingSettings({
           the three displays are peers (all can be lit, or none), so the row
           reads better as chips than as a stack of on/off switches. */}
       <div className="flex items-center justify-between min-h-[73px] py-3 gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.progressDisplay")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.progressDisplayHint")}</p>
         </div>
@@ -1000,8 +1000,8 @@ export default function ReadingSettings({
       </div>
       <div className="h-px bg-border-light" />
       {/* Auto Save */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.autoSave")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.autoSaveHint")}</p>
         </div>
@@ -1016,8 +1016,8 @@ export default function ReadingSettings({
         />
       </div>
       {/* Skip front matter on first open */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.skipFrontMatter")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.skipFrontMatterHint")}</p>
         </div>
@@ -1039,8 +1039,8 @@ export default function ReadingSettings({
         {t("settings.layout.groupOpenCard")}
       </div>
       <div className="h-px bg-border-light" />
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("bookOpenCard.settingsTitle")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("bookOpenCard.settingsBody")}</p>
           <p className="text-[11px] text-text-muted mt-1">
@@ -1080,8 +1080,8 @@ export default function ReadingSettings({
       </button>
       {/* Restore defaults — last row, because it undoes every row above it. */}
       <div className="border-t border-border-light">
-        <div className="flex items-center justify-between min-h-[73px] py-3">
-          <div>
+        <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+          <div className="min-w-0">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.restoreDefaults")}</p>
             <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.restoreDefaultsHint")}</p>
           </div>

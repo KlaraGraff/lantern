@@ -48,8 +48,8 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
       {/* Interface Language — row 1. Errantly setting the app to a language
           you cannot read has to be recoverable by position alone: this is
           the first section, and this is its first row. */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.language")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.languageHint")}</p>
         </div>
@@ -70,8 +70,8 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
       {/* Theme — row 2, folded in from the former 外观 section (which held
           nothing else). On a touch device `Select` already raises itself as
           a bottom sheet, so no bespoke sheet mechanism is needed here. */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.appearance.theme")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.themeHint")}</p>
         </div>
@@ -92,8 +92,8 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
       </div>
 
       {/* Display Name */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.displayName")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.displayNameHint")}</p>
         </div>
@@ -111,8 +111,8 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           an update happens in the toast; this row just decides whether the
           launch check runs at all. Gone where there is no updater to run. */}
       {platform.hasUpdater && (
-        <div className="flex items-center justify-between min-h-[73px] py-3">
-          <div>
+        <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+          <div className="min-w-0">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.autoCheckUpdates")}</p>
             <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.autoCheckUpdatesHint")}</p>
           </div>
@@ -130,8 +130,8 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
 
       {/* Lets someone who skipped or rushed through the first-launch card see
           it again, without a support request to reset a hidden flag. */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.onboarding.replay")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.onboarding.replayHint")}</p>
         </div>
@@ -152,8 +152,8 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           on the user knowing about the menu. Nothing to reveal the logs
           *in* on a platform with no file manager, so the whole row goes. */}
       {platform.hasFileReveal && (
-        <div className="flex items-center justify-between min-h-[73px] py-3">
-          <div>
+        <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+          <div className="min-w-0">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.diagnostics.revealLogs")}</p>
             <p className="text-[12px] text-text-muted mt-0.5">{t("settings.diagnostics.revealLogsHint")}</p>
           </div>

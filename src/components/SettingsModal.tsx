@@ -485,7 +485,11 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
               for vertical scrolling still computes `overflow-x: auto`, so any
               panel that misjudges the shell's padding by a few pixels turns
               the whole settings page into a sideways-scrolling web page. */}
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-safe-bottom">
+          {/* The inset alone leaves the last row of every page ending exactly
+              on the home-indicator strip — legible, but it reads as a page that
+              got cut off rather than one that finished. A gutter past the inset
+              is what makes "this is the end" visible. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-[calc(var(--spacing-safe-bottom)+1.5rem)]">
             {activeSection === null ? (
               <div className="px-4 pt-3.5">
                 {rootGroups.map((group) => (

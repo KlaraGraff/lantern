@@ -491,6 +491,21 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
       </div>
 
       <div className="border-t border-border-light px-1 py-4">
+        <Slider
+          min={SPEECH_RATE_RANGE.min}
+          max={SPEECH_RATE_RANGE.max}
+          step={SPEECH_RATE_RANGE.step}
+          value={rate}
+          onChange={setRate}
+          onChangeEnd={(value) => persist({ [SPEECH_RATE_SETTING_KEY]: String(value) })}
+          label={t("settings.speech.rate")}
+          displayValue={`${formatRate(rate)}x`}
+          hint={t("settings.speech.rateHint")}
+        >
+        {/* Inside the slider, under its label. Left above it these chips fill
+            the whole width of a phone and butt straight up against the divider
+            that closes the custom-TTS block — so they read as that block's last
+            control rather than as shortcuts for the speed below them. */}
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           {SPEECH_RATE_PRESETS.map((preset) => (
             <button
@@ -523,17 +538,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             }}
           />
         </div>
-        <Slider
-          min={SPEECH_RATE_RANGE.min}
-          max={SPEECH_RATE_RANGE.max}
-          step={SPEECH_RATE_RANGE.step}
-          value={rate}
-          onChange={setRate}
-          onChangeEnd={(value) => persist({ [SPEECH_RATE_SETTING_KEY]: String(value) })}
-          label={t("settings.speech.rate")}
-          displayValue={`${formatRate(rate)}x`}
-          hint={t("settings.speech.rateHint")}
-        />
+        </Slider>
       </div>
 
       <div className="border-t border-border-light">

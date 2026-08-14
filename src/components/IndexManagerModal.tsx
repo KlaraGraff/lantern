@@ -452,6 +452,13 @@ export default function IndexManagerModal({
               </section>
               <section className="mt-5 space-y-2">
                 <h4 className="text-[13px] font-medium text-text-primary">{t("indexManager.sections")}</h4>
+                {/* A half-built index has chunks but no summaries yet, and the
+                    heading then sits directly on top of the next section's
+                    heading — it reads as a section that failed to render rather
+                    than one that has nothing in it yet. */}
+                {details.sections.every((section) => section.sectionIndex == null) && (
+                  <p className="text-[12px] text-text-muted">{t("indexManager.sectionsEmpty")}</p>
+                )}
                 {details.sections.map((section) => section.sectionIndex == null ? null : (
                   <details key={section.sectionIndex} className="rounded-md border border-border p-3">
                     <summary className="cursor-pointer text-[12px] font-medium text-text-primary">{section.sectionTitle || t("indexManager.section", { index: section.sectionIndex + 1 })}{section.userEdited ? ` · ${t("indexManager.edited")}` : ""}</summary>

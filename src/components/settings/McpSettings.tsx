@@ -88,8 +88,8 @@ export default function McpSettings(_props: SettingsProps) {
   return (
     <div>
       {/* Claude Code CLI */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
             {t("settings.mcp.claudeCode")}
           </p>
@@ -106,8 +106,8 @@ export default function McpSettings(_props: SettingsProps) {
       </div>
 
       {/* Codex CLI */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
             {t("settings.mcp.codex")}
           </p>
@@ -130,7 +130,7 @@ export default function McpSettings(_props: SettingsProps) {
       <div className="h-px bg-border-light mt-4" />
 
       {/* Write access */}
-      <div className="flex items-center justify-between min-h-[73px] py-3">
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
         <div className="flex items-start gap-2">
           <PenLine size={14} className="text-amber-500 shrink-0 mt-1" />
           <div>

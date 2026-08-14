@@ -1632,6 +1632,7 @@
   "indexManager.saveOverview": "保存概览",
   "indexManager.sections": "章节摘要",
   "indexManager.section": "第 {{index}} 节",
+  "indexManager.sectionsEmpty": "还没有章节摘要。补齐索引时会一并生成。",
   "indexManager.saveSection": "保存章节摘要",
   "indexManager.chunkPreview": "查看分块预览（只读）",
   "indexManager.overwriteEdited": "覆盖人工编辑并重生成",

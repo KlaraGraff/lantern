@@ -407,12 +407,16 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           options={CEFR_LEVELS.map((level) => ({ value: level, label: level }))}
         />
       </div>
+      {/* The 290px cap on the hints below is there to keep them clear of the
+          Select sitting to their right. On a phone the row has already wrapped
+          and the Select is underneath, so the cap only buys a ragged right edge
+          and a third of the width left empty — hence md: on all three. */}
       <div className="flex min-h-[82px] flex-wrap items-center justify-between gap-4 py-3">
         <div className="min-w-[220px] flex-1">
           <p className="text-[14px] font-medium text-text-primary">
             {t("settings.learner.explanationMode", { defaultValue: "Explanation language" })}
           </p>
-          <p className="text-[12px] text-text-muted mt-0.5 max-w-[290px]">
+          <p className="text-[12px] text-text-muted mt-0.5 md:max-w-[290px]">
             {t("settings.learner.explanationModeHint", { defaultValue: "A1-B1 use accurate Chinese plus a short English restatement; B2 and above gradually use more English" })}
           </p>
         </div>
@@ -559,7 +563,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           <p className="text-[14px] font-medium text-text-primary">
             {t("settings.learner.translationLanguage")}
           </p>
-          <p className="text-[12px] text-text-muted mt-0.5 max-w-[290px]">
+          <p className="text-[12px] text-text-muted mt-0.5 md:max-w-[290px]">
             {t("settings.learner.translationLanguageHint")}
           </p>
         </div>
@@ -578,7 +582,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           <p className="text-[14px] font-medium text-text-primary">
             {t("settings.learner.levelWordClass")}
           </p>
-          <p className="text-[12px] text-text-muted mt-0.5 max-w-[290px]">
+          <p className="text-[12px] text-text-muted mt-0.5 md:max-w-[290px]">
             {t("settings.learner.levelWordClassHint")}
           </p>
         </div>
@@ -895,8 +899,8 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
         )}
       </section>
 
-      <div className="flex items-center justify-between min-h-[73px] py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.lookupHistoryRetention")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.lookupHistoryRetentionHint")}</p>
         </div>
@@ -921,8 +925,8 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
         />
       </div>
 
-      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3 border-t border-black/10">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.learner.profileSoftLimit")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.learner.profileSoftLimitHint")}</p>
         </div>
@@ -946,8 +950,8 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
         />
       </div>
 
-      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3 border-t border-black/10">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.coverage.countFamiliar")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.coverage.countFamiliarHint")}</p>
         </div>
@@ -961,8 +965,8 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
         />
       </div>
 
-      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3 border-t border-black/10">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.coverage.showOnShelf")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.coverage.showOnShelfHint")}</p>
         </div>
@@ -976,8 +980,8 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
         />
       </div>
 
-      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
-        <div>
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3 border-t border-black/10">
+        <div className="min-w-0">
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.coverage.clearProfile")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.coverage.clearProfileHint")}</p>
         </div>

@@ -398,12 +398,15 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
 }
 
 /**
- * The daily/weekly/monthly bar chart on the learning view. Every bar carries
- * a native `title` tooltip (date + count) rather than the mockup's bespoke
- * hover popup — same information, and it is the same hover convention
- * `ReadingCalendar`'s own day cells already use just above on this page. The
- * peak bar's count is drawn permanently above it; every other bar stays bare
- * until hovered, per the mockup's "selective, not general" labeling.
+ * The daily/weekly/monthly bar chart on the learning view. The peak bar's count
+ * is drawn permanently above it; every other bar stays bare until asked about,
+ * per the mockup's "selective, not general" labeling.
+ *
+ * "Asked about" used to mean only a native `title` tooltip, which a finger
+ * cannot summon — so on a phone every bar but the peak was a shape with no
+ * number attached anywhere. The bars are now buttons that name their bucket in
+ * a caption under the axis; the tooltip stays for a mouse, which gets the same
+ * answer without the click.
  */
 function LearningTrendChart({
   trend,
@@ -414,6 +417,7 @@ function LearningTrendChart({
   granularity: VocabLearningStats["trendGranularity"];
   labels: ReadingStatsLabels;
 }) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const peak = Math.max(0, ...trend.map((bucket) => bucket.count));
   const scale = Math.max(1, peak);
   const first = trend[0];
@@ -422,6 +426,7 @@ function LearningTrendChart({
   const axisDates = [first, middle, last].filter(
     (bucket, index, all) => bucket && all.findIndex((other) => other?.date === bucket.date) === index,
   );
+  const selectedBucket = trend.find((bucket) => bucket.date === selectedDate) ?? null;
 
   return (
     <div>
@@ -431,26 +436,35 @@ function LearningTrendChart({
         {trend.map((bucket) => {
           const isPeak = peak > 0 && bucket.count === peak;
           const heightPx = Math.max(2, Math.round((bucket.count / scale) * 84));
+          const caption = labels.learningTrendTooltip(labels.formatDate(bucket.date), bucket.count);
+          const isSelected = bucket.date === selectedDate;
           return (
-            <div
+            // The button is the full height of the chart, not the height of its
+            // bar: a quiet day is a 2px sliver, and nobody hits a 2px target.
+            <button
               key={bucket.date}
-              className="relative max-w-[14px] flex-1"
-              style={{ height: `${heightPx}px` }}
-              title={labels.learningTrendTooltip(labels.formatDate(bucket.date), bucket.count)}
+              type="button"
+              onClick={() => setSelectedDate(isSelected ? null : bucket.date)}
+              aria-pressed={isSelected}
+              aria-label={caption}
+              title={caption}
+              className="flex h-full max-w-[14px] flex-1 cursor-pointer items-end rounded-t outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
             >
-              {isPeak ? (
-                <span className="pointer-events-none absolute inset-x-0 -top-3.5 text-center text-[9px] font-semibold text-text-secondary">
-                  {bucket.count}
-                </span>
-              ) : null}
-              <div
-                className={
-                  bucket.count === 0
-                    ? "h-full rounded-sm bg-border"
-                    : "h-full rounded-t bg-accent opacity-85 hover:opacity-100"
-                }
-              />
-            </div>
+              <div className="relative w-full" style={{ height: `${heightPx}px` }}>
+                {isPeak ? (
+                  <span className="pointer-events-none absolute inset-x-0 -top-3.5 text-center text-[9px] font-semibold text-text-secondary">
+                    {bucket.count}
+                  </span>
+                ) : null}
+                <div
+                  className={
+                    bucket.count === 0
+                      ? "h-full rounded-sm bg-border"
+                      : `h-full rounded-t bg-accent hover:opacity-100 ${isSelected ? "opacity-100" : "opacity-85"}`
+                  }
+                />
+              </div>
+            </button>
           );
         })}
       </div>
@@ -458,6 +472,11 @@ function LearningTrendChart({
         <div className="mt-1.5 flex justify-between text-[9px] text-text-muted">
           {axisDates.map((bucket) => <span key={bucket!.date}>{labels.formatDate(bucket!.date)}</span>)}
         </div>
+      ) : null}
+      {selectedBucket ? (
+        <p className="mt-1.5 text-[10px] text-text-secondary" aria-live="polite">
+          {labels.learningTrendTooltip(labels.formatDate(selectedBucket.date), selectedBucket.count)}
+        </p>
       ) : null}
     </div>
   );

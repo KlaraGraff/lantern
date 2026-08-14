@@ -3,7 +3,10 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { focusFirstElement, trapTabKey } from "../focus-trap";
 import { useTranslation } from "react-i18next";
+import { useIsNarrow } from "../../hooks/useIsNarrow";
 import type { LearningCardKind, LearningModuleId } from "../learning-card";
+
+const DENSITIES = ["compact", "standard", "detailed"] as const;
 
 interface DensityHelpDialogProps {
   initialKind: LearningCardKind;
@@ -19,6 +22,7 @@ const rows: Record<LearningCardKind, LearningModuleId[]> = {
 export default function DensityHelpDialog({ initialKind, onClose }: DensityHelpDialogProps) {
   const { t } = useTranslation();
   const [kind, setKind] = useState(initialKind);
+  const narrow = useIsNarrow();
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = "density-help-title";
 
@@ -84,34 +88,62 @@ export default function DensityHelpDialog({ initialKind, onClose }: DensityHelpD
           ))}
         </div>
 
-        <div className="min-h-0 overflow-auto p-5">
-          <table className="w-full min-w-[680px] table-fixed border-collapse text-left">
-            <thead>
-              <tr className="border-b border-border">
-                <th scope="col" className="w-[18%] px-2 py-2 text-[11px] font-semibold text-text-muted">{t("settings.tools.densityHelp.module")}</th>
-                {(["compact", "standard", "detailed"] as const).map((density) => (
-                  <th key={density} scope="col" className="px-2 py-2 text-[11px] font-semibold text-text-muted">
-                    {t(`settings.tools.density.${density}`)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows[kind].map((moduleId) => (
-                <tr key={moduleId} className="border-b border-border-light align-top last:border-b-0">
-                  <th scope="row" className="break-words px-2 py-3 text-[11px] font-semibold text-text-primary">
-                    {t(`settings.tools.modules.${moduleId}`)}
-                  </th>
-                  {(["compact", "standard", "detailed"] as const).map((density) => (
-                    <td key={density} className="break-words px-2 py-3 text-[11px] leading-[1.5] text-text-secondary">
-                      {t(`settings.tools.densityHelp.examples.${moduleId}.${density}`)}
-                    </td>
+        {/* Four columns need 680px, so on a phone the table scrolls sideways —
+            and the module column, the one thing that says which row you are
+            reading, scrolls away with it. Stacked, each module keeps its name
+            over its own three densities and nothing moves horizontally. */}
+        {narrow ? (
+          <div className="min-h-0 overflow-auto px-4 py-3">
+            {rows[kind].map((moduleId) => (
+              <section key={moduleId} className="border-b border-border-light py-3 last:border-b-0">
+                <h3 className="text-[12px] font-semibold text-text-primary">
+                  {t(`settings.tools.modules.${moduleId}`)}
+                </h3>
+                <dl className="mt-1.5 flex flex-col gap-1.5">
+                  {DENSITIES.map((density) => (
+                    <div key={density} className="flex gap-2">
+                      <dt className="w-14 shrink-0 text-[11px] font-medium text-text-muted">
+                        {t(`settings.tools.density.${density}`)}
+                      </dt>
+                      <dd className="min-w-0 flex-1 text-[11px] leading-[1.5] text-text-secondary">
+                        {t(`settings.tools.densityHelp.examples.${moduleId}.${density}`)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div className="min-h-0 overflow-auto p-5">
+            <table className="w-full min-w-[680px] table-fixed border-collapse text-left">
+              <thead>
+                <tr className="border-b border-border">
+                  <th scope="col" className="w-[18%] px-2 py-2 text-[11px] font-semibold text-text-muted">{t("settings.tools.densityHelp.module")}</th>
+                  {DENSITIES.map((density) => (
+                    <th key={density} scope="col" className="px-2 py-2 text-[11px] font-semibold text-text-muted">
+                      {t(`settings.tools.density.${density}`)}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows[kind].map((moduleId) => (
+                  <tr key={moduleId} className="border-b border-border-light align-top last:border-b-0">
+                    <th scope="row" className="break-words px-2 py-3 text-[11px] font-semibold text-text-primary">
+                      {t(`settings.tools.modules.${moduleId}`)}
+                    </th>
+                    {DENSITIES.map((density) => (
+                      <td key={density} className="break-words px-2 py-3 text-[11px] leading-[1.5] text-text-secondary">
+                        {t(`settings.tools.densityHelp.examples.${moduleId}.${density}`)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>,
     document.body,

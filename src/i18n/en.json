@@ -1632,6 +1632,7 @@
   "indexManager.saveOverview": "Save overview",
   "indexManager.sections": "Section summaries",
   "indexManager.section": "Section {{index}}",
+  "indexManager.sectionsEmpty": "No section summaries yet. Finishing the index writes them.",
   "indexManager.saveSection": "Save section summary",
   "indexManager.chunkPreview": "View chunk preview (read-only)",
   "indexManager.overwriteEdited": "Overwrite edits and regenerate",

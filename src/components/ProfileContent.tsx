@@ -582,8 +582,13 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                 /* 「空态就是编辑态」那条只在鼠标下成立：键盘不占地方，光标落进
                    输入框是省一次点击。手指下同一个动作代价完全不同——进「个人」
                    页就弹起键盘、页面自己滚到底部，读者连页面长什么样都没看见。
-                   所以只压掉自动打开这一条路径；读者自己点「编辑」照样聚焦。 */
-                autoFocus={!pendingMove && !(coarsePointer && autoOpened)}
+                   所以只压掉自动打开这一条路径；读者自己点「编辑」照样聚焦。
+
+                   光看 `autoOpened` 不够：上面那个 `|| !state.userText` 兜的
+                   正是 effect 生效前的一帧，而 `autoFocus` 只在挂载那一刻生效，
+                   textarea 恰恰就是在那一帧挂上去的——那时 `autoOpened` 还是
+                   false，键盘照样弹。空正文本身就说明这次是自动打开的。 */
+                autoFocus={!pendingMove && !(coarsePointer && (autoOpened || !state.userText))}
                 value={draftText}
                 onChange={(event) => setDraftText(event.target.value)}
                 placeholder={t("profile.yourText.placeholder")}

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 interface SliderProps {
   min: number;
   max: number;
@@ -12,6 +14,13 @@ interface SliderProps {
   label: string;
   displayValue: string;
   hint?: string;
+  /**
+   * Sits between the label row and the track — for preset shortcuts that belong
+   * to this slider. They have to render inside it, not before it: a full-width
+   * row of chips placed above the label reads, on a phone, as the tail of
+   * whatever section the divider above it closed.
+   */
+  children?: ReactNode;
 }
 
 export default function Slider({
@@ -24,6 +33,7 @@ export default function Slider({
   label,
   displayValue,
   hint,
+  children,
 }: SliderProps) {
   return (
     <div>
@@ -31,6 +41,7 @@ export default function Slider({
         <label className="text-[14px] font-semibold text-text-primary">{label}</label>
         <span className="text-[14px] text-text-secondary">{displayValue}</span>
       </div>
+      {children}
       <input
         type="range"
         min={min}
