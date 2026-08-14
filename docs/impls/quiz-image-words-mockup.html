@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今天的词 · 图片取词样张</title>
+<style>
+  :root {
+    --bg-page: #fafafa;
+    --bg-surface: #ffffff;
+    --bg-input: #f4f4f5;
+    --border: rgba(0,0,0,0.12);
+    --border-light: rgba(0,0,0,0.07);
+    --text-primary: #18181b;
+    --text-secondary: #3f3f46;
+    --text-muted: #8e8e93;
+    --accent: #8b5cf6;
+    --accent-bg: #f3eeff;
+    --accent-text: #7c4dd6;
+    --danger: #dc2626;
+    --danger-bg: #fef2f2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .pagehint { font-size: 13px; color: var(--text-muted); margin-bottom: 36px; line-height: 1.7; }
+  .state { margin-bottom: 44px; }
+  .state-tag {
+    display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent-text);
+    background: var(--accent-bg); border-radius: 6px; padding: 3px 10px; margin-bottom: 6px;
+  }
+  .state-note { font-size: 12.5px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.7; }
+
+  /* —— 今天的词 功能区（与出卷页左列同版式） —— */
+  .card { }
+  .card h2 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .inputbox {
+    position: relative;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--accent);
+    border-radius: 12px;
+    padding: 14px 16px 40px;
+    min-height: 150px;
+  }
+  .inputbox.idle { border-color: var(--border); }
+  .placeholder { color: var(--text-muted); font-size: 13.5px; line-height: 2; }
+  .typed { font-size: 13.5px; line-height: 2; color: var(--text-primary); white-space: pre-line; }
+  .typed .new { background: #f0e9ff; border-radius: 3px; }
+  .imgbtn {
+    position: absolute; right: 10px; bottom: 8px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; color: var(--text-muted);
+    border: none; background: none; padding: 5px 8px; border-radius: 7px; cursor: pointer;
+  }
+  .imgbtn:hover { background: var(--bg-input); }
+  .imgbtn svg { width: 14px; height: 14px; }
+
+  /* 图片 chips 条 */
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .chip {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 7px 11px 7px 7px;
+  }
+  .chip .thumb {
+    width: 44px; height: 33px; border-radius: 6px; flex: none;
+    background: linear-gradient(135deg, #e6e0f7 0%, #cfc4ee 55%, #b7a6e4 100%);
+    position: relative; overflow: hidden;
+  }
+  .chip .thumb::after {
+    content: ""; position: absolute; inset: 6px 8px;
+    background:
+      linear-gradient(#fff9 0 2px, transparent 2px) 0 0 / 100% 7px repeat-y;
+    border-radius: 2px;
+  }
+  .chip .meta { font-size: 12px; line-height: 1.5; }
+  .chip .meta .name { color: var(--text-secondary); }
+  .chip .meta .st { color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+  .chip.failed { border-color: rgba(220,38,38,0.4); background: var(--danger-bg); }
+  .chip.failed .st { color: var(--danger); }
+  .chip .act {
+    font-size: 12px; color: var(--accent-text); background: none; border: none;
+    cursor: pointer; padding: 2px 4px; border-radius: 5px;
+  }
+  .chip .act.quiet { color: var(--text-muted); }
+  .chip .act:hover { background: rgba(0,0,0,0.05); }
+  .spin {
+    width: 11px; height: 11px; border: 1.5px solid var(--text-muted);
+    border-top-color: transparent; border-radius: 50%; flex: none;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 轻提示 / 错误横幅 */
+  .toast {
+    margin-top: 10px; font-size: 12.5px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .toast .ok { color: var(--accent-text); }
+  .banner {
+    margin-top: 10px; border: 1px solid rgba(220,38,38,0.35); background: var(--danger-bg);
+    border-radius: 10px; padding: 10px 13px; font-size: 12.5px; line-height: 1.8;
+    color: var(--text-secondary);
+  }
+  .banner b { color: var(--danger); font-weight: 600; }
+  .banner .go { color: var(--accent-text); text-decoration: none; font-weight: 500; }
+
+  /* 拖入高亮态 */
+  .inputbox.dragover {
+    border-style: dashed; border-color: var(--accent); background: var(--accent-bg);
+  }
+  .dropcue {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 13.5px; color: var(--accent-text); font-weight: 500;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>今天的词 · 粘贴图片取词</h1>
+  <p class="pagehint">
+    只画出卷页左列「今天的词」功能区的五个状态；页面其余部分不变。
+    交互口径：粘贴 / 拖入 / 点右下角按钮选图 → 自动开始识别（用出题模型）→
+    提取的词<strong>追加进输入框</strong>（与已有词去重），可删改后照常生成词卷。
+  </p>
+
+  <!-- A 空态 -->
+  <div class="state">
+    <span class="state-tag">A · 空态</span>
+    <p class="state-note">placeholder 加一行说明粘贴能力；右下角新增选图小按钮，平时安静地待着。</p>
+    <div class="card">
+      <h2>今天的词</h2>
+      <div class="inputbox idle">
+        <div class="placeholder">粘贴今天背完的单词，一行一个或用逗号分隔<br>词组（in particular）算一个词，行首序号会自动去掉<br>也可以直接粘贴或拖入截图，AI 会把词提出来</div>
+        <button class="imgbtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          从图片提取
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- B 拖入中 -->
+  <div class="state">
+    <span class="state-tag">B · 拖入中</span>
+    <p class="state-note">图片拖到框上方时整框虚线高亮，给一个明确的落点提示。</p>
+    <div class="card">
+      <h2>今天的词</h2>
+      <div class="inputbox dragover">
+        <div class="dropcue">松开，把图里的词提出来</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C 识别中 -->
+  <div class="state">
+    <span class="state-tag">C · 识别中</span>
+    <p class="state-note">粘贴两张图后：输入框下方出现缩略图条，逐张显示识别状态；输入框本身照常可编辑，先手打几个词不冲突。</p>
+    <div class="card">
+      <h2>今天的词</h2>
+      <div class="inputbox idle">
+        <div class="typed">meticulous
+subsidy</div>
+        <button class="imgbtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          从图片提取
+        </button>
+      </div>
+      <div class="chips">
+        <div class="chip">
+          <div class="thumb"></div>
+          <div class="meta"><div class="name">截图 1</div><div class="st"><span class="spin"></span>正在识别</div></div>
+        </div>
+        <div class="chip">
+          <div class="thumb"></div>
+          <div class="meta"><div class="name">截图 2</div><div class="st">排队中</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D 成功 -->
+  <div class="state">
+    <span class="state-tag">D · 提取完成</span>
+    <p class="state-note">词直接追加进输入框（浅紫底短暂标出新加的，几秒后恢复普通文本）；chip 消失，留一行轻提示说明结果和去重情况。</p>
+    <div class="card">
+      <h2>今天的词</h2>
+      <div class="inputbox idle">
+        <div class="typed">meticulous
+subsidy
+<span class="new">ubiquitous</span>
+<span class="new">in retrospect</span>
+<span class="new">alleviate</span>
+<span class="new">plausible</span></div>
+        <button class="imgbtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          从图片提取
+        </button>
+      </div>
+      <div class="toast"><span class="ok">✓</span>从 2 张图片提取了 4 个词，与已有重复的 1 个没有再加</div>
+    </div>
+  </div>
+
+  <!-- E 失败与模型不支持 -->
+  <div class="state">
+    <span class="state-tag">E · 失败态</span>
+    <p class="state-note">上：单张识别失败，chip 留在原地可重试/移除，已成功的那张不受影响。下：出题模型不支持看图时的横幅——明确指去设置换模型，不悄悄换别的模型。</p>
+    <div class="card">
+      <h2>今天的词</h2>
+      <div class="inputbox idle">
+        <div class="typed">meticulous
+subsidy
+ubiquitous</div>
+        <button class="imgbtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          从图片提取
+        </button>
+      </div>
+      <div class="chips">
+        <div class="chip failed">
+          <div class="thumb"></div>
+          <div class="meta"><div class="name">截图 2</div><div class="st">识别失败</div></div>
+          <button class="act">重试</button>
+          <button class="act quiet">移除</button>
+        </div>
+      </div>
+      <div class="banner" style="margin-top:22px">
+        <b>当前出题模型不支持识别图片。</b><br>
+        到 <a class="go" href="#">设置 → 词卷</a> 换一个支持看图的模型，或把图里的词手动敲进来。
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
