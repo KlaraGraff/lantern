@@ -9,6 +9,7 @@ import {
   type ReaderActionId,
 } from "../reader-bindings";
 import type { CardDesignConfigV1 } from "../learning-card";
+import { useIsNarrow } from "../../hooks/useIsNarrow";
 import Button from "../ui/Button";
 import Select from "../ui/Select";
 
@@ -32,6 +33,7 @@ export default function ReaderBindingsSettings({
   onChange,
 }: ReaderBindingsSettingsProps) {
   const { t, i18n } = useTranslation();
+  const isNarrow = useIsNarrow();
   const [recording, setRecording] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<number, string>>({});
   const [draftAction, setDraftAction] = useState<ReaderActionId>("translate");
@@ -85,10 +87,14 @@ export default function ReaderBindingsSettings({
   // Both click gestures have a built-in meaning that has to be turned off before
   // they can carry an action, so the button, the guard and the error read the
   // same for each — only which setting owns it differs.
-  const clickTriggers = [
+  //
+  // Double-click drops out below the breakpoint: the reader ignores dblclick
+  // there, so a row bound to it would sit in the list looking assigned and never
+  // fire. Triple-click comes through the mousedown path instead and does work.
+  const clickTriggers = ([
     { trigger: "mouse:double", label: "doubleClick", takenByBuiltIn: doubleClickEnabled },
     { trigger: "mouse:triple", label: "tripleClick", takenByBuiltIn: tripleClickEnabled },
-  ] as const;
+  ] as const).filter((click) => !isNarrow || click.trigger !== "mouse:double");
 
   const setClickTrigger = (index: number, { trigger, label, takenByBuiltIn }: typeof clickTriggers[number]) => {
     const conflict = takenByBuiltIn
@@ -102,10 +108,11 @@ export default function ReaderBindingsSettings({
     }
     onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, trigger } : item));
   };
-  // A free double/triple-click goes first: it is the one default a phone can
-  // actually trigger without an attached keyboard. F2…F24 remain the
-  // fallback once those are taken — a phone user who reaches that far still
-  // has to reassign the row by hand, same as before this fix.
+  // A free click gesture goes first: it is the one default a phone can actually
+  // trigger without an attached keyboard (triple-click there, since the list
+  // above has already dropped double). F2…F24 remain the fallback once those are
+  // taken — a phone user who reaches that far still has to reassign the row by
+  // hand, same as before this fix.
   const nextTrigger = [
     ...clickTriggers.filter((click) => !click.takenByBuiltIn).map((click) => click.trigger),
     ...Array.from({ length: 23 }, (_, index) => `key:F${index + 2}`),

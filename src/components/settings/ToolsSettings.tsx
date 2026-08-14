@@ -39,6 +39,7 @@ import {
   type MarkerVisibility,
 } from "../mark-palette";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
+import { useIsNarrow } from "../../hooks/useIsNarrow";
 import {
   addPendingWrites,
   appliedSnapshot,
@@ -192,6 +193,7 @@ export default function ToolsSettings({
   onNavigationGuardChange,
 }: ToolsSettingsProps) {
   const { t, i18n } = useTranslation();
+  const isNarrow = useIsNarrow();
   const [view, setView] = useState<ToolsView>("interaction");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [cardKind, setCardKind] = useState<LearningCardKind>("word");
@@ -523,23 +525,29 @@ export default function ToolsSettings({
               }}
             />
           </SettingsRow>
-          <SettingsRow
-            title={t("settings.tools.interaction.doubleClick")}
-            subtitle={t("settings.tools.interaction.doubleClickHint")}
-          >
-            <Toggle
-              label={t("settings.tools.interaction.doubleClick")}
-              checked={doubleClickQuickLookup}
-              onChange={(enabled) => {
-                if (enabled && readerBindings.some((binding) => binding.trigger === "mouse:double")) {
-                  showSavedToast(t("settings.tools.bindings.doubleClickConflictReverse"));
-                  return;
-                }
-                setDoubleClickQuickLookup(enabled);
-                persistLegacy("double_click_quick_lookup", String(enabled));
-              }}
-            />
-          </SettingsRow>
+          {/* Below the breakpoint the reader ignores dblclick outright (each tap
+              already got its own answer from the single-tap handler), so this
+              row would be a switch that changes nothing. Same width test as the
+              guard in the reader, so the two can't drift apart. */}
+          {!isNarrow && (
+            <SettingsRow
+              title={t("settings.tools.interaction.doubleClick")}
+              subtitle={t("settings.tools.interaction.doubleClickHint")}
+            >
+              <Toggle
+                label={t("settings.tools.interaction.doubleClick")}
+                checked={doubleClickQuickLookup}
+                onChange={(enabled) => {
+                  if (enabled && readerBindings.some((binding) => binding.trigger === "mouse:double")) {
+                    showSavedToast(t("settings.tools.bindings.doubleClickConflictReverse"));
+                    return;
+                  }
+                  setDoubleClickQuickLookup(enabled);
+                  persistLegacy("double_click_quick_lookup", String(enabled));
+                }}
+              />
+            </SettingsRow>
+          )}
           <SettingsRow
             title={t("settings.tools.interaction.tripleClick")}
             subtitle={t("settings.tools.interaction.tripleClickHint")}
