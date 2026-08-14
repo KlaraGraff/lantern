@@ -10,9 +10,13 @@
  *
  * 进度条是节拍指示（各篇阶段完成度的平均值），不承诺精确百分比、不显示
  * 倒计时——生成时长本就因词数、是否触发重出而变化，编造数字比不给更误导人。
+ *
+ * 顶栏左侧「返回」（docs/impls/quiz-generation-background.md §A）：出题会话是
+ * 模块级单例、本来就跨路由存活，这一屏只是望进去的窗户——离开不影响生成，
+ * 语义等同 navigate(-1)。右侧「取消」语义不变：放弃这次出题。
  */
 import { useTranslation } from "react-i18next";
-import { Check, Loader2 } from "lucide-react";
+import { Check, ChevronLeft, Loader2 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import { TOP_INSET } from "../../utils/top-inset.ts";
 import type { ArticleProgress, GenerationStage } from "./useQuizGeneration.ts";
@@ -22,6 +26,9 @@ interface GeneratingScreenProps {
   articles: ArticleProgress[];
   wordCount: number;
   difficultyLabel: string;
+  /** 离开这一屏去干别的（看书、翻生词本），生成在后台继续；语义同 navigate(-1) */
+  onBack: () => void;
+  /** 放弃本次出题，语义不变 */
   onCancel: () => void;
 }
 
@@ -65,6 +72,7 @@ export default function GeneratingScreen({
   articles,
   wordCount,
   difficultyLabel,
+  onBack,
   onCancel,
 }: GeneratingScreenProps) {
   const { t } = useTranslation();
@@ -101,6 +109,10 @@ export default function GeneratingScreen({
   return (
     <div className="flex h-full flex-col">
       <div className={`flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-5 ${TOP_INSET}`}>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ChevronLeft size={15} />
+          {t("quiz.generating.back")}
+        </Button>
         <span className="text-[15px] font-semibold text-text-primary">
           {t("quiz.generating.title")}
         </span>

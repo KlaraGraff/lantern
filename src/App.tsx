@@ -12,6 +12,7 @@ import BookOpenGateProvider from "./components/BookOpenGateProvider";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
+import QuizReadyBanner from "./components/QuizReadyBanner";
 import { UpdaterProvider } from "./hooks/useUpdater";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
@@ -172,6 +173,7 @@ function AppContent() {
       <ErrorBoundary scope="silent">
         <ReasoningEffortNotice />
         <AiRouteFallbackNotice />
+        <QuizReadyBanner />
       </ErrorBoundary>
       {/* Wraps exactly the two surfaces that show an update — the toast and
           the Settings → About row — so they share one lifecycle instead of

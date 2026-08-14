@@ -97,6 +97,7 @@ export default function Quiz() {
           articles={generation.articles}
           wordCount={lastAttempt?.words.length ?? 0}
           difficultyLabel={lastAttempt ? t(`quiz.difficulty.${lastAttempt.config.difficulty}`) : ""}
+          onBack={() => navigate(-1)}
           onCancel={generation.cancel}
         />
       </div>

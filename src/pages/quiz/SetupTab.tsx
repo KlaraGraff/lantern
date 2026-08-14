@@ -6,8 +6,15 @@
  *
  * 词的三档来路（today/vocab/recur）只用于设置屏的预览 chip 着色——生成出的卷面
  * 本身不带来路标记（§B「联动」横幅、§H 已拍板：不给考试提示）。
+ *
+ * 顶部的停靠状态卡（docs/impls/quiz-generation-background.md §C，样张状态 C）：
+ * 「未出好的卷」横幅的复用改版，已出好/出题中两态共用同一份 latestUnfinished
+ * 数据源，只是文案与出题中态的实时进度换了皮。出题失败不需要单独的卡片状态
+ * ——全部篇都失败时压根没有 paperId、不会落进 history.unfinished（Quiz.tsx
+ * 已经在更上层把 phase 判成 error 接管整页）；部分篇失败仍卡在 generating，
+ * 「看进度」按钮照旧带去做题页，那边（TakeView）本来就管失败篇位的重新生成。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { Check, ImagePlus, Loader2, Sparkles } from "lucide-react";
@@ -24,6 +31,8 @@ import { compressImageToDataUri } from "./image-compress.ts";
 import { useVocabImport, type VocabImportWord } from "./useVocabImport.ts";
 import { useWrongWordPool } from "./useWrongWordPool.ts";
 import { useQuizHistory, formatQuizDate } from "./useQuizHistory.ts";
+import { getPaperGeneration, subscribeGenerationSessions } from "./generation-session.ts";
+import { deriveSlots, type PendingStep } from "./take-slots.ts";
 
 const DIFFICULTIES: Difficulty[] = ["cet4", "cet6", "ielts", "kaoyan"];
 const WARN_WORD_COUNT = 40;
@@ -310,6 +319,36 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
   const lastSubmitted = history.papers.find((p) => p.status === "submitted" && p.result);
   const latestUnfinished = history.unfinished[0];
 
+  // 出题中卡片的实时进度：订阅这张卷自己的生成会话（同一份卷 id 可能是热路径
+  // 里还在跑的 newPaperSession，也可能已经落进 paperSessions——generation-session
+  // 内部两者共用同一个会话对象，这里不用关心是哪一种）。
+  const genProgress = useSyncExternalStore(
+    subscribeGenerationSessions,
+    () => (latestUnfinished?.id == null ? undefined : getPaperGeneration(latestUnfinished.id)),
+  );
+
+  // 复用做题屏同一套槽位推导（take-slots.ts）取第一个还没定局的篇，两处显示
+  // 同一份数据不能各算一套口径。会话已经从内存中消失（重启后的冷启动）时
+  // deriveSlots 把未完成篇一律判 failed，没有 pending 槽位，卡片退回不带进度
+  // 的静态副行。
+  const activeSlot = useMemo(() => {
+    if (!latestUnfinished || latestUnfinished.status !== "generating") return undefined;
+    const slots = deriveSlots(latestUnfinished, genProgress);
+    const index = slots.findIndex((s) => s.state === "pending");
+    return index === -1 ? undefined : { index, step: slots[index].step ?? "writing" };
+  }, [latestUnfinished, genProgress]);
+
+  const progressStepKey = (step: PendingStep): string => {
+    switch (step) {
+      case "checking":
+        return "quiz.setup.unfinishedBanner.progressChecking";
+      case "regenerating":
+        return "quiz.setup.unfinishedBanner.progressRegenerating";
+      case "writing":
+        return "quiz.setup.unfinishedBanner.progressWriting";
+    }
+  };
+
   const handleDifficultyKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     const idx = DIFFICULTIES.indexOf(difficulty);
     const next = nextRadioIndex(e.key, idx, DIFFICULTIES.length);
@@ -330,32 +369,50 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
     // pb carries the home indicator's inset — this tab's scroll wrapper
     // (Quiz.tsx) is unpadded, so the floor here is the physical screen edge.
     <div className="mx-auto max-w-[900px] px-5 pt-6 pb-[calc(var(--spacing-safe-bottom)+1.5rem)]">
-      {latestUnfinished && (
-        <div className="mb-4 flex items-start gap-3 rounded-xl border border-border bg-bg-surface p-4">
-          <div className="flex-1 min-w-0">
-            <div className="text-[14px] font-medium text-text-primary">
-              {latestUnfinished.status === "generating"
-                ? // 生成中卷的题数只算已落库的篇，报出来会偏低——这条横幅不报数
-                  t("quiz.setup.unfinishedBanner.titleGenerating", {
-                    date: formatQuizDate(latestUnfinished.createdAt, locale),
-                  })
-                : t("quiz.setup.unfinishedBanner.title", {
-                    date: formatQuizDate(latestUnfinished.createdAt, locale),
-                    count: latestUnfinished.readingQuestions.length + latestUnfinished.grammarQuestions.length,
-                  })}
+      {latestUnfinished &&
+        (() => {
+          const isGenerating = latestUnfinished.status === "generating";
+          const dateLabel = formatQuizDate(latestUnfinished.createdAt, locale);
+          const difficultyLabel = t(`quiz.difficulty.${latestUnfinished.config.difficulty}`);
+          return (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-bg-surface p-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-[14px] font-medium text-text-primary">
+                  {isGenerating
+                    ? t("quiz.setup.unfinishedBanner.titleGenerating")
+                    : t("quiz.setup.unfinishedBanner.titleReady")}
+                  {isGenerating && (
+                    <span className="rounded-md bg-accent-bg px-1.5 py-0.5 text-[11px] font-medium text-accent-text">
+                      {t("quiz.setup.unfinishedBanner.tag")}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 text-[12.5px] text-text-muted">
+                  {isGenerating
+                    ? // 会话已经从内存中消失（重启后的冷启动）时没有 activeSlot，退回
+                      // 不带进度的静态副行——同旧版行为，不假装知道进度。
+                      t("quiz.setup.unfinishedBanner.subtitleBase", { date: dateLabel, difficulty: difficultyLabel }) +
+                      (activeSlot ? ` · ${t(progressStepKey(activeSlot.step), { num: activeSlot.index + 1 })}` : "")
+                    : t("quiz.setup.unfinishedBanner.subtitleReady", {
+                        date: dateLabel,
+                        difficulty: difficultyLabel,
+                        count: latestUnfinished.readingQuestions.length + latestUnfinished.grammarQuestions.length,
+                      })}
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                onClick={() => navigate(`/quiz/paper/${latestUnfinished.id}`)}
+              >
+                {isGenerating
+                  ? t("quiz.setup.unfinishedBanner.actionGenerating")
+                  : t("quiz.setup.unfinishedBanner.actionReady")}
+              </Button>
             </div>
-            <div className="mt-1 text-[12.5px] text-text-muted">{t("quiz.setup.unfinishedBanner.body")}</div>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="shrink-0"
-            onClick={() => navigate(`/quiz/paper/${latestUnfinished.id}`)}
-          >
-            {t("quiz.setup.unfinishedBanner.action")}
-          </Button>
-        </div>
-      )}
+          );
+        })()}
 
       {(recurWords.length > 0 || lastSubmitted) && (
         <div className="mb-4 rounded-xl border border-lavender/40 bg-accent-bg/40 p-3.5 text-[13px] text-text-secondary">
