@@ -276,7 +276,8 @@ export default function GradeView(props: {
           {activePassage && (
             <div className="rounded-b-lg rounded-tr-lg border border-border bg-bg-surface p-6">
               <h3 className="font-serif text-[17px] font-semibold text-text-primary">{activePassage.title}</h3>
-              <div className="mt-3 max-w-[62ch] font-serif text-[14px] leading-[1.85] text-text-body">
+              {/* 与 TakeView 同款：真题卷面惯例两端对齐 + 浏览器连字符断词 */}
+              <div lang="en" className="mt-3 max-w-[62ch] text-justify font-serif text-[14px] leading-[1.85] text-text-body hyphens-auto">
                 {activePassage.paragraphs.map((para, i) => {
                   const key = `${activePassage.id}-${i + 1}`
                   return (

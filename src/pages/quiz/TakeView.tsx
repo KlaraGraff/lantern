@@ -318,7 +318,9 @@ export default function TakeView(props: {
                   words: activePassage.paragraphs.join(' ').split(/\s+/).filter(Boolean).length,
                 })}
               </p>
-              <div className="mt-4 max-w-[62ch] font-serif text-[15px] leading-[1.85] text-text-body">
+              {/* 真题卷面惯例：正文两端对齐；连字符断词交给浏览器（容器是英文，
+                * 标 lang 才能用对连字典），否则窄行会拉出大空隙。 */}
+              <div lang="en" className="mt-4 max-w-[62ch] text-justify font-serif text-[15px] leading-[1.85] text-text-body hyphens-auto">
                 {activePassage.paragraphs.map((para, i) => (
                   <p key={i} className="mb-3">
                     <span className="mr-1.5 select-none text-[11px] text-text-muted">¶{i + 1}</span>
