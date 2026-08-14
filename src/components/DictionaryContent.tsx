@@ -1236,7 +1236,16 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                     }
                     return (
                       <div key={entryKey} className="rounded-[10px] hover:bg-bg-input group">
-                        <div className="flex items-start gap-4 px-3 pt-3 pb-3 w-full text-left cursor-pointer">
+                        {/* Three columns on a desktop table; on a phone the
+                          * arithmetic does not work — a 160px word column plus
+                          * an action cluster that can carry three buttons, two
+                          * badges and a timestamp leaves the gloss about 50pt,
+                          * which truncated a Chinese definition to its first
+                          * character. Wrapping is what fixes it: the actions
+                          * take `w-full` below the breakpoint and so drop to
+                          * their own line, and the word and its gloss stack in
+                          * the space that frees up. */}
+                        <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-3 pt-3 pb-3 w-full text-left cursor-pointer">
                           <button
                             type="button"
                             onClick={() => toggleEntrySelection(entry)}
@@ -1249,9 +1258,9 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                             type="button"
                             aria-expanded={expanded}
                             onClick={() => setExpandedWordId(expanded ? null : entryKey)}
-                            className="flex min-w-0 flex-1 items-start gap-4 text-left"
+                            className="flex min-w-0 flex-1 flex-col items-start gap-1 text-left md:flex-row md:items-start md:gap-4"
                           >
-                            <div className="w-[160px] shrink-0">
+                            <div className="w-full md:w-[160px] md:shrink-0">
                               <span className="block text-[14px] font-semibold text-text-primary leading-5">
                                 {entry.word}
                               </span>
@@ -1275,11 +1284,13 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                                 </span>
                               )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[13px] text-text-secondary leading-5 truncate">{gloss}</p>
+                            <div className="w-full min-w-0 md:flex-1">
+                              {/* Two lines once it has the width to use them —
+                                * one truncated line is a table cell's habit. */}
+                              <p className="text-[13px] text-text-secondary leading-5 line-clamp-2 md:line-clamp-none md:truncate">{gloss}</p>
                             </div>
                           </button>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex w-full items-center justify-end gap-2 md:w-auto md:shrink-0">
                             {due && (
                               <span className="rounded-full bg-accent-bg px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
                                 {t("vocab.reviewDue")}

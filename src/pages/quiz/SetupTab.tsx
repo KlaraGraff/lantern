@@ -172,7 +172,10 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
               <label className="text-[13.5px] font-semibold text-text-primary">{t("quiz.setup.todayWords.label")}</label>
               {totalCount > 0 && (
                 <span className="text-[12px] text-text-muted">
-                  {t("quiz.setup.todayWords.recognized", { count: totalCount, passages: passageCount })}
+                  {t("quiz.setup.todayWords.recognized", {
+                    words: t("quiz.setup.wordCount", { count: totalCount }),
+                    passages: t("quiz.setup.passageCount", { count: passageCount }),
+                  })}
                 </span>
               )}
             </div>
@@ -376,7 +379,13 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
               ? t("quiz.setup.generateHint.noTypes")
               : overMax
                 ? t("quiz.setup.generateHint.overMax")
-                : t("quiz.setup.generateHint.ready", { count: totalCount, passages: passageCount })}
+                : t("quiz.setup.generateHint.ready", {
+                  // Two counts in one sentence, and i18next pluralises on one
+                  // `count` per key — so each number is its own plural-aware
+                  // fragment and this key only joins them.
+                  words: t("quiz.setup.wordCount", { count: totalCount }),
+                  passages: t("quiz.setup.passageCount", { count: passageCount }),
+                })}
         </span>
       </div>
     </div>
