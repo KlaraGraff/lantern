@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { DictionaryWord } from "../../hooks/useDictionary";
 import PronounceButton from "../speech/PronounceButton";
 import { entryClipboardText, glossOf, parseDefinition } from "./entry-text";
+import { copyToClipboard } from "../../utils/clipboard";
 
 // The markdown renderer it pulls in is only worth paying for once a row is
 // actually opened — most of a vocab list never gets expanded in a session.
@@ -43,10 +44,10 @@ export default function VocabEntry({
   const gloss = glossOf(parseDefinition(word.definition).definition);
   const source = bookTitle ?? word.book_title ?? t("vocab.detail.unknownBook");
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     // Copies the whole entry even when collapsed — the row is a summary, not
     // what the user means when they say "copy this word".
-    navigator.clipboard.writeText(entryClipboardText(word, source));
+    if (!await copyToClipboard(entryClipboardText(word, source))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

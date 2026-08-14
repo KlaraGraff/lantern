@@ -131,6 +131,7 @@ import {
 import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { logIgnoredError } from "../utils/logIgnoredError";
+import { copyToClipboard } from "../utils/clipboard";
 import { useReaderZoom } from "./reader/useReaderZoom";
 import { useProgressReadout } from "./reader/useProgressReadout";
 import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
@@ -1546,7 +1547,7 @@ export default function Reader() {
     } else if (actionId === "speak") {
       speakSelection(interaction.text, interaction.kind);
     } else if (actionId === "copy") {
-      void navigator.clipboard.writeText(interaction.text);
+      void copyToClipboard(interaction.text);
     } else if (actionId === "ask_ai") {
       setAiContext({ text: interaction.text, cfi: interaction.location });
       setSidePanel("ai");
@@ -3415,7 +3416,7 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onCopy={() => {
-            navigator.clipboard.writeText(contextMenu.text);
+            void copyToClipboard(contextMenu.text);
             setContextMenu(null);
           }}
           onExplain={() => {

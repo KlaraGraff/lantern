@@ -16,6 +16,7 @@ import { focusWordFor } from "./focus-word";
 import { timeAgo } from "../utils/timeAgo";
 import BottomSheet from "./ui/BottomSheet";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { copyToClipboard } from "../utils/clipboard";
 
 interface ExplainPopoverProps {
   x: number;
@@ -367,8 +368,8 @@ export default function ExplainPopover({
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(contentRef.current);
+  const handleCopy = async () => {
+    if (!await copyToClipboard(contentRef.current)) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
