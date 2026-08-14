@@ -29,7 +29,12 @@ import { createUuid } from '../utils/randomUuid.ts'
  */
 
 export interface ChatMessage {
-  role: 'user' | 'assistant'
+  /**
+   * `user_image` 是带内通道（后端 `system_cache_variable` 同款先例）：content
+   * 装 `data:image/...;base64,` URI，后端各 provider 把它并进下一条 user 消息
+   * 的多模态内容块里。只有图片取词（image-words.ts）会发这个 role。
+   */
+  role: 'user' | 'assistant' | 'user_image'
   content: string
 }
 

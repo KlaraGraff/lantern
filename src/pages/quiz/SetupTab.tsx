@@ -7,15 +7,20 @@
  * 词的三档来路（today/vocab/recur）只用于设置屏的预览 chip 着色——生成出的卷面
  * 本身不带来路标记（§B「联动」横幅、§H 已拍板：不给考试提示）。
  */
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
-import { Check, Sparkles } from "lucide-react";
+import { Check, ImagePlus, Loader2, Sparkles } from "lucide-react";
 import Button from "../../components/ui/Button";
 import { nextRadioIndex } from "../../components/ui/radio-group.ts";
+import { openSettings } from "../../components/settings-open";
 import { useSettings } from "../../hooks/useSettings.ts";
 import { parseWordInput, isWeakWord } from "../../quiz/split.ts";
+import { extractWordsFromImage, mergeExtractedWords, classifyExtractError } from "../../quiz/image-words.ts";
+import { parseQuizAiProfileId } from "../../quiz/transport.ts";
+import { aiErrorMessageKey, isAiSettingsError, type AiErrorCode } from "../../utils/aiError.ts";
 import { WORDS_PER_PASSAGE, type Difficulty, type QuestionType, type QuizWord, type WordOrigin } from "../../quiz/types.ts";
+import { compressImageToDataUri } from "./image-compress.ts";
 import { useVocabImport, type VocabImportWord } from "./useVocabImport.ts";
 import { useWrongWordPool } from "./useWrongWordPool.ts";
 import { useQuizHistory, formatQuizDate } from "./useQuizHistory.ts";
@@ -28,6 +33,31 @@ const VOCAB_VISIBLE_COUNT = 4;
 interface SetupTabProps {
   onGenerate: (words: QuizWord[], config: { difficulty: Difficulty; types: QuestionType[]; maskedCheck: boolean }) => void;
 }
+
+/**
+ * 图片取词的一张图 = 一个 job。识别成功的 chip 直接消失（词已进输入框），
+ * 失败的留下来带重试/移除；seq 是「截图 N」的展示编号，删除不回收。
+ */
+interface ImageJob {
+  id: number;
+  seq: number;
+  thumbUrl: string;
+  blob: Blob;
+  status: "queued" | "running" | "failed";
+}
+
+/** 一批图识别完后的小结（成功的图数 / 新加词数 / 与已有重复数） */
+interface ExtractSummary {
+  images: number;
+  added: number;
+  dup: number;
+}
+
+/**
+ * 致命错误横幅：vision = 出题模型看不了图；ai = 设置类错误码（如钉住的
+ * profile 被停用）。两者继续跑队列只会烧钱重复失败，所以整批停下。
+ */
+type ExtractBanner = { kind: "vision" } | { kind: "ai"; code: AiErrorCode };
 
 function dedupeWords(...groups: { words: string[]; origin: WordOrigin }[]): QuizWord[] {
   const seen = new Set<string>();
@@ -54,6 +84,158 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
   const vocabImport = useVocabImport();
   const wrongPool = useWrongWordPool();
   const history = useQuizHistory();
+
+  // ---- 图片取词（docs/impls/quiz-image-words.md）----
+  // pump 是跨多次渲染的异步循环，读状态得走 ref 拿最新值：rawTextRef 镜像
+  // 输入框全文（React 18 的函数式 updater 在渲染期才跑，没法同步拿返回值——
+  // 同 TakeView 的 onSaveDraftRef 先例），imageJobsRef 镜像队列。
+  const [imageJobs, setImageJobs] = useState<ImageJob[]>([]);
+  const [extractSummary, setExtractSummary] = useState<ExtractSummary | null>(null);
+  const [extractBanner, setExtractBanner] = useState<ExtractBanner | null>(null);
+  const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
+  const rawTextRef = useRef(rawText);
+  const imageJobsRef = useRef<ImageJob[]>(imageJobs);
+  const pumpingRef = useRef(false);
+  const jobIdRef = useRef(0);
+  const jobSeqRef = useRef(0);
+  const batchRef = useRef<ExtractSummary>({ images: 0, added: 0, dup: 0 });
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 识别用的模型钉在出题模型上（quiz_ai_profile_id，与词卷全部 AI 调用同款）
+  const profileIdRef = useRef<string | undefined>(undefined);
+  // 渲染期写 ref 被 react-hooks/refs 禁止，镜像同步放 effect 里跑。
+  // rawTextRef 的即时性由 onChange/泵内的同步写保证，这里只兜底对齐。
+  useEffect(() => {
+    rawTextRef.current = rawText;
+  }, [rawText]);
+  useEffect(() => {
+    profileIdRef.current = parseQuizAiProfileId(settings.quiz_ai_profile_id);
+  }, [settings.quiz_ai_profile_id]);
+
+  const updateJobs = useCallback((fn: (jobs: ImageJob[]) => ImageJob[]) => {
+    imageJobsRef.current = fn(imageJobsRef.current);
+    setImageJobs(imageJobsRef.current);
+  }, []);
+
+  // 串行泵：一次识别一张，找到下一张 queued 就跑，跑完队列空了出小结。
+  // 串行而不是并发——每张的合并结果要接在上一张之后，且失败分类要能把
+  // 「后面还没跑的」整批止损。
+  const pump = useCallback(async () => {
+    if (pumpingRef.current) return;
+    pumpingRef.current = true;
+    try {
+      for (;;) {
+        const job = imageJobsRef.current.find((j) => j.status === "queued");
+        if (!job) break;
+        updateJobs((jobs) => jobs.map((j) => (j.id === job.id ? { ...j, status: "running" as const } : j)));
+        try {
+          const dataUri = await compressImageToDataUri(job.blob);
+          const words = await extractWordsFromImage(dataUri, profileIdRef.current);
+          const merged = mergeExtractedWords(rawTextRef.current, words);
+          if (merged.addedCount > 0) {
+            rawTextRef.current = merged.nextRaw;
+            setRawText(merged.nextRaw);
+            setHighlightRange({
+              start: merged.nextRaw.length - merged.appendedText.length,
+              end: merged.nextRaw.length,
+            });
+          }
+          batchRef.current.images += 1;
+          batchRef.current.added += merged.addedCount;
+          batchRef.current.dup += merged.dupCount;
+          URL.revokeObjectURL(job.thumbUrl);
+          updateJobs((jobs) => jobs.filter((j) => j.id !== job.id));
+        } catch (error) {
+          const failure = classifyExtractError(error);
+          const fatal = failure.kind === "vision" || (failure.kind === "ai" && isAiSettingsError(failure.code));
+          if (fatal) {
+            // 换模型/改设置才能解决的错，继续跑队列只会对着同一堵墙重复计费
+            // ——当前这张和还没跑的整批一起标失败，横幅给出口。
+            setExtractBanner(failure.kind === "vision" ? { kind: "vision" } : failure);
+            updateJobs((jobs) =>
+              jobs.map((j) => (j.id === job.id || j.status === "queued" ? { ...j, status: "failed" as const } : j)),
+            );
+          } else {
+            updateJobs((jobs) => jobs.map((j) => (j.id === job.id ? { ...j, status: "failed" as const } : j)));
+          }
+        }
+      }
+      if (batchRef.current.images > 0) {
+        setExtractSummary(batchRef.current);
+        batchRef.current = { images: 0, added: 0, dup: 0 };
+      }
+    } finally {
+      pumpingRef.current = false;
+    }
+  }, [updateJobs]);
+
+  const addImages = useCallback(
+    (files: File[]) => {
+      const images = files.filter((f) => f.type.startsWith("image/"));
+      if (images.length === 0) return;
+      setExtractSummary(null);
+      setExtractBanner(null);
+      const jobs = images.map((blob) => ({
+        id: ++jobIdRef.current,
+        seq: ++jobSeqRef.current,
+        thumbUrl: URL.createObjectURL(blob),
+        blob,
+        status: "queued" as const,
+      }));
+      updateJobs((prev) => [...prev, ...jobs]);
+      void pump();
+    },
+    [pump, updateJobs],
+  );
+
+  const retryJob = useCallback(
+    (id: number) => {
+      setExtractBanner(null);
+      updateJobs((jobs) => jobs.map((j) => (j.id === id ? { ...j, status: "queued" as const } : j)));
+      void pump();
+    },
+    [pump, updateJobs],
+  );
+
+  const removeJob = useCallback(
+    (id: number) => {
+      const job = imageJobsRef.current.find((j) => j.id === id);
+      if (job) URL.revokeObjectURL(job.thumbUrl);
+      updateJobs((jobs) => jobs.filter((j) => j.id !== id));
+    },
+    [updateJobs],
+  );
+
+  const handlePaste = useCallback(
+    (e: ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith("image/"));
+      if (files.length === 0) return;
+      e.preventDefault();
+      addImages(files);
+    },
+    [addImages],
+  );
+
+  // 追加完成后用原生选区把新加的词段高亮出来——textarea 里做不了染色
+  // span，选中是它唯一的「刚加了这些」视觉反馈。放 effect 里跑：要等
+  // value 落进 DOM 之后 setSelectionRange 才有效。
+  useEffect(() => {
+    if (!highlightRange) return;
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(highlightRange.start, highlightRange.end);
+    }
+    setHighlightRange(null);
+  }, [highlightRange]);
+
+  // 卸载时回收所有缩略图 objectURL（成功/移除的路径已各自回收）
+  useEffect(
+    () => () => {
+      for (const job of imageJobsRef.current) URL.revokeObjectURL(job.thumbUrl);
+    },
+    [],
+  );
 
   const difficulty = (settings.quiz_difficulty as Difficulty) || "cet6";
   const maskedCheck = settings.quiz_masked_check !== "false";
@@ -185,16 +367,123 @@ export default function SetupTab({ onGenerate }: SetupTabProps) {
               * vocab list and carried into the paper verbatim, so an
               * autocapitalised 「acquaintance → Acquaintance」 is a different
               * string than the one that was saved while reading. */}
-            <textarea
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              placeholder={t("quiz.setup.todayWords.placeholder")}
-              rows={5}
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-              className="w-full resize-none rounded-lg border border-border bg-bg-surface px-3.5 py-3 font-serif text-[14px] leading-[1.6] text-text-primary outline-none placeholder:font-sans placeholder:text-text-placeholder focus:border-accent"
-            />
+            <div className="relative">
+              <textarea
+                ref={textareaRef}
+                value={rawText}
+                onChange={(e) => {
+                  rawTextRef.current = e.target.value;
+                  setRawText(e.target.value);
+                }}
+                onPaste={handlePaste}
+                placeholder={t("quiz.setup.todayWords.placeholder")}
+                rows={5}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                className="w-full resize-none rounded-lg border border-border bg-bg-surface px-3.5 py-3 pb-9 font-serif text-[14px] leading-[1.6] text-text-primary outline-none placeholder:font-sans placeholder:text-text-placeholder focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-3 right-2.5 flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-text-muted transition-colors hover:bg-bg-muted hover:text-text-secondary"
+              >
+                <ImagePlus size={14} />
+                {t("quiz.setup.imageWords.button")}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addImages(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+            </div>
+
+            {imageJobs.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {imageJobs.map((job) => (
+                  <div
+                    key={job.id}
+                    className={`flex items-center gap-2 rounded-lg border py-1.5 pl-1.5 pr-2.5 text-[12px] ${
+                      job.status === "failed" ? "border-danger/40 bg-danger-bg/50" : "border-border bg-bg-surface"
+                    }`}
+                  >
+                    <img src={job.thumbUrl} alt="" className="size-8 shrink-0 rounded object-cover" />
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-text-secondary">{t("quiz.setup.imageWords.chipName", { index: job.seq })}</span>
+                      <span
+                        className={`flex items-center gap-1 text-[11.5px] ${
+                          job.status === "failed" ? "text-danger" : "text-text-muted"
+                        }`}
+                      >
+                        {job.status === "running" && <Loader2 size={11} className="animate-spin" />}
+                        {job.status === "queued"
+                          ? t("quiz.setup.imageWords.chipQueued")
+                          : job.status === "running"
+                            ? t("quiz.setup.imageWords.chipRunning")
+                            : t("quiz.setup.imageWords.chipFailed")}
+                      </span>
+                    </div>
+                    {job.status === "failed" && (
+                      <div className="ml-1 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => retryJob(job.id)}
+                          className="cursor-pointer text-[12px] font-medium text-accent-text hover:underline"
+                        >
+                          {t("quiz.setup.imageWords.retry")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeJob(job.id)}
+                          aria-label={t("quiz.setup.imageWords.remove")}
+                          className="cursor-pointer text-[13px] leading-none text-text-muted hover:text-text-secondary"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {extractSummary && (
+              <div className="mt-2 rounded-lg bg-bg-input px-3.5 py-2.5 text-[12.5px] text-text-secondary">
+                {extractSummary.added > 0
+                  ? t("quiz.setup.imageWords.summary", {
+                      // 一句话里三个数，i18next 一个 key 只认一个 count——
+                      // 同 generateHint.ready：每个数各自成片段，这里只拼接。
+                      images: t("quiz.setup.imageWords.summaryImages", { count: extractSummary.images }),
+                      words: t("quiz.setup.wordCount", { count: extractSummary.added }),
+                    }) + (extractSummary.dup > 0 ? t("quiz.setup.imageWords.summaryDup", { count: extractSummary.dup }) : "")
+                  : extractSummary.dup > 0
+                    ? t("quiz.setup.imageWords.summaryNoneNew")
+                    : t("quiz.setup.imageWords.summaryNoneFound")}
+              </div>
+            )}
+
+            {extractBanner && (
+              <div className="mt-2 flex items-start gap-3 rounded-lg border border-danger/40 bg-danger-bg/60 px-3.5 py-2.5 text-[12.5px] leading-[1.6]">
+                <span className="flex-1 text-danger">
+                  {extractBanner.kind === "vision"
+                    ? t("quiz.setup.imageWords.visionBanner.body")
+                    : t(aiErrorMessageKey(extractBanner.code))}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openSettings({ section: "services", view: "models" })}
+                  className="shrink-0 cursor-pointer text-[12.5px] font-medium text-accent-text hover:underline"
+                >
+                  {t("quiz.setup.imageWords.visionBanner.action")}
+                </button>
+              </div>
+            )}
 
             {finalWords.length > 0 && (
               <div className="mt-2.5 flex flex-wrap gap-1.5">
