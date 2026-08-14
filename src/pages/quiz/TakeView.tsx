@@ -13,7 +13,7 @@
  * 按钮 + 提示，后端 submit_quiz_paper 对 generating 卷拒绝）。全部就绪翻 ready
  * 后静默换快照，槽位 key 按组下标不变，用户停在哪个标签就还在哪个标签。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Loader2, RotateCw } from 'lucide-react'
 import ConfirmDialog from '../../components/settings/ConfirmDialog.tsx'
@@ -22,10 +22,10 @@ import { judgeGrammar } from '../../quiz/judge.ts'
 import { parseQuizAiProfileId } from '../../quiz/transport.ts'
 import { useSettings } from '../../hooks/useSettings.ts'
 import { TOP_INSET } from '../../utils/top-inset.ts'
-import type { AnswerSheet, Passage, Quiz, QuizResult } from '../../quiz/types.ts'
+import type { AnswerSheet, Passage, Quiz, QuizDraft, QuizResult } from '../../quiz/types.ts'
 import type { GenerationSessionState } from './generation-session.ts'
 import { countAnswered, formatElapsed } from './useQuizPaper.ts'
-import { ActiveTimer } from './active-timer.ts'
+import { ActiveTimer, QUIZ_IDLE_TIMEOUT_MS } from './active-timer.ts'
 import { deriveSlots, type PendingStep, type SlotState } from './take-slots.ts'
 
 type Tab = {
@@ -45,10 +45,12 @@ export default function TakeView(props: {
   quiz: Quiz
   onSubmit: (result: QuizResult, elapsedMs: number) => Promise<void>
   onExit: () => void
+  /** 草稿自动保存的写库口（useQuizPaper.saveDraft）。不传则不保存（测试环境） */
+  onSaveDraft?: (draft: QuizDraft) => void
   generationSession?: GenerationSessionState
   onRegenerateArticles?: (groupIndexes: number[]) => void
 }) {
-  const { quiz, onSubmit, onExit, generationSession, onRegenerateArticles } = props
+  const { quiz, onSubmit, onExit, onSaveDraft, generationSession, onRegenerateArticles } = props
   const { t, i18n } = useTranslation()
   const { settings } = useSettings()
 
@@ -98,16 +100,18 @@ export default function TakeView(props: {
   }, [slots, quiz, openGrammarQuestions, t])
 
   const [activeTab, setActiveTab] = useState(tabs[0]?.key ?? '')
-  const [answers, setAnswers] = useState<AnswerSheet>({})
+  // 草稿续做：上次填的答案在挂载时一次性带入（草稿只在这里读；之后 quiz 快照
+  // 静默刷新携带的旧 draft 字段没人再看）
+  const [answers, setAnswers] = useState<AnswerSheet>(() => quiz.draft?.answers ?? {})
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  // 做题用时：只存内存，评卷页在交卷当次会话里展示，不落库（方案 §四.4）。
-  // 只算前台活跃时长——后台不计，超过阈值的发呆整段不计（active-timer.ts）。
+  // 做题用时：只算前台活跃时长——后台不计，超过阈值的发呆整段不计
+  // （active-timer.ts）。草稿续做时从上次累计的用时接着计。
   const timerRef = useRef<ActiveTimer | null>(null)
   if (timerRef.current == null) {
-    timerRef.current = new ActiveTimer(Date.now())
+    timerRef.current = new ActiveTimer(Date.now(), QUIZ_IDLE_TIMEOUT_MS, quiz.draft?.elapsedMs ?? 0)
     if (document.visibilityState === 'hidden') timerRef.current.setForeground(false, Date.now())
   }
   const timer = timerRef.current
@@ -116,11 +120,29 @@ export default function TakeView(props: {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+  // 草稿冲刷走 ref：flushDraft 保持稳定引用，事件监听 effect 不用反复重挂
+  const onSaveDraftRef = useRef(onSaveDraft)
+  onSaveDraftRef.current = onSaveDraft
+  const answersRef = useRef(answers)
+  answersRef.current = answers
+  const flushDraft = useCallback(() => {
+    onSaveDraftRef.current?.({ answers: answersRef.current, elapsedMs: timer.elapsedMs(Date.now()) })
+  }, [timer])
+
   useEffect(() => {
     const onActivity = () => timer.activity(Date.now())
-    const onBlur = () => timer.setForeground(false, Date.now())
+    // 切后台时顺手把草稿冲刷落库：这是「离开」最常见的时点，答案和已计用时
+    // 都以此为准；交卷之后的冲刷由后端对 submitted 卷静默忽略，无需拦截。
+    const onBlur = () => {
+      timer.setForeground(false, Date.now())
+      flushDraft()
+    }
     const onFocus = () => timer.setForeground(true, Date.now())
-    const onVisibility = () => timer.setForeground(document.visibilityState !== 'hidden', Date.now())
+    const onVisibility = () => {
+      const foreground = document.visibilityState !== 'hidden'
+      timer.setForeground(foreground, Date.now())
+      if (!foreground) flushDraft()
+    }
     // 与阅读统计同一组活动事件（useReadingSessionTracker）；capture 是为了
     // 接住内层滚动容器不冒泡的 scroll
     const events = ['pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart'] as const
@@ -134,7 +156,20 @@ export default function TakeView(props: {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [timer])
+  }, [timer, flushDraft])
+
+  // 作答后防抖落库；卸载（退出页面/交卷切评卷）时冲刷最后一拍
+  const draftEverDirtyRef = useRef(false)
+  useEffect(() => {
+    if (!draftEverDirtyRef.current) {
+      // 首次渲染只是把草稿读回来，没有新内容可存
+      draftEverDirtyRef.current = true
+      return
+    }
+    const id = setTimeout(flushDraft, 800)
+    return () => clearTimeout(id)
+  }, [answers, flushDraft])
+  useEffect(() => () => flushDraft(), [flushDraft])
 
   const allQuestionIds = useMemo(
     () => [

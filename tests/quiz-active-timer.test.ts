@@ -78,4 +78,11 @@ describe('quiz · 前台活跃计时', () => {
     t.activity(3 * MIN + 1)
     assert.equal(t.elapsedMs(3 * MIN + 1), MIN)
   })
+
+  it('草稿续做：initialActiveMs 带入上次累计，新活跃在其上继续累加', () => {
+    const t = new ActiveTimer(0, QUIZ_IDLE_TIMEOUT_MS, 7 * MIN)
+    assert.equal(t.elapsedMs(0), 7 * MIN)
+    t.activity(MIN)
+    assert.equal(t.elapsedMs(MIN), 8 * MIN)
+  })
 })

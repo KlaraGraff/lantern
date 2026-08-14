@@ -28,6 +28,7 @@ export default function QuizPaper() {
     status,
     submit,
     saveAskThreads,
+    saveDraft,
     explanationSession,
     regenerateExplanations,
     generationSession,
@@ -91,6 +92,7 @@ export default function QuizPaper() {
         <TakeView
           quiz={quiz}
           onExit={exit}
+          onSaveDraft={saveDraft}
           generationSession={generationSession}
           onRegenerateArticles={regenerateArticles}
           onSubmit={async (result: QuizResult, ms: number) => {

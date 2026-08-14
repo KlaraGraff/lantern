@@ -1,0 +1,13 @@
+-- Draft answers (做题草稿自动保存): the take page persists the in-progress
+-- answer sheet so an unsubmitted paper reopens where the user left off,
+-- instead of starting from scratch.
+--
+-- One JSON blob, overwritten wholesale like ask_threads_json; owned and
+-- parsed exclusively by the frontend (src/pages/quiz/paper-io.ts):
+--   { "answers": { questionId: string }, "elapsedMs": number }
+-- elapsedMs is the foreground-active time already accumulated (active-timer.ts),
+-- so the timer also resumes rather than restarting.
+--
+-- Cleared on submit (submit_quiz_paper sets it NULL in the same UPDATE that
+-- writes result_json) — once the result lands, the draft is superseded.
+ALTER TABLE quiz_papers ADD COLUMN draft_json TEXT;

@@ -216,6 +216,15 @@ export interface Quiz {
   result?: QuizResult
   /** 评卷页的追问记录，随卷保存 */
   askThreads?: AskThread[]
+  /** 未交卷的做题草稿（答案自动保存），交卷时后端清掉 */
+  draft?: QuizDraft
+}
+
+/** draft_json 的形状（前端独占读写，见 paper-io.ts 顶注）：
+ *  做题页边做边存的草稿——已填答案 + 已累计的前台活跃用时。 */
+export interface QuizDraft {
+  answers: AnswerSheet
+  elapsedMs: number
 }
 
 // ===== 作答与判分 =====

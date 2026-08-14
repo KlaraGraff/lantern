@@ -16,9 +16,11 @@ export class ActiveTimer {
   private anchor: number | null
   private readonly idleTimeoutMs: number
 
-  constructor(now: number, idleTimeoutMs: number = QUIZ_IDLE_TIMEOUT_MS) {
+  /** initialActiveMs：草稿续做时带入上次已累计的用时（draft.elapsedMs） */
+  constructor(now: number, idleTimeoutMs: number = QUIZ_IDLE_TIMEOUT_MS, initialActiveMs = 0) {
     this.anchor = now
     this.idleTimeoutMs = idleTimeoutMs
+    this.activeMs = initialActiveMs
   }
 
   /** 把锚点到 now 的间隔按阈值规则并入累计；负间隔（时钟回拨）同样整段丢弃 */

@@ -117,9 +117,16 @@ describe("paper-io", () => {
       resultJson: null,
       askThreadsJson: null,
       generationJson: null,
+      draftJson: null,
     };
     const parsed = rowToQuiz(row);
-    assert.deepEqual(parsed, { ...quiz, result: undefined, askThreads: undefined, generation: undefined });
+    assert.deepEqual(parsed, {
+      ...quiz,
+      result: undefined,
+      askThreads: undefined,
+      generation: undefined,
+      draft: undefined,
+    });
   });
 
   it("result / askThreads 列存在时一并解析", () => {
@@ -151,6 +158,7 @@ describe("paper-io", () => {
       resultJson: JSON.stringify(result),
       askThreadsJson: JSON.stringify(threads),
       generationJson: null,
+      draftJson: null,
     };
     const parsed = rowToQuiz(row);
     assert.equal(parsed.status, "submitted");
@@ -176,10 +184,29 @@ describe("paper-io", () => {
       resultJson: null,
       askThreadsJson: null,
       generationJson: JSON.stringify(plan),
+      draftJson: null,
     };
     const parsed = rowToQuiz(row);
     assert.equal(parsed.status, "generating");
     assert.deepEqual(parsed.generation, plan);
+  });
+
+  it("draft 列存在时解析成做题草稿（未交卷续做）", () => {
+    const quiz = makeQuiz();
+    const draft = { answers: { r1: "A", g1: "went" }, elapsedMs: 83_000 };
+    const row: QuizPaperRow = {
+      id: 7,
+      createdAt: quiz.createdAt,
+      status: "ready",
+      configJson: JSON.stringify(quiz.config),
+      wordsJson: JSON.stringify(quiz.words),
+      contentJson: quizContentJson(quiz),
+      resultJson: null,
+      askThreadsJson: null,
+      generationJson: null,
+      draftJson: JSON.stringify(draft),
+    };
+    assert.deepEqual(rowToQuiz(row).draft, draft);
   });
 });
 

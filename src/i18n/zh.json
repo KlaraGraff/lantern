@@ -2857,7 +2857,7 @@
   "quiz.setup.generateHint.ready": "{{words}} · {{passages}} · 预计几分钟，取决于所用模型",
   "quiz.setup.unfinishedBanner.title": "{{date}} 那份卷还没交 · 共 {{count}} 题",
   "quiz.setup.unfinishedBanner.titleGenerating": "{{date}} 那份卷还有篇目未生成",
-  "quiz.setup.unfinishedBanner.body": "这份卷会一直留在往卷里，随时能打开作答。之前填的答案没有保存，打开后从头做。",
+  "quiz.setup.unfinishedBanner.body": "这份卷会一直留在往卷里，随时能打开作答；填过的答案会自动保存，打开后接着做。",
   "quiz.setup.unfinishedBanner.action": "打开这份卷",
   "quiz.setup.thisPaperBanner.recur": "错词池里有 {{count}} 个词到了重现的时候，出卷时会自动混进这一卷（卷面上不标出来）。",
   "quiz.setup.thisPaperBanner.lastPaper": "上一卷 {{date}} · {{score}} / {{total}}。",

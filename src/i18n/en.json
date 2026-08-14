@@ -2857,7 +2857,7 @@
   "quiz.setup.generateHint.ready": "{{words}} · {{passages}} · takes a few minutes, depending on the model",
   "quiz.setup.unfinishedBanner.title": "The quiz from {{date}} is still open · {{count}} questions",
   "quiz.setup.unfinishedBanner.titleGenerating": "The quiz from {{date}} has passages not generated yet",
-  "quiz.setup.unfinishedBanner.body": "This paper stays in History and you can open it anytime. Answers from last time aren't kept, so you'll start fresh.",
+  "quiz.setup.unfinishedBanner.body": "This paper stays in History and you can open it anytime. Answers you've filled in are saved automatically, so you'll pick up where you left off.",
   "quiz.setup.unfinishedBanner.action": "Open it",
   "quiz.setup.thisPaperBanner.recur": "{{count}} words in your wrong-word pool are due to recur — they'll be mixed into this quiz automatically (not marked on the page).",
   "quiz.setup.thisPaperBanner.lastPaper": "Last quiz {{date}} · {{score}} / {{total}}.",

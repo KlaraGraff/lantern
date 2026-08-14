@@ -14,6 +14,7 @@ import type {
   Passage,
   Quiz,
   QuizConfig,
+  QuizDraft,
   QuizGenerationPlan,
   QuizResult,
   QuizStatus,
@@ -33,6 +34,8 @@ export interface QuizPaperRow {
   askThreadsJson: string | null
   /** 渐进发卷的生成计划；只在 status = 'generating' 时非空 */
   generationJson: string | null
+  /** 未交卷的做题草稿（答案 + 已计用时）；交卷时后端清空 */
+  draftJson: string | null
 }
 
 /** content_json 的形状：卷面本体（文章 + 两类题）。 */
@@ -58,6 +61,7 @@ export function rowToQuiz(row: QuizPaperRow): Quiz {
     generation: row.generationJson
       ? (JSON.parse(row.generationJson) as QuizGenerationPlan)
       : undefined,
+    draft: row.draftJson ? (JSON.parse(row.draftJson) as QuizDraft) : undefined,
   }
 }
 

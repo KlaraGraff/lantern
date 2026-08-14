@@ -45,6 +45,9 @@ pub struct QuizPaperRow {
     /// per-group words + state while `status = 'generating'`; NULL otherwise.
     /// Opaque JSON owned by the frontend, like every other JSON column here.
     pub generation_json: Option<String>,
+    /// In-progress answer sheet (答案自动保存): written by the take page while
+    /// the paper is unsubmitted, cleared by submit. Opaque JSON, frontend-owned.
+    pub draft_json: Option<String>,
 }
 
 /// A `quiz_wrong_words` row, returned to the frontend for the pool table and
@@ -109,7 +112,7 @@ struct QuizResultInput {
 // ===== Row mapping =====
 
 const PAPER_COLS: &str =
-    "id, created_at, status, config_json, words_json, content_json, result_json, ask_threads_json, generation_json";
+    "id, created_at, status, config_json, words_json, content_json, result_json, ask_threads_json, generation_json, draft_json";
 
 fn row_to_paper(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuizPaperRow> {
     Ok(QuizPaperRow {
@@ -122,6 +125,7 @@ fn row_to_paper(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuizPaperRow> {
         result_json: row.get(6)?,
         ask_threads_json: row.get(7)?,
         generation_json: row.get(8)?,
+        draft_json: row.get(9)?,
     })
 }
 
@@ -514,6 +518,46 @@ pub fn save_quiz_ask_threads(
     Ok(())
 }
 
+/// Take-page draft writeback (答案自动保存): the in-progress answer sheet is
+/// small and always overwritten wholesale, same as ask threads. A submitted
+/// paper is left untouched *without erroring* — the frontend's debounced save
+/// can race the submit IPC, and once the result lands the draft is moot, so
+/// dropping the late write is the correct outcome, not a failure.
+pub(crate) fn save_quiz_paper_draft_inner(
+    id: i64,
+    draft_json: Option<String>,
+    db: &Db,
+) -> AppResult<()> {
+    let conn = writer(db)?;
+    let changed = conn.execute(
+        "UPDATE quiz_papers SET draft_json = ?1 WHERE id = ?2 AND status != 'submitted'",
+        params![draft_json, id],
+    )?;
+    if changed == 0 {
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM quiz_papers WHERE id = ?1",
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !exists {
+            return Err(AppError::Other("QUIZ_PAPER_NOT_FOUND".to_string()));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_quiz_paper_draft(
+    id: i64,
+    draft_json: Option<String>,
+    db: State<'_, Db>,
+) -> AppResult<()> {
+    save_quiz_paper_draft_inner(id, draft_json, &db)
+}
+
 // ===== Wrong-word pool queries =====
 
 #[tauri::command]
@@ -610,8 +654,9 @@ pub(crate) fn submit_quiz_paper_inner(
         let result: QuizResultInput = serde_json::from_str(&result_json)
             .map_err(|err| AppError::Other(format!("QUIZ_RESULT_INVALID: {err}")))?;
 
+        // draft_json 一并清掉：结果落库后草稿已被取代，留着只会在数据里挂尸。
         tx.execute(
-            "UPDATE quiz_papers SET status = 'submitted', result_json = ?1 WHERE id = ?2",
+            "UPDATE quiz_papers SET status = 'submitted', result_json = ?1, draft_json = NULL WHERE id = ?2",
             params![result_json, id],
         )?;
 
@@ -1448,5 +1493,73 @@ mod tests {
         assert!(err.to_string().contains("QUIZ_PAPER_NOT_READY"));
         // And nothing settled: the pool must be untouched by the refused submit.
         assert!(wrong_words_table(&db).is_empty());
+    }
+
+    // ===== Draft answers (答案自动保存) =====
+
+    #[test]
+    fn draft_round_trips_overwrites_and_clears() {
+        let (_dir, db, _sync) = setup_db();
+        let id = create_paper(&db, "2026-01-01T00:00:00.000Z", false);
+        assert_eq!(
+            fetch_paper(&db.reader(), id).unwrap().unwrap().draft_json,
+            None
+        );
+
+        save_quiz_paper_draft_inner(id, Some("{\"answers\":{\"rq1\":\"A\"}}".into()), &db).unwrap();
+        assert_eq!(
+            fetch_paper(&db.reader(), id)
+                .unwrap()
+                .unwrap()
+                .draft_json
+                .as_deref(),
+            Some("{\"answers\":{\"rq1\":\"A\"}}")
+        );
+
+        // Wholesale overwrite, then explicit clear via NULL.
+        save_quiz_paper_draft_inner(id, Some("{\"answers\":{\"rq1\":\"B\"}}".into()), &db).unwrap();
+        assert_eq!(
+            fetch_paper(&db.reader(), id)
+                .unwrap()
+                .unwrap()
+                .draft_json
+                .as_deref(),
+            Some("{\"answers\":{\"rq1\":\"B\"}}")
+        );
+        save_quiz_paper_draft_inner(id, None, &db).unwrap();
+        assert_eq!(
+            fetch_paper(&db.reader(), id).unwrap().unwrap().draft_json,
+            None
+        );
+    }
+
+    #[test]
+    fn submit_clears_draft() {
+        let (_dir, db, sync) = setup_db();
+        let id = create_paper(&db, "2026-01-01T00:00:00.000Z", false);
+        save_quiz_paper_draft_inner(id, Some("{\"answers\":{\"rq1\":\"B\"}}".into()), &db).unwrap();
+
+        let row =
+            submit_quiz_paper_inner(id, wrong_result_json("subsidy", "B"), &db, &sync).unwrap();
+        assert_eq!(row.status, "submitted");
+        assert_eq!(row.draft_json, None);
+    }
+
+    #[test]
+    fn draft_save_after_submit_is_a_silent_noop() {
+        let (_dir, db, sync) = setup_db();
+        let id = create_paper(&db, "2026-01-01T00:00:00.000Z", false);
+        submit_quiz_paper_inner(id, wrong_result_json("subsidy", "B"), &db, &sync).unwrap();
+
+        // The debounced frontend save racing the submit must not error and
+        // must not resurrect a draft on the settled paper.
+        save_quiz_paper_draft_inner(id, Some("{\"answers\":{\"rq1\":\"C\"}}".into()), &db).unwrap();
+        assert_eq!(
+            fetch_paper(&db.reader(), id).unwrap().unwrap().draft_json,
+            None
+        );
+
+        let err = save_quiz_paper_draft_inner(999, None, &db).unwrap_err();
+        assert!(err.to_string().contains("QUIZ_PAPER_NOT_FOUND"));
     }
 }

@@ -31,6 +31,7 @@ import type {
   AskThread,
   GrammarFillQuestion,
   Quiz,
+  QuizDraft,
   QuizResult,
   ReadingQuestion,
 } from '../../quiz/types.ts'
@@ -43,6 +44,8 @@ export interface UseQuizPaperResult {
   reload: () => Promise<void>
   submit: (result: QuizResult) => Promise<void>
   saveAskThreads: (threads: AskThread[]) => Promise<void>
+  /** 做题草稿写库（fire-and-forget）：失败只记日志——草稿丢一拍不值得打断做题 */
+  saveDraft: (draft: QuizDraft) => void
   explanationSession: ExplanationSessionState | undefined
   /** 触发补生成：只重跑点名的文章组（含其语法题）。running 期间调用被契约模块自身挡掉。 */
   regenerateExplanations: (passageIds: string[]) => void
@@ -152,6 +155,20 @@ export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
     [paperId],
   )
 
+  // 不动 quiz 快照也不 +1 序号：草稿只在 TakeView 挂载时读一次（useState 初始化），
+  // 快照里的旧 draft 字段没人再看；写库失败静默丢弃这一拍，下一次作答会再存。
+  const saveDraft = useCallback(
+    (draft: QuizDraft) => {
+      if (paperId == null) return
+      invoke('save_quiz_paper_draft', { id: paperId, draftJson: JSON.stringify(draft) }).catch(
+        (error) => {
+          console.error('save_quiz_paper_draft failed:', error)
+        },
+      )
+    },
+    [paperId],
+  )
+
   const regenerateExplanations = useCallback(
     (passageIds: string[]) => {
       if (paperId == null || !quiz || passageIds.length === 0) return
@@ -176,6 +193,7 @@ export function useQuizPaper(paperId: number | null): UseQuizPaperResult {
     reload: load,
     submit,
     saveAskThreads,
+    saveDraft,
     explanationSession,
     regenerateExplanations,
     generationSession,
