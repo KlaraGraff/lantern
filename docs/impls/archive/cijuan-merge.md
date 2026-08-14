@@ -178,7 +178,7 @@ Dexie 事务 + 已交卷直接返回）。把这段逻辑留在 TS 意味着前�
 | 2 | Rust 后端：迁移 071、试卷 CRUD、交卷事务（调度状态机移植 + 幂等 + demo 卷不入池 + FSRS 写回）、错词池查询、`ai_complete_text` | `cargo test` 绿（调度器测试全量移植）；`cargo check` 后提交 | ✅ 已完成（8d18986，1660 测试 + clippy 绿，双审查 PASS） |
 | 3 | TS 核心迁移：`llm/`（除 client）+ grading 入 `src/`，transport 换 Tauri 通道，zod 入依赖，纯 TS 测试转 `node --test` | `npm run test:unit` 绿、`npm run build` 绿 | ✅ 已完成（136406c，1556 测试 + build 绿，双审查 PASS） |
 | 4 | UI 实现（按已批样张，含翻卡独立页与堆卡入口改跳的范围新增）+ i18n 双语 + 接入复习板块入口 | build 绿 + 提交前独立审查代理过 diff + 用户验产品行为 | ✅ 产品验收 |
-| 5 | 收尾：删除 `labs/cijuan/`、本计划归档 `docs/impls/archive/`、（如拍板 C 选导入）一次性导入工具 | 仓库无 cijuan 残留引用（`git grep cijuan` 干净）、CI 绿 | 否 |
+| 5 | 收尾：删除 `labs/cijuan/`、本计划归档 `docs/impls/archive/`、（如拍板 C 选导入）一次性导入工具 | 仓库无 cijuan 残留引用（`git grep cijuan` 干净）、CI 绿 | ✅ 已完成（v2.16.0 发布前收尾）。偏离说明：源码注释与迁移 SQL 里的 cijuan 出处标注保留——迁移文件发版后不改，出处注释是仓库惯例（同已归档诸计划）；拍板 C 未选导入，无导入工具 |
 
 步骤 2/3 可并行（数据契约 `types.ts` 先定）。全程不触碰 iOS 会话领域
 （`Reader.tsx`、`useReaderInteractions.ts`、`tap-zones`）；共同接触面仅
