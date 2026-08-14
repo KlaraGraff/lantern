@@ -449,6 +449,9 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     )?;
     tx.execute("DELETE FROM book_summaries WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM highlights WHERE book_id = ?1", params![id])?;
+    // `= ?1` on purpose, not `IS ?1`: a NULL book_id never matches, so a
+    // 词卷-sourced word (migration 074) is not deleted with any book — it
+    // never belonged to one.
     tx.execute("DELETE FROM vocab_words WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM lookup_records WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM explanations WHERE book_id = ?1", params![id])?;
@@ -867,9 +870,14 @@ fn apply_bookmark_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult
 // ---------------------------------------------------------------------------
 
 fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResult<()> {
-    if is_tombstoned(tx, entity::VOCAB, &p.id)?
-        || parent_tombstoned(tx, &[(entity::BOOK, &p.book_id)])?
-    {
+    // A bookless word (词卷, migration 074) has no parent that could be
+    // tombstoned — it is not orphaned by any book deletion.
+    let parents: Vec<(&str, &str)> = p
+        .book_id
+        .as_deref()
+        .map(|book_id| vec![(entity::BOOK, book_id)])
+        .unwrap_or_default();
+    if is_tombstoned(tx, entity::VOCAB, &p.id)? || parent_tombstoned(tx, &parents)? {
         return Ok(());
     }
     tx.execute(
@@ -878,8 +886,8 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
           mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
           fsrs_stability, fsrs_difficulty, fsrs_version, list_status,
-          created_at, updated_at, updated_by_device, card_snapshot)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+          created_at, updated_at, updated_by_device, card_snapshot, source, source_label)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
         params![
             p.id,
             p.book_id,
@@ -904,6 +912,8 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
             event.ts,
             event.device,
             p.card_snapshot,
+            p.source,
+            p.source_label,
         ],
     )?;
     Ok(())
@@ -3396,7 +3406,7 @@ mod tests {
                     "dev-A",
                     EventBody::VocabAdd(VocabPayload {
                         id: "v1".into(),
-                        book_id: "b1".into(),
+                        book_id: Some("b1".into()),
                         word: "serendipity".into(),
                         definition: "fortunate".into(),
                         context_sentence: None,
@@ -3416,6 +3426,8 @@ mod tests {
                         mastery_reason: None,
                         list_status: "confirmed".into(),
                         card_snapshot: None,
+                        source: "book".into(),
+                        source_label: None,
                     }),
                 ),
                 ev(
@@ -3484,7 +3496,7 @@ mod tests {
                     "dev-A",
                     EventBody::VocabAdd(VocabPayload {
                         id: "v1".into(),
-                        book_id: "b1".into(),
+                        book_id: Some("b1".into()),
                         word: "serendipity".into(),
                         definition: "fortunate".into(),
                         context_sentence: None,
@@ -3504,6 +3516,8 @@ mod tests {
                         mastery_reason: Some("{\"reason\":\"exposure_promotion\"}".into()),
                         list_status: "confirmed".into(),
                         card_snapshot: None,
+                        source: "book".into(),
+                        source_label: None,
                     }),
                 ),
                 ev(
@@ -3555,7 +3569,7 @@ mod tests {
                     "dev-A",
                     EventBody::VocabAdd(VocabPayload {
                         id: "v1".into(),
-                        book_id: "b1".into(),
+                        book_id: Some("b1".into()),
                         word: "lucid".into(),
                         definition: "clear".into(),
                         context_sentence: None,
@@ -3575,6 +3589,8 @@ mod tests {
                         mastery_reason: None,
                         list_status: "confirmed".into(),
                         card_snapshot: Some(snapshot.clone()),
+                        source: "book".into(),
+                        source_label: None,
                     }),
                 ),
             ],
@@ -3606,7 +3622,7 @@ mod tests {
                     "dev-A",
                     EventBody::VocabAdd(VocabPayload {
                         id: "v1".into(),
-                        book_id: "b1".into(),
+                        book_id: Some("b1".into()),
                         word: "solitude".into(),
                         definition: "being alone".into(),
                         context_sentence: None,
@@ -3626,6 +3642,8 @@ mod tests {
                         mastery_reason: None,
                         list_status: "watchlist".into(),
                         card_snapshot: None,
+                        source: "book".into(),
+                        source_label: None,
                     }),
                 ),
                 ev(
@@ -3662,6 +3680,127 @@ mod tests {
         assert_eq!(stored, Some(snapshot));
     }
 
+    // --- 词卷 (quiz) words: no book, migration 074 ---
+
+    /// A payload written before migration 074 existed: no `source`, no
+    /// `source_label`, and `book_id` a bare string. It must still merge, and
+    /// land as a book-sourced word.
+    #[test]
+    fn a_pre_074_vocab_add_payload_still_merges_as_a_book_word() {
+        let raw = r#"{
+            "id": "v1",
+            "book_id": "b1",
+            "word": "serendipity",
+            "definition": "fortunate",
+            "context_sentence": null,
+            "cfi": null,
+            "mastery": "new",
+            "review_count": 0,
+            "next_review_at": null
+        }"#;
+        let payload: VocabPayload = serde_json::from_str(raw).unwrap();
+        assert_eq!(payload.book_id.as_deref(), Some("b1"));
+        assert_eq!(payload.source, "book");
+        assert_eq!(payload.source_label, None);
+
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", EventBody::VocabAdd(payload)),
+            ],
+        );
+        let (book_id, source, label): (Option<String>, String, Option<String>) = db
+            .query_row(
+                "SELECT book_id, source, source_label FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(book_id.as_deref(), Some("b1"));
+        assert_eq!(source, "book");
+        assert_eq!(label, None);
+    }
+
+    fn quiz_vocab_add(id: &str) -> EventBody {
+        EventBody::VocabAdd(VocabPayload {
+            id: id.into(),
+            book_id: None,
+            word: "solitude".into(),
+            definition: "being alone".into(),
+            context_sentence: None,
+            context_explanation: None,
+            cfi: None,
+            mastery: "new".into(),
+            review_count: 0,
+            next_review_at: None,
+            review_interval_days: 0,
+            last_reviewed_at: None,
+            last_review_rating: None,
+            fsrs_stability: None,
+            fsrs_difficulty: None,
+            fsrs_version: 1,
+            created_at: None,
+            mastery_source: "manual".into(),
+            mastery_reason: None,
+            list_status: "confirmed".into(),
+            card_snapshot: None,
+            source: "quiz".into(),
+            source_label: Some("8/14 今日词卷".into()),
+        })
+    }
+
+    /// A bookless word round-trips through the wire form and merges with its
+    /// source intact.
+    #[test]
+    fn a_bookless_vocab_add_round_trips_and_merges() {
+        let body = quiz_vocab_add("v-quiz");
+        let wire = serde_json::to_string(&body).unwrap();
+        assert!(
+            !wire.contains("book_id"),
+            "an absent book must not be spelled out on the wire: {wire}"
+        );
+        let decoded: EventBody = serde_json::from_str(&wire).unwrap();
+
+        let mut db = open_db();
+        apply_all(&mut db, &[ev(1100, "dev-A", decoded)]);
+        let (book_id, source, label): (Option<String>, String, Option<String>) = db
+            .query_row(
+                "SELECT book_id, source, source_label FROM vocab_words WHERE id = 'v-quiz'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(book_id, None);
+        assert_eq!(source, "quiz");
+        assert_eq!(label.as_deref(), Some("8/14 今日词卷"));
+    }
+
+    /// Deleting a book takes its own words and leaves the bookless one — the
+    /// 词卷 collection never belonged to any book.
+    #[test]
+    fn cascade_delete_book_spares_bookless_words() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v-book", "fortunate", None)),
+                ev(1200, "dev-A", quiz_vocab_add("v-quiz")),
+                ev(1300, "dev-A", EventBody::BookDelete { id: "b1".into() }),
+            ],
+        );
+        let ids: Vec<String> = db
+            .prepare("SELECT id FROM vocab_words ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(ids, vec!["v-quiz"]);
+    }
+
     // --- vocab.definition.set ---
 
     /// A saved word as the adding device published it. `definition` is the
@@ -3669,7 +3808,7 @@ mod tests {
     fn add_vocab(id: &str, definition: &str, explanation: Option<&str>) -> EventBody {
         EventBody::VocabAdd(VocabPayload {
             id: id.into(),
-            book_id: "b1".into(),
+            book_id: Some("b1".into()),
             word: "thither".into(),
             definition: definition.into(),
             context_sentence: Some("She went thither at once.".into()),
@@ -3689,6 +3828,8 @@ mod tests {
             mastery_reason: None,
             list_status: "confirmed".into(),
             card_snapshot: None,
+            source: "book".into(),
+            source_label: None,
         })
     }
 

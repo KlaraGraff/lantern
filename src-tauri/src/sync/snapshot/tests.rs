@@ -1233,7 +1233,7 @@ fn apply_peer_parent_tombstones_suppress_snapshot_children() {
             "dev-A",
             EventBody::VocabAdd(VocabPayload {
                 id: "v1".into(),
-                book_id: "b1".into(),
+                book_id: Some("b1".into()),
                 word: "term".into(),
                 definition: "definition".into(),
                 context_sentence: None,
@@ -1253,6 +1253,8 @@ fn apply_peer_parent_tombstones_suppress_snapshot_children() {
                 mastery_reason: None,
                 list_status: "confirmed".into(),
                 card_snapshot: None,
+                source: "book".into(),
+                source_label: None,
             }),
         ),
         ev(
@@ -1830,7 +1832,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             "dev-A",
             EventBody::VocabAdd(VocabPayload {
                 id: "voc-confirmed".into(),
-                book_id: "b1".into(),
+                book_id: Some("b1".into()),
                 word: "steadfast".into(),
                 definition: "resolutely firm".into(),
                 context_sentence: None,
@@ -1850,6 +1852,8 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_reason: None,
                 list_status: "confirmed".into(),
                 card_snapshot: None,
+                source: "book".into(),
+                source_label: None,
             }),
         ),
         ev(
@@ -1857,7 +1861,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             "dev-A",
             EventBody::VocabAdd(VocabPayload {
                 id: "voc-watchlist".into(),
-                book_id: "b1".into(),
+                book_id: Some("b1".into()),
                 word: "ephemeral".into(),
                 definition: "lasting a short time".into(),
                 context_sentence: None,
@@ -1877,6 +1881,8 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_reason: None,
                 list_status: "watchlist".into(),
                 card_snapshot: None,
+                source: "book".into(),
+                source_label: None,
             }),
         ),
         ev(
@@ -1884,7 +1890,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             "dev-A",
             EventBody::VocabAdd(VocabPayload {
                 id: "voc-promoted".into(),
-                book_id: "b1".into(),
+                book_id: Some("b1".into()),
                 word: "lucid".into(),
                 definition: "clear, easy to understand".into(),
                 context_sentence: None,
@@ -1904,6 +1910,8 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_reason: None,
                 list_status: "watchlist".into(),
                 card_snapshot: None,
+                source: "book".into(),
+                source_label: None,
             }),
         ),
         ev(
@@ -1915,6 +1923,38 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 card_snapshot: None,
             },
         ),
+        // A 词卷 word (migration 074): no book, and a source label to carry.
+        // Capture reads it, `upsert_vocab` writes it — a snapshot that lost
+        // either column would show up in the table dump below.
+        ev(
+            1428,
+            "dev-A",
+            EventBody::VocabAdd(VocabPayload {
+                id: "voc-quiz".into(),
+                book_id: None,
+                word: "solitude".into(),
+                definition: "being alone".into(),
+                context_sentence: None,
+                cfi: None,
+                mastery: "new".into(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
+                list_status: "confirmed".into(),
+                card_snapshot: None,
+                source: "quiz".into(),
+                source_label: Some("8/14 今日词卷".into()),
+            }),
+        ),
         // `definition` exercise: a word saved with the card blob the repair
         // job exists to clear, then re-glossed. A snapshot that dropped
         // `definition` from its conflict clause would hand a bootstrapping
@@ -1924,7 +1964,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             "dev-A",
             EventBody::VocabAdd(VocabPayload {
                 id: "voc-reglossed".into(),
-                book_id: "b1".into(),
+                book_id: Some("b1".into()),
                 word: "thither".into(),
                 definition: "Meaning in this context\nto that place, in older English.".into(),
                 context_sentence: Some("She went thither at once.".into()),
@@ -1944,6 +1984,8 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_reason: None,
                 list_status: "confirmed".into(),
                 card_snapshot: None,
+                source: "book".into(),
+                source_label: None,
             }),
         ),
         ev(

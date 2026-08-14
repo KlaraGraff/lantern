@@ -15,7 +15,11 @@ use crate::sync::writer::SyncWriter;
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct VocabWord {
     pub id: String,
-    pub book_id: String,
+    /// None for a word that never came from a book — 词卷 (quiz) collections
+    /// have no `books` row, no CFI, and nothing to locate in a text. See
+    /// migration 074 and `source` below.
+    #[serde(default)]
+    pub book_id: Option<String>,
     pub word: String,
     pub definition: String,
     pub context_sentence: Option<String>,
@@ -37,6 +41,14 @@ pub struct VocabWord {
     /// migration 044 — only a filter value the vocab list defaults to.
     #[serde(default = "default_list_status")]
     pub list_status: String,
+    /// Where the word was saved from: 'book' (the reader) or 'quiz' (the
+    /// 词卷 grading page). Drives the source line in the vocabulary list.
+    #[serde(default = "default_source")]
+    pub source: String,
+    /// Display text for a non-book source, e.g. "8/14 今日词卷". None for
+    /// book-sourced words, which show their book title instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
     pub review_count: i64,
     pub next_review_at: Option<i64>,
     pub review_interval_days: i64,
@@ -94,6 +106,8 @@ pub(crate) fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         mastery_source: row.get("mastery_source")?,
         mastery_reason: row.get("mastery_reason")?,
         list_status: row.get("list_status")?,
+        source: row.get("source")?,
+        source_label: row.get("source_label")?,
         book_title: None,
         chapter: None,
     })
@@ -122,12 +136,14 @@ fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         mastery_source: row.get("mastery_source")?,
         mastery_reason: row.get("mastery_reason")?,
         list_status: row.get("list_status")?,
+        source: row.get("source")?,
+        source_label: row.get("source_label")?,
         book_title: row.get("book_title")?,
         chapter: row.get("chapter")?,
     })
 }
 
-pub(crate) const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason, list_status";
+pub(crate) const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason, list_status, source, source_label";
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// Probability the scheduler aims for that a word is still recalled when it
@@ -158,7 +174,10 @@ pub struct VocabBackup {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VocabBackupWord {
     pub id: String,
-    pub book_id: String,
+    /// Absent for a quiz-sourced word. Older backups always carry it, so the
+    /// default only ever fires for a word that genuinely has no book.
+    #[serde(default)]
+    pub book_id: Option<String>,
     pub word: String,
     pub definition: String,
     #[serde(default)]
@@ -199,6 +218,10 @@ pub struct VocabBackupWord {
     // consciously saved.
     #[serde(default = "default_list_status")]
     pub list_status: String,
+    #[serde(default = "default_source")]
+    pub source: String,
+    #[serde(default)]
+    pub source_label: Option<String>,
 }
 
 fn default_mastery() -> String {
@@ -215,6 +238,10 @@ fn default_fsrs_version() -> i64 {
 
 fn default_list_status() -> String {
     "confirmed".to_string()
+}
+
+fn default_source() -> String {
+    "book".to_string()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -322,7 +349,8 @@ impl From<VocabCsvRow> for VocabBackupWord {
     fn from(row: VocabCsvRow) -> Self {
         Self {
             id: row.id,
-            book_id: row.book_id,
+            // An empty cell means "no book" — the CSV has no way to spell NULL.
+            book_id: Some(row.book_id).filter(|value| !value.is_empty()),
             word: row.word,
             definition: row.definition,
             context_sentence: row.context_sentence.filter(|value| !value.is_empty()),
@@ -341,10 +369,12 @@ impl From<VocabCsvRow> for VocabBackupWord {
             fsrs_version: row.fsrs_version,
             created_at: row.created_at,
             updated_at: row.updated_at,
-            // CSV never carries this column (see `VOCAB_BACKUP_CSV_HEADERS`
+            // CSV never carries these columns (see `VOCAB_BACKUP_CSV_HEADERS`
             // on the frontend) — every CSV-imported word is treated as one
-            // the reader consciously saved.
+            // the reader consciously saved, from a book.
             list_status: default_list_status(),
+            source: default_source(),
+            source_label: None,
         }
     }
 }
@@ -906,24 +936,28 @@ pub(crate) fn update_vocab_card_inner(
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn add_vocab_word(
-    book_id: String,
+    book_id: Option<String>,
     word: String,
     definition: String,
     context_sentence: Option<String>,
     context_explanation: Option<String>,
     cfi: Option<String>,
     card_snapshot: Option<String>,
+    source: Option<String>,
+    source_label: Option<String>,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<VocabWord> {
     add_vocab_word_inner(
-        &book_id,
+        book_id.as_deref(),
         &word,
         &definition,
         context_sentence,
         context_explanation,
         cfi,
         card_snapshot,
+        source,
+        source_label,
         &db,
         &sync,
     )
@@ -931,13 +965,15 @@ pub fn add_vocab_word(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn add_vocab_word_inner(
-    book_id: &str,
+    book_id: Option<&str>,
     word: &str,
     definition: &str,
     context_sentence: Option<String>,
     context_explanation: Option<String>,
     cfi: Option<String>,
     card_snapshot: Option<String>,
+    source: Option<String>,
+    source_label: Option<String>,
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<VocabWord> {
@@ -945,8 +981,9 @@ pub(crate) fn add_vocab_word_inner(
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     let card_snapshot = clamp_card_snapshot(card_snapshot);
+    let source = source.unwrap_or_else(default_source);
 
-    log::debug!("vocab: add_vocab_word book_id={book_id} word={word:?}");
+    log::debug!("vocab: add_vocab_word book_id={book_id:?} source={source} word={word:?}");
 
     // Dedup happens inside the sync transaction so two concurrent adds
     // can't both observe "missing" and insert duplicates. There's no
@@ -954,13 +991,28 @@ pub(crate) fn add_vocab_word_inner(
     // whole tx, so the second writer's check sees the first writer's
     // committed row.
     let vocab = sync.with_tx(db, now, |tx, events| {
-        let existing: Option<VocabWord> = {
+        let existing: Option<VocabWord> = if book_id.is_some() {
             let mut stmt = tx.prepare(&format!(
-                "SELECT {} FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
-                SELECT_COLS
+                "SELECT {SELECT_COLS} FROM vocab_words WHERE book_id IS ?1 AND word = ?2 COLLATE NOCASE LIMIT 1"
             ))?;
+            // Bound before the branch ends: the rows borrow `stmt`.
             let row = stmt
                 .query_map(params![book_id, word], row_to_vocab)?
+                .next()
+                .transpose()?;
+            row
+        } else {
+            // A bookless save (词卷) dedups against the *whole* table: the
+            // same study word must not end up as two review entries just
+            // because it was met in two places. A confirmed row wins over a
+            // watchlist sibling, then the oldest, so the answer is stable no
+            // matter how many rows share the word.
+            let mut stmt = tx.prepare(&format!(
+                "SELECT {SELECT_COLS} FROM vocab_words WHERE word = ?1 COLLATE NOCASE \
+                 ORDER BY (list_status = 'confirmed') DESC, created_at ASC, id ASC LIMIT 1"
+            ))?;
+            let row = stmt
+                .query_map(params![word], row_to_vocab)?
                 .next()
                 .transpose()?;
             row
@@ -998,13 +1050,13 @@ pub(crate) fn add_vocab_word_inner(
         }
 
         tx.execute(
-            "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, card_snapshot, mastery, review_count, next_review_at, list_status, created_at, updated_at, updated_by_device)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'new', 0, NULL, 'confirmed', ?9, ?9, ?10)",
-            params![id, book_id, word, definition, context_sentence, context_explanation, cfi, card_snapshot, now, device],
+            "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, card_snapshot, mastery, review_count, next_review_at, list_status, source, source_label, created_at, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'new', 0, NULL, 'confirmed', ?9, ?10, ?11, ?11, ?12)",
+            params![id, book_id, word, definition, context_sentence, context_explanation, cfi, card_snapshot, source, source_label, now, device],
         )?;
         events.push(EventBody::VocabAdd(VocabPayload {
             id: id.clone(),
-            book_id: book_id.to_string(),
+            book_id: book_id.map(str::to_string),
             word: word.to_string(),
             definition: definition.to_string(),
             context_sentence: context_sentence.clone(),
@@ -1015,6 +1067,8 @@ pub(crate) fn add_vocab_word_inner(
             mastery_reason: None,
             list_status: "confirmed".to_string(),
             card_snapshot: card_snapshot.clone(),
+            source: source.clone(),
+            source_label: source_label.clone(),
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -1027,7 +1081,7 @@ pub(crate) fn add_vocab_word_inner(
         }));
         Ok(VocabWord {
             id: id.clone(),
-            book_id: book_id.to_string(),
+            book_id: book_id.map(str::to_string),
             word: word.to_string(),
             definition: definition.to_string(),
             context_sentence: context_sentence.clone(),
@@ -1037,6 +1091,8 @@ pub(crate) fn add_vocab_word_inner(
             mastery_source: "manual".to_string(),
             mastery_reason: None,
             list_status: "confirmed".to_string(),
+            source: source.clone(),
+            source_label: source_label.clone(),
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -1128,7 +1184,7 @@ pub(crate) fn create_watchlist_word_from_glance(
     )?;
     events.push(EventBody::VocabAdd(VocabPayload {
         id: id.clone(),
-        book_id: book_id.to_string(),
+        book_id: Some(book_id.to_string()),
         word: word.to_string(),
         definition: definition.to_string(),
         context_sentence: context_sentence.map(str::to_string),
@@ -1139,6 +1195,9 @@ pub(crate) fn create_watchlist_word_from_glance(
         mastery_reason: None,
         list_status: "watchlist".to_string(),
         card_snapshot: None,
+        // This path only ever fires while reading a book.
+        source: default_source(),
+        source_label: None,
         review_count: 0,
         next_review_at: None,
         review_interval_days: 0,
@@ -1202,7 +1261,7 @@ pub(crate) fn observe_lookup_for_vocab(
             )?;
             events.push(EventBody::VocabAdd(VocabPayload {
                 id: id.clone(),
-                book_id: book_id.to_string(),
+                book_id: Some(book_id.to_string()),
                 word: word.to_string(),
                 definition: definition.to_string(),
                 context_sentence: context_sentence.map(str::to_string),
@@ -1213,6 +1272,9 @@ pub(crate) fn observe_lookup_for_vocab(
                 mastery_reason: None,
                 list_status: "watchlist".to_string(),
                 card_snapshot: None,
+                // Reading-driven observation: always a book.
+                source: default_source(),
+                source_label: None,
                 review_count: 0,
                 next_review_at: None,
                 review_interval_days: 0,
@@ -1367,6 +1429,26 @@ pub(crate) fn check_vocab_exists_inner(
     Ok(id)
 }
 
+/// The bookless twin of `check_vocab_exists`, for surfaces with no book to
+/// scope by — the 词卷 grading page. Mirrors the per-book rule exactly,
+/// including the confirmed-only filter: a watchlist row is one the reader has
+/// never consciously saved, so it must still read as "not yet collected", and
+/// saving it promotes it (see `add_vocab_word_inner`).
+#[tauri::command]
+pub fn check_vocab_exists_global(word: String, db: State<'_, Db>) -> AppResult<bool> {
+    check_vocab_exists_global_inner(&db, &word)
+}
+
+pub(crate) fn check_vocab_exists_global_inner(db: &Db, word: &str) -> AppResult<bool> {
+    let conn = db.reader();
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM vocab_words WHERE word = ?1 COLLATE NOCASE AND list_status = 'confirmed')",
+        params![word],
+        |row| row.get(0),
+    )?;
+    Ok(exists)
+}
+
 /// Library-wide vocabulary, with the observation zone
 /// (`list_status = 'watchlist'`, migration 044) excluded in SQL. There is no
 /// unfiltered library-wide twin on purpose: every caller here — the library
@@ -1381,7 +1463,7 @@ pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
         // the word gives contextual review the "which chapter was this" line
         // without a migration, and simply yields NULL when nothing matches.
         // Same-position lookups win over merely same-word ones.
-        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, v.list_status, b.title AS book_title, \
+        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, v.list_status, v.source, v.source_label, b.title AS book_title, \
          COALESCE( \
            (SELECT l.chapter FROM lookup_records l \
              WHERE l.book_id = v.book_id AND l.cfi = v.cfi AND l.normalized_text = lower(trim(v.word)) \
@@ -1870,6 +1952,8 @@ fn vocab_backup_word(word: VocabWord) -> VocabBackupWord {
         created_at: word.created_at,
         updated_at: word.updated_at,
         list_status: word.list_status,
+        source: word.source,
+        source_label: word.source_label,
     }
 }
 
@@ -1949,7 +2033,12 @@ fn parse_vocab_import(
 
 fn validate_import_word(word: &VocabBackupWord) -> bool {
     crate::sync::validation::validate_entity_id(&word.id).is_ok()
-        && crate::sync::validation::validate_entity_id(&word.book_id).is_ok()
+        // No book at all is legal (词卷 words); a book id that is present has
+        // to be a well-formed one.
+        && word
+            .book_id
+            .as_deref()
+            .is_none_or(|id| crate::sync::validation::validate_entity_id(id).is_ok())
         && !word.word.trim().is_empty()
         && word.word.len() <= 512
         && word.definition.len() <= 100_000
@@ -1986,7 +2075,7 @@ fn preview_vocab_import_words(
     let conn = db.reader();
     let mut known_books = conn.prepare("SELECT EXISTS(SELECT 1 FROM books WHERE id = ?1)")?;
     let mut known_words = conn.prepare(
-        "SELECT id FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
+        "SELECT id FROM vocab_words WHERE book_id IS ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
     )?;
     let mut seen_ids = HashSet::new();
     let mut seen_words = HashSet::new();
@@ -2005,16 +2094,24 @@ fn preview_vocab_import_words(
             preview.invalid_rows += 1;
             continue;
         }
-        let dedupe_key = format!("{}\u{0}{}", word.book_id, word.word.to_lowercase());
+        let dedupe_key = format!(
+            "{}\u{0}{}",
+            word.book_id.as_deref().unwrap_or(""),
+            word.word.to_lowercase()
+        );
         if !seen_ids.insert(word.id.clone()) || !seen_words.insert(dedupe_key) {
             preview.duplicate_rows += 1;
             continue;
         }
         preview.valid += 1;
-        let book_exists: bool = known_books.query_row(params![word.book_id], |row| row.get(0))?;
-        if !book_exists {
-            preview.missing_books += 1;
-            continue;
+        // A bookless word has no book to be missing — only a word that names
+        // a book we don't have is dropped.
+        if let Some(book_id) = word.book_id.as_deref() {
+            let book_exists: bool = known_books.query_row(params![book_id], |row| row.get(0))?;
+            if !book_exists {
+                preview.missing_books += 1;
+                continue;
+            }
         }
         let existing: Option<String> = known_words
             .query_row(params![word.book_id, word.word], |row| row.get(0))
@@ -2074,17 +2171,20 @@ pub(crate) fn do_import_vocab_backup(
         let mut replaced = 0;
         let mut skipped = preview.invalid_rows + preview.duplicate_rows + preview.missing_books;
         for word in &words {
-            let book_exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM books WHERE id = ?1)",
-                params![word.book_id],
-                |row| row.get(0),
-            )?;
-            if !book_exists {
-                continue;
+            // Same rule as the preview: only a named-but-absent book skips.
+            if let Some(book_id) = word.book_id.as_deref() {
+                let book_exists: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM books WHERE id = ?1)",
+                    params![book_id],
+                    |row| row.get(0),
+                )?;
+                if !book_exists {
+                    continue;
+                }
             }
             let existing: Option<String> = tx
                 .query_row(
-                    "SELECT id FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
+                    "SELECT id FROM vocab_words WHERE book_id IS ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
                     params![word.book_id, word.word],
                     |row| row.get(0),
                 )
@@ -2105,8 +2205,8 @@ pub(crate) fn do_import_vocab_backup(
             let id = uuid::Uuid::new_v4().to_string();
             let created_at = if word.created_at > 0 { word.created_at } else { timestamp };
             tx.execute(
-                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, mastery_source, mastery_reason, review_count, next_review_at, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, list_status, created_at, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, mastery_source, mastery_reason, review_count, next_review_at, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, list_status, source, source_label, created_at, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
                 params![
                     id,
                     word.book_id,
@@ -2127,6 +2227,8 @@ pub(crate) fn do_import_vocab_backup(
                     word.fsrs_difficulty,
                     word.fsrs_version,
                     word.list_status,
+                    word.source,
+                    word.source_label,
                     created_at,
                     timestamp,
                     device,
@@ -2154,6 +2256,8 @@ pub(crate) fn do_import_vocab_backup(
                 created_at: Some(created_at),
                 list_status: word.list_status.clone(),
                 card_snapshot: None,
+                source: word.source.clone(),
+                source_label: word.source_label.clone(),
             }));
             imported += 1;
         }
@@ -2362,21 +2466,25 @@ mod tests {
         let (_dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-chapter");
         add_vocab_word_inner(
-            "book-chapter",
+            Some("book-chapter"),
             "Courage",
             "the ability to act",
             Some("True freedom is the courage to be disliked.".to_string()),
             None,
             Some("epubcfi(/6/2!/4/2)".to_string()),
             None,
+            None,
+            None,
             &db,
             &sync,
         )
         .unwrap();
         add_vocab_word_inner(
-            "book-chapter",
+            Some("book-chapter"),
             "Solitude",
             "being alone",
+            None,
+            None,
             None,
             None,
             None,
@@ -2403,6 +2511,326 @@ mod tests {
         assert_eq!(solitude.chapter, None);
     }
 
+    // ===== 词卷 (quiz) collections: a word with no book (migration 074) =====
+
+    /// Save from the grading page, read back from the library-wide list, and
+    /// delete — the whole life cycle of a word that never had a book.
+    #[test]
+    fn a_bookless_word_is_saved_read_back_and_deleted() {
+        let (_dir, db, sync) = setup_import_db();
+        let saved = add_vocab_word_inner(
+            None,
+            "Solitude",
+            "being alone",
+            None,
+            None,
+            None,
+            None,
+            Some("quiz".to_string()),
+            Some("8/14 今日词卷".to_string()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(saved.book_id, None);
+        assert_eq!(saved.source, "quiz");
+        assert_eq!(saved.source_label.as_deref(), Some("8/14 今日词卷"));
+
+        // It reaches the library-wide list — the one the vocabulary page and
+        // the review surfaces read — with no book title and no chapter.
+        let words = query_all_vocab_words(&db).unwrap();
+        let found = words.iter().find(|w| w.id == saved.id).unwrap();
+        assert_eq!(found.book_id, None);
+        assert_eq!(found.book_title, None);
+        assert_eq!(found.source, "quiz");
+        assert_eq!(found.source_label.as_deref(), Some("8/14 今日词卷"));
+
+        assert_eq!(
+            delete_vocab_words_inner(std::slice::from_ref(&saved.id), &db, &sync).unwrap(),
+            1
+        );
+        assert!(query_all_vocab_words(&db).unwrap().is_empty());
+    }
+
+    /// The default source when the caller says nothing is still 'book' — the
+    /// reader's own save path did not change.
+    #[test]
+    fn a_book_save_still_defaults_to_the_book_source() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        let saved = add_vocab_word_inner(
+            Some("book-1"),
+            "Courage",
+            "the ability to act",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(saved.book_id.as_deref(), Some("book-1"));
+        assert_eq!(saved.source, "book");
+        assert_eq!(saved.source_label, None);
+        assert_eq!(stored_word(&db, &saved.id).source, "book");
+    }
+
+    /// The dedup rule that makes the two surfaces share one review deck: a
+    /// bookless save of a word already saved from a book returns that row
+    /// instead of creating a second one.
+    #[test]
+    fn a_bookless_save_dedups_against_a_word_saved_from_a_book() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        let from_book = add_vocab_word_inner(
+            Some("book-1"),
+            "Courage",
+            "the ability to act",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        // Different case, no book — still the same study word.
+        let from_quiz = add_vocab_word_inner(
+            None,
+            "courage",
+            "a quiz definition",
+            None,
+            None,
+            None,
+            None,
+            Some("quiz".to_string()),
+            Some("8/14 今日词卷".to_string()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(from_quiz.id, from_book.id);
+        assert_eq!(from_quiz.book_id.as_deref(), Some("book-1"));
+        let count: i64 = db
+            .reader()
+            .query_row("SELECT COUNT(*) FROM vocab_words", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "the same word must not yield two review entries");
+    }
+
+    /// A word saved from a book, meanwhile, still dedups per book — two books
+    /// keep their own rows, as they always have.
+    #[test]
+    fn a_book_save_still_dedups_only_within_its_own_book() {
+        // Two books, the same word in each — the per-book rule, unchanged.
+        let (_dir, db, sync, a, b, _other) = setup_sibling_db();
+        assert_ne!(a, b);
+        assert_eq!(stored_word(&db, &a).book_id.as_deref(), Some("book-a"));
+        assert_eq!(stored_word(&db, &b).book_id.as_deref(), Some("book-b"));
+
+        // A repeat save into the same book still returns the existing row.
+        let again = add_vocab_word_inner(
+            Some("book-a"),
+            "COURAGE",
+            "another definition",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(again.id, a);
+    }
+
+    #[test]
+    fn a_bookless_save_promotes_a_watchlist_row_instead_of_adding_one() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        // The observation zone row a single lookup leaves behind.
+        let watchlist_id =
+            create_watchlist_word_from_glance_for_test(&db, &sync, "book-1", "Quiet");
+
+        let saved = add_vocab_word_inner(
+            None,
+            "quiet",
+            "a quiz definition",
+            None,
+            None,
+            None,
+            None,
+            Some("quiz".to_string()),
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(saved.id, watchlist_id);
+        assert_eq!(saved.list_status, "confirmed");
+        assert_eq!(stored_word(&db, &watchlist_id).list_status, "confirmed");
+        let count: i64 = db
+            .reader()
+            .query_row("SELECT COUNT(*) FROM vocab_words", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    fn create_watchlist_word_from_glance_for_test(
+        db: &Db,
+        sync: &SyncWriter,
+        book_id: &str,
+        word: &str,
+    ) -> String {
+        let now = 1_700_000_000_000_i64;
+        sync.with_tx(db, now, |tx, events| {
+            Ok(create_watchlist_word_from_glance(
+                tx,
+                events,
+                book_id,
+                word,
+                "a definition",
+                None,
+                None,
+                now,
+                "dev-test",
+            )?
+            .unwrap())
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn check_vocab_exists_global_ignores_the_book_and_the_observation_zone() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        assert!(!check_vocab_exists_global_inner(&db, "Courage").unwrap());
+
+        // A watchlist row is one the reader never consciously saved, so the
+        // 收藏 button must still offer to save it.
+        create_watchlist_word_from_glance_for_test(&db, &sync, "book-1", "Courage");
+        assert!(!check_vocab_exists_global_inner(&db, "Courage").unwrap());
+
+        add_vocab_word_inner(
+            None,
+            "courage",
+            "a quiz definition",
+            None,
+            None,
+            None,
+            None,
+            Some("quiz".to_string()),
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        // Case-insensitive, and no book needed to find it.
+        assert!(check_vocab_exists_global_inner(&db, "COURAGE").unwrap());
+    }
+
+    /// A book deletion must not take a 词卷 word with it — it never belonged
+    /// to that book, or to any.
+    #[test]
+    fn deleting_a_book_leaves_bookless_words_alone() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        let from_book = add_vocab_word_inner(
+            Some("book-1"),
+            "Courage",
+            "the ability to act",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let from_quiz = add_vocab_word_inner(
+            None,
+            "Solitude",
+            "being alone",
+            None,
+            None,
+            None,
+            None,
+            Some("quiz".to_string()),
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("PRAGMA foreign_keys=ON", []).unwrap();
+            conn.execute("DELETE FROM books WHERE id = 'book-1'", [])
+                .unwrap();
+        }
+
+        let ids: Vec<String> = query_all_vocab_words(&db)
+            .unwrap()
+            .into_iter()
+            .map(|w| w.id)
+            .collect();
+        assert_eq!(ids, vec![from_quiz.id]);
+        assert!(!ids.contains(&from_book.id));
+    }
+
+    /// The backup round trip: a bookless word must survive export and import,
+    /// not be silently dropped as "missing book".
+    #[test]
+    fn a_bookless_word_survives_the_backup_round_trip() {
+        let (_dir, db, sync) = setup_import_db();
+        add_vocab_word_inner(
+            None,
+            "Solitude",
+            "being alone",
+            None,
+            None,
+            None,
+            None,
+            Some("quiz".to_string()),
+            Some("8/14 今日词卷".to_string()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let backup = export_vocab_backup_inner(&db).unwrap();
+        assert_eq!(backup.words.len(), 1);
+        assert_eq!(backup.words[0].book_id, None);
+        assert_eq!(backup.words[0].source, "quiz");
+
+        let json = serde_json::to_string(&backup).unwrap();
+        let (_dir2, db2, sync2) = setup_import_db();
+        let result = do_import_vocab_backup(
+            &json,
+            VocabImportFormat::Json,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db2,
+            &sync2,
+        )
+        .unwrap();
+        assert_eq!(result.preview.missing_books, 0);
+        assert_eq!(result.imported, 1);
+        let restored = query_all_vocab_words(&db2).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].book_id, None);
+        assert_eq!(restored[0].source, "quiz");
+        assert_eq!(restored[0].source_label.as_deref(), Some("8/14 今日词卷"));
+    }
+
     fn stored_word(db: &Db, id: &str) -> VocabWord {
         db.reader()
             .query_row(
@@ -2419,15 +2847,45 @@ mod tests {
         insert_import_book(&db, "book-a");
         insert_import_book(&db, "book-b");
         let a = add_vocab_word_inner(
-            "book-a", "Courage", "def a", None, None, None, None, &db, &sync,
+            Some("book-a"),
+            "Courage",
+            "def a",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
         )
         .unwrap();
         let b = add_vocab_word_inner(
-            "book-b", "courage", "def b", None, None, None, None, &db, &sync,
+            Some("book-b"),
+            "courage",
+            "def b",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
         )
         .unwrap();
         let other = add_vocab_word_inner(
-            "book-b", "solitude", "def c", None, None, None, None, &db, &sync,
+            Some("book-b"),
+            "solitude",
+            "def c",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
         )
         .unwrap();
         (dir, db, sync, a.id, b.id, other.id)
@@ -2669,9 +3127,11 @@ mod tests {
         let (_dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-a");
         let only = add_vocab_word_inner(
-            "book-a",
+            Some("book-a"),
             "solitude",
             "being alone",
+            None,
+            None,
             None,
             None,
             None,
@@ -2708,9 +3168,11 @@ mod tests {
             ("delta", "mastered"),
         ] {
             let added = add_vocab_word_inner(
-                "book-a",
+                Some("book-a"),
                 word,
                 "a definition",
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -2742,9 +3204,11 @@ mod tests {
         insert_import_book(&db, "book-a");
 
         add_vocab_word_inner(
-            "book-a",
+            Some("book-a"),
             "steadfast",
             "a definition",
+            None,
+            None,
             None,
             None,
             None,
@@ -2789,9 +3253,11 @@ mod tests {
         let past = chrono::Utc::now().timestamp_millis() - 1_000;
 
         let confirmed = add_vocab_word_inner(
-            "book-a",
+            Some("book-a"),
             "lucid",
             "a definition",
+            None,
+            None,
             None,
             None,
             None,
@@ -2832,10 +3298,15 @@ mod tests {
         );
     }
 
-    fn backup_word(id: &str, book_id: &str, word: &str, definition: &str) -> VocabBackupWord {
+    fn backup_word(
+        id: &str,
+        book_id: Option<&str>,
+        word: &str,
+        definition: &str,
+    ) -> VocabBackupWord {
         VocabBackupWord {
             id: id.to_string(),
-            book_id: book_id.to_string(),
+            book_id: book_id.map(str::to_string),
             word: word.to_string(),
             definition: definition.to_string(),
             context_sentence: Some("A useful sentence.".to_string()),
@@ -2853,6 +3324,8 @@ mod tests {
             fsrs_difficulty: Some(4.3),
             fsrs_version: 1,
             list_status: default_list_status(),
+            source: default_source(),
+            source_label: None,
             created_at: 1_600_000_000_000,
             updated_at: 1_700_000_000_000,
         }
@@ -2874,7 +3347,7 @@ mod tests {
         insert_import_book(&db, "book-1");
         let word = backup_word(
             "backup-1",
-            "book-1",
+            Some("book-1"),
             "serendipity",
             "A fortunate discovery.",
         );
@@ -2983,7 +3456,7 @@ mod tests {
         let result = do_import_vocab_backup(
             &backup_json(vec![backup_word(
                 "backup-1",
-                "missing-book",
+                Some("missing-book"),
                 "wander",
                 "To roam.",
             )]),
@@ -3009,7 +3482,12 @@ mod tests {
     fn vocab_import_conflict_policy_skips_or_overwrites_existing_word() {
         let (_dir, db, writer) = setup_import_db();
         insert_import_book(&db, "book-1");
-        let original = backup_word("backup-1", "book-1", "resolve", "Original definition.");
+        let original = backup_word(
+            "backup-1",
+            Some("book-1"),
+            "resolve",
+            "Original definition.",
+        );
         do_import_vocab_backup(
             &backup_json(vec![original]),
             VocabImportFormat::Json,
@@ -3020,7 +3498,12 @@ mod tests {
         )
         .unwrap();
 
-        let replacement = backup_word("backup-2", "book-1", "resolve", "Replacement definition.");
+        let replacement = backup_word(
+            "backup-2",
+            Some("book-1"),
+            "resolve",
+            "Replacement definition.",
+        );
         let skipped = do_import_vocab_backup(
             &backup_json(vec![replacement.clone()]),
             VocabImportFormat::Json,
@@ -3366,9 +3849,11 @@ mod tests {
 
         // The reader hits "收藏" (save) before ever hitting a 3rd lookup.
         let saved = add_vocab_word_inner(
-            "book-watch",
+            Some("book-watch"),
             "Solitude",
             "a definition",
+            None,
+            None,
             None,
             None,
             None,
@@ -3394,9 +3879,11 @@ mod tests {
         let (_dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-watch");
         add_vocab_word_inner(
-            "book-watch",
+            Some("book-watch"),
             "Courage",
             "the ability to act",
+            None,
+            None,
             None,
             None,
             None,
@@ -3432,13 +3919,15 @@ mod tests {
         insert_import_book(&db, "book-a");
         let snapshot = r#"{"modules":{"word_info":{"summary":"clear"}}}"#.to_string();
         let saved = add_vocab_word_inner(
-            "book-a",
+            Some("book-a"),
             "lucid",
             "a definition",
             None,
             None,
             None,
             Some(snapshot.clone()),
+            None,
+            None,
             &db,
             &sync,
         )
@@ -3463,13 +3952,15 @@ mod tests {
         .unwrap();
         let snapshot = r#"{"modules":{"word_info":{"summary":"being alone"}}}"#.to_string();
         let first = add_vocab_word_inner(
-            "book-watch",
+            Some("book-watch"),
             "Solitude",
             "a definition",
             None,
             None,
             None,
             Some(snapshot.clone()),
+            None,
+            None,
             &db,
             &sync,
         )
@@ -3485,9 +3976,11 @@ mod tests {
         // the no-write branch, so nothing changes either way — this pins
         // that "no snapshot offered" is never mistaken for "erase it".
         add_vocab_word_inner(
-            "book-watch",
+            Some("book-watch"),
             "Solitude",
             "a definition",
+            None,
+            None,
             None,
             None,
             None,
@@ -3508,13 +4001,15 @@ mod tests {
         insert_import_book(&db, "book-a");
         let oversized = "x".repeat(MAX_CARD_SNAPSHOT_BYTES + 1);
         let saved = add_vocab_word_inner(
-            "book-a",
+            Some("book-a"),
             "lucid",
             "a definition",
             None,
             None,
             None,
             Some(oversized),
+            None,
+            None,
             &db,
             &sync,
         )
@@ -3528,9 +4023,11 @@ mod tests {
         let (_dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-a");
         let saved = add_vocab_word_inner(
-            "book-a",
+            Some("book-a"),
             "lucid",
             "a definition",
+            None,
+            None,
             None,
             None,
             None,
@@ -3597,13 +4094,15 @@ mod tests {
     fn saved_with_card(db: &Db, sync: &SyncWriter) -> (String, String) {
         let snapshot = r#"{"modules":{"word_info":{"summary":"the first card"}}}"#.to_string();
         let saved = add_vocab_word_inner(
-            "book-card",
+            Some("book-card"),
             "thither",
             "the first summary",
             Some("She went thither at once.".to_string()),
             Some("the first paragraph".to_string()),
             None,
             Some(snapshot.clone()),
+            None,
+            None,
             db,
             sync,
         )
@@ -3652,9 +4151,11 @@ mod tests {
         // rescues — so if displacement ran here, this is the case that would
         // show it.
         let saved = add_vocab_word_inner(
-            "book-card",
+            Some("book-card"),
             "thither",
             "Meaning in this context\nto that place, in older English.",
+            None,
+            None,
             None,
             None,
             None,
@@ -3870,13 +4371,15 @@ mod tests {
         peer_sync.set_should_queue(true);
         insert_import_book(&peer, "book-card");
         let mirrored = add_vocab_word_inner(
-            "book-card",
+            Some("book-card"),
             "thither",
             "the first summary",
             None,
             Some("the first paragraph".to_string()),
             None,
             Some(r#"{"modules":{"word_info":{"summary":"the first card"}}}"#.to_string()),
+            None,
+            None,
             &peer,
             &peer_sync,
         )

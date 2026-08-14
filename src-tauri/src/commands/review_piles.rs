@@ -185,6 +185,9 @@ pub(crate) fn list_review_piles_at(db: &Db, now_ms: i64) -> AppResult<Vec<Review
 /// the watchlist, so they wait there like every other unsaved word.
 fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
     let mut stmt = conn.prepare(
+        // An inner `JOIN books` on purpose, even though `v.book_id` is now
+        // nullable (migration 074): this pile is a per-book story, and a
+        // bookless word could not satisfy `agg.book_id = v.book_id` anyway.
         "SELECT v.book_id, b.title, v.id, agg.newest, agg.cards, agg.glances
          FROM vocab_words v
          JOIN books b ON b.id = v.book_id

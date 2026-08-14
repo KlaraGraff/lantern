@@ -1197,9 +1197,11 @@ mod tests {
     fn confirmed_word(db: &Db, sync: &SyncWriter, book_id: &str, word: &str) -> String {
         insert_book(db, book_id);
         add_vocab_word_inner(
-            book_id,
+            Some(book_id),
             word,
             "a definition",
+            None,
+            None,
             None,
             None,
             None,
@@ -1309,12 +1311,32 @@ mod tests {
         insert_book(&db, "book-a");
         insert_book(&db, "book-b");
         let a = add_vocab_word_inner(
-            "book-a", "Subsidy", "def a", None, None, None, None, &db, &sync,
+            Some("book-a"),
+            "Subsidy",
+            "def a",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
         )
         .unwrap()
         .id;
         let b = add_vocab_word_inner(
-            "book-b", "subsidy", "def b", None, None, None, None, &db, &sync,
+            Some("book-b"),
+            "subsidy",
+            "def b",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
         )
         .unwrap()
         .id;

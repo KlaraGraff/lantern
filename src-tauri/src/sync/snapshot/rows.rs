@@ -199,7 +199,10 @@ pub struct VocabReviewLogRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VocabRow {
-    pub book_id: String,
+    /// None for a word saved outside any book (词卷 — migration 074). Older
+    /// snapshots always carry one, so the default only fires for the new kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub book_id: Option<String>,
     pub word: String,
     pub definition: String,
     pub context_sentence: Option<String>,
@@ -233,6 +236,12 @@ pub struct VocabRow {
     /// to the formal vocab list.
     #[serde(default = "default_list_status")]
     pub list_status: String,
+    /// 'book' or 'quiz' (migration 074). Snapshots written before the column
+    /// existed only ever held book-sourced words.
+    #[serde(default = "default_source")]
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_device: String,
@@ -318,6 +327,10 @@ fn default_mastery_source() -> String {
 
 fn default_list_status() -> String {
     "confirmed".to_string()
+}
+
+fn default_source() -> String {
+    "book".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

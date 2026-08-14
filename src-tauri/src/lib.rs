@@ -1012,6 +1012,7 @@ pub fn run() {
             commands::vocab::remove_vocab_word,
             commands::vocab::list_vocab_words,
             commands::vocab::check_vocab_exists,
+            commands::vocab::check_vocab_exists_global,
             commands::vocab::list_all_vocab_words,
             commands::vocab::update_vocab_mastery,
             commands::vocab::record_vocab_review,

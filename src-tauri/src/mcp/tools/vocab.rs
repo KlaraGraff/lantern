@@ -43,7 +43,7 @@ impl LanternMcpHandler {
         words.retain(|word| word.list_status == "confirmed");
         if due_only.unwrap_or(false) {
             if let Some(book_id) = book_id.as_deref() {
-                words.retain(|word| word.book_id == book_id);
+                words.retain(|word| word.book_id.as_deref() == Some(book_id));
             }
         }
         Ok(CallToolResult::success(vec![ContentBlock::json(&words)?]))

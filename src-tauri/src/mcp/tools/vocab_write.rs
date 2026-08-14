@@ -383,12 +383,15 @@ impl LanternMcpHandler {
     ) -> Result<CallToolResult, ErrorData> {
         let sync = require_sync(self)?;
         let entry = vocab::add_vocab_word_inner(
-            &book_id,
+            Some(&book_id),
             &word,
             &definition,
             context_sentence,
             context_explanation,
             cfi,
+            None,
+            // This tool always names a book, so the source is the default one.
+            None,
             None,
             &self.state.db,
             sync,

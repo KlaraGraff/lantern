@@ -576,7 +576,10 @@ pub struct VocabReviewLogPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VocabPayload {
     pub id: String,
-    pub book_id: String,
+    // None for a word saved outside any book (词卷 — see migration 074).
+    // `default` lets every historical payload decode: they all carry a book.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub book_id: Option<String>,
     pub word: String,
     pub definition: String,
     pub context_sentence: Option<String>,
@@ -633,6 +636,14 @@ pub struct VocabPayload {
     // keeps the wire form compact for senders that never populate it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub card_snapshot: Option<String>,
+    // Where the word was saved from (migration 074): 'book' or 'quiz'.
+    // Historical payloads have no such field and all came from a book, which
+    // is exactly what the default says.
+    #[serde(default = "default_source")]
+    pub source: String,
+    // Display text for a non-book source, e.g. "8/14 今日词卷".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
 }
 
 fn default_mastery_source() -> String {
@@ -641,6 +652,10 @@ fn default_mastery_source() -> String {
 
 fn default_list_status() -> String {
     "confirmed".to_string()
+}
+
+fn default_source() -> String {
+    "book".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -856,7 +871,7 @@ mod tests {
     fn roundtrip_vocab_events() {
         roundtrip(&mk(EventBody::VocabAdd(VocabPayload {
             id: "v1".into(),
-            book_id: "b1".into(),
+            book_id: Some("b1".into()),
             word: "serendipity".into(),
             definition: "a fortunate accident".into(),
             context_sentence: Some("What serendipity!".into()),
@@ -876,6 +891,8 @@ mod tests {
             mastery_reason: None,
             list_status: "confirmed".into(),
             card_snapshot: None,
+            source: "book".into(),
+            source_label: None,
         })));
         roundtrip(&mk(EventBody::VocabListStatusSet {
             id: "v1".into(),

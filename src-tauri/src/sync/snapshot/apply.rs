@@ -403,9 +403,14 @@ impl Snapshot {
             insert_legacy_bookmark_as_note(tx, id, row)?;
         }
         for (id, row) in &self.state.vocab_words {
-            if merge::is_tombstoned(tx, merge::entity::VOCAB, id)?
-                || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
-            {
+            // The book check only applies to a word that has a book: a
+            // 词卷-sourced word (migration 074) cannot be resurrected by a
+            // deleted book because it never belonged to one.
+            let book_deleted = match row.book_id.as_deref() {
+                Some(book_id) => merge::is_tombstoned(tx, merge::entity::BOOK, book_id)?,
+                None => false,
+            };
+            if merge::is_tombstoned(tx, merge::entity::VOCAB, id)? || book_deleted {
                 continue;
             }
             upsert_vocab(tx, id, row)?;
@@ -820,9 +825,9 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
          (id, book_id, word, definition, context_sentence, context_explanation, cfi,
           mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
-          fsrs_stability, fsrs_difficulty, fsrs_version, list_status,
+          fsrs_stability, fsrs_difficulty, fsrs_version, list_status, source, source_label,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
          ON CONFLICT(id) DO UPDATE SET
            definition=excluded.definition,
            context_explanation=CASE
@@ -843,6 +848,8 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
            fsrs_difficulty=excluded.fsrs_difficulty,
            fsrs_version=excluded.fsrs_version,
            list_status=excluded.list_status,
+           source=excluded.source,
+           source_label=excluded.source_label,
            updated_at=excluded.updated_at,
            updated_by_device=excluded.updated_by_device
          WHERE (vocab_words.updated_at, vocab_words.updated_by_device)
@@ -867,6 +874,8 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
             r.fsrs_difficulty,
             r.fsrs_version,
             r.list_status,
+            r.source,
+            r.source_label,
             r.created_at,
             r.updated_at,
             r.updated_by_device,
@@ -1357,7 +1366,8 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 last_reviewed_at, last_review_rating,
                 fsrs_stability, fsrs_difficulty, fsrs_version,
                 created_at, updated_at, updated_by_device, context_explanation,
-                mastery_source, mastery_reason, list_status FROM vocab_words",
+                mastery_source, mastery_reason, list_status, source, source_label
+           FROM vocab_words",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -1384,6 +1394,8 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 mastery_source: r.get("mastery_source")?,
                 mastery_reason: r.get("mastery_reason")?,
                 list_status: r.get("list_status")?,
+                source: r.get("source")?,
+                source_label: r.get("source_label")?,
             },
         ))
     })?;

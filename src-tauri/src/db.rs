@@ -179,6 +179,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         include_str!("../migrations/072_quiz_progressive_delivery.sql"),
     ),
     (73, include_str!("../migrations/073_quiz_draft_answers.sql")),
+    (74, include_str!("../migrations/074_vocab_source.sql")),
 ];
 
 fn register_sqlite_vec() {
@@ -471,11 +472,15 @@ impl Db {
         Ok(())
     }
 
-    /// Apply one migration and its schema watermark atomically. Migration 009
-    /// rebuilds parent tables and needs foreign-key checks disabled before the
-    /// transaction begins; SQLite cannot toggle that pragma inside one.
+    /// Apply one migration and its schema watermark atomically. Migrations 009
+    /// and 074 rebuild parent tables and need foreign-key checks disabled
+    /// before the transaction begins; SQLite cannot toggle that pragma inside
+    /// one. For 074 this is not cosmetic: `vocab_words` is the FK parent of
+    /// `mastery_progress`, `mastery_events` and `vocab_review_log`, all with
+    /// ON DELETE CASCADE, so dropping it with enforcement on would delete
+    /// every mastery timeline and review-history row in the database.
     fn apply_migration(conn: &Connection, version: i64, sql: &str) -> AppResult<()> {
-        let restore_foreign_keys = version == 9
+        let restore_foreign_keys = matches!(version, 9 | 74)
             && conn.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))? != 0;
         if restore_foreign_keys {
             conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
@@ -1452,6 +1457,260 @@ mod tests {
             [],
         );
         assert!(err.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Migration 074 — the `vocab_words` rebuild that makes `book_id` nullable
+    // (词卷收藏 has no book) and adds `source` / `source_label`.
+    //
+    // A table rebuild is the one migration shape that can silently lose a
+    // column, a default, a CHECK, or an index, so the machine acceptance for
+    // it is these assertions against a database that ran the whole chain —
+    // not a reading of the SQL. See docs/impls/quiz-word-lookup.md §三.
+    // -----------------------------------------------------------------------
+
+    /// (name, type, notnull, dflt_value, pk) for every column, in ordinal
+    /// order — the effective schema migrations 002…067 accumulated, plus the
+    /// three changes 074 makes.
+    #[test]
+    fn test_migration_074_rebuilds_vocab_words_columns_verbatim() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        let columns: Vec<(String, String, i64, Option<String>, i64)> = conn
+            .prepare("PRAGMA table_info(vocab_words)")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        let expected: Vec<(&str, &str, i64, Option<&str>, i64)> = vec![
+            ("id", "TEXT", 0, None, 1),
+            // The point of the migration: nullable, and no longer NOT NULL.
+            ("book_id", "TEXT", 0, None, 0),
+            ("word", "TEXT", 1, None, 0),
+            ("definition", "TEXT", 1, None, 0),
+            ("context_sentence", "TEXT", 0, None, 0),
+            ("cfi", "TEXT", 0, None, 0),
+            ("mastery", "TEXT", 1, Some("'new'"), 0),
+            ("review_count", "INTEGER", 1, Some("0"), 0),
+            ("next_review_at", "INTEGER", 0, None, 0),
+            ("created_at", "INTEGER", 1, None, 0),
+            ("updated_at", "INTEGER", 1, None, 0),
+            ("updated_by_device", "TEXT", 1, Some("'migration'"), 0),
+            ("context_explanation", "TEXT", 0, None, 0),
+            ("review_interval_days", "INTEGER", 1, Some("0"), 0),
+            ("last_reviewed_at", "INTEGER", 0, None, 0),
+            ("last_review_rating", "TEXT", 0, None, 0),
+            ("fsrs_stability", "REAL", 0, None, 0),
+            ("fsrs_difficulty", "REAL", 0, None, 0),
+            ("fsrs_version", "INTEGER", 1, Some("1"), 0),
+            ("mastery_source", "TEXT", 1, Some("'manual'"), 0),
+            ("mastery_reason", "TEXT", 0, None, 0),
+            ("list_status", "TEXT", 1, Some("'confirmed'"), 0),
+            ("card_snapshot", "TEXT", 0, None, 0),
+            ("source", "TEXT", 1, Some("'book'"), 0),
+            ("source_label", "TEXT", 0, None, 0),
+        ];
+        let expected: Vec<(String, String, i64, Option<String>, i64)> = expected
+            .into_iter()
+            .map(|(name, ty, notnull, default, pk)| {
+                (
+                    name.to_string(),
+                    ty.to_string(),
+                    notnull,
+                    default.map(str::to_string),
+                    pk,
+                )
+            })
+            .collect();
+        assert_eq!(columns, expected);
+    }
+
+    #[test]
+    fn test_migration_074_keeps_every_index_and_the_list_status_check() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        let mut indexes: Vec<String> = conn
+            .prepare("PRAGMA index_list(vocab_words)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        indexes.sort();
+        assert_eq!(
+            indexes,
+            vec![
+                "idx_vocab_book_id",
+                "idx_vocab_due_review",
+                "idx_vocab_mastery",
+                "idx_vocab_words_list_status",
+                // The PRIMARY KEY's implicit index — proof the rebuilt table
+                // still declares `id` as the primary key.
+                "sqlite_autoindex_vocab_words_1",
+            ]
+        );
+
+        // Migration 044's CHECK has to survive the rebuild too, or the
+        // observation zone stops being a closed set of two values.
+        let now = 1_700_000_000_000_i64;
+        let err = conn.execute(
+            "INSERT INTO vocab_words (id, book_id, word, definition, list_status, created_at, updated_at)
+             VALUES ('v-bad', NULL, 'w', 'd', 'bogus', ?1, ?1)",
+            params![now],
+        );
+        assert!(err.is_err(), "list_status CHECK lost in the rebuild");
+    }
+
+    #[test]
+    fn test_migration_074_preserves_rows_and_cascade_children() {
+        let dir = TempDir::new().unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+        // Foreign keys ON for the whole test: this is the configuration in
+        // which dropping `vocab_words` would cascade its children away.
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        Db::run_migrations_up_to(&conn, 73).unwrap();
+
+        let now = 1_700_000_000_000_i64;
+        conn.execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'reading', 0, ?1, ?1)",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vocab_words
+             (id, book_id, word, definition, context_sentence, cfi, mastery, review_count,
+              next_review_at, created_at, updated_at, updated_by_device, list_status,
+              card_snapshot, mastery_source, mastery_reason)
+             VALUES ('v1', 'b1', 'Courage', 'the ability to act', 'a sentence', 'epubcfi(/6/2)',
+                     'familiar', 3, ?1, ?1, ?1, 'dev-A', 'confirmed', '{\"m\":1}', 'auto', '{\"r\":2}')",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO mastery_events (id, vocab_word_id, from_mastery, to_mastery, source, reason, detail, created_at)
+             VALUES ('me1', 'v1', 'new', 'familiar', 'auto', 'exposure_promotion', '{}', ?1)",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO mastery_progress (vocab_word_id, credit, lookups_in_window, updated_at)
+             VALUES ('v1', 1.5, 2, ?1)",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vocab_review_log (id, vocab_word_id, reviewed_at, rating, created_at, updated_by_device)
+             VALUES ('rl1', 'v1', ?1, 'good', ?1, 'dev-A')",
+            params![now],
+        )
+        .unwrap();
+
+        Db::run_migrations_up_to(&conn, 74).unwrap();
+
+        // The word came through byte for byte, and defaulted to the book
+        // source. Every column the copy step could have dropped or shifted is
+        // named here, including the ones later migrations bolted on.
+        #[derive(Debug, PartialEq)]
+        struct Row {
+            book_id: Option<String>,
+            word: String,
+            definition: String,
+            mastery: String,
+            mastery_source: String,
+            review_count: i64,
+            updated_by_device: String,
+            card_snapshot: Option<String>,
+            source: String,
+            source_label: Option<String>,
+        }
+        let row = conn
+            .query_row(
+                "SELECT book_id, word, definition, mastery, mastery_source, review_count,
+                        updated_by_device, card_snapshot, source, source_label
+                   FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| {
+                    Ok(Row {
+                        book_id: r.get(0)?,
+                        word: r.get(1)?,
+                        definition: r.get(2)?,
+                        mastery: r.get(3)?,
+                        mastery_source: r.get(4)?,
+                        review_count: r.get(5)?,
+                        updated_by_device: r.get(6)?,
+                        card_snapshot: r.get(7)?,
+                        source: r.get(8)?,
+                        source_label: r.get(9)?,
+                    })
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            Row {
+                book_id: Some("b1".to_string()),
+                word: "Courage".to_string(),
+                definition: "the ability to act".to_string(),
+                mastery: "familiar".to_string(),
+                mastery_source: "auto".to_string(),
+                review_count: 3,
+                updated_by_device: "dev-A".to_string(),
+                card_snapshot: Some("{\"m\":1}".to_string()),
+                source: "book".to_string(),
+                source_label: None,
+            }
+        );
+
+        // The FK children survived the DROP — this is what the pragma dance in
+        // `apply_migration` buys.
+        for table in ["mastery_events", "mastery_progress", "vocab_review_log"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 1, "{table} lost its row to the rebuild");
+        }
+        let violations: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(violations, 0);
+
+        // A quiz-sourced word: no book, and no book deletion can reach it.
+        conn.execute(
+            "INSERT INTO vocab_words
+             (id, book_id, word, definition, mastery, review_count, created_at, updated_at,
+              updated_by_device, list_status, source, source_label)
+             VALUES ('v2', NULL, 'Solitude', 'being alone', 'new', 0, ?1, ?1, 'dev-A',
+                     'confirmed', 'quiz', '8/14 今日词卷')",
+            params![now],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM books WHERE id = 'b1'", [])
+            .unwrap();
+        let survivors: Vec<String> = conn
+            .prepare("SELECT id FROM vocab_words ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            survivors,
+            vec!["v2"],
+            "the book's word must cascade away, the quiz word must not"
+        );
     }
 
     #[test]
