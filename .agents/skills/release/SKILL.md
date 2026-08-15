@@ -12,13 +12,13 @@ Create a new versioned release for Lantern.
 1. Ask the user for the version number (e.g. `0.3.0`) if not provided as an argument.
    - **Version-reuse guard:** the version must be brand new. If the tag `v{version}` already exists (`git tag -l`), or that version was ever published on GitHub Releases (even if since deleted), refuse it and propose the next patch version instead. Never reissue a published version number — identically named artifacts with different contents have caused full debugging rounds (see `AGENTS.md` → Release Conventions).
 
-2. Bump version in all three files. **IMPORTANT: Do NOT use `sed` for version bumps.** Instead:
+2. Bump version in all four files. **IMPORTANT: Do NOT use `sed` for version bumps.** Instead:
    - Confirm you're on `main` and the working tree is clean (`git status`). If not, stop and report.
    - Read each file first with the Read tool to confirm the current version string.
-   - Use the Edit tool to replace the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
-   - After editing, verify all three files show the correct new version.
+   - Use the Edit tool to replace the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and — both `CFBundleShortVersionString` and `CFBundleVersion` — `src-tauri/gen/apple/lantern_iOS/Info.plist`.
+   - After editing, verify all four files show the correct new version.
+   - **The iOS plist is the one that silently drifts.** It is a generated-but-tracked file that nothing in the desktop build reads, so a wrong value never fails CI; it sat three versions behind (2.15.5 against a 2.18.1 repo) until v2.18.1 caught it. `xcodegen generate` and `npm run tauri ios build` also rewrite that file wholesale and have eaten the hand-written `UTImportedTypeDeclarations` comment three times — if `git diff` on the plist shows that comment missing, restore it rather than committing the deletion (the comment explains why fb2/fbz/cbz must be declared by hand; without the block those formats go grey and unpickable in the iOS file picker, with no error).
    - Run `cargo check` in `src-tauri/` to update `Cargo.lock`.
-   - Check if `public/foliate-js` submodule has changes. If so, commit and push the submodule, then stage the updated reference.
    - Stage everything and commit with message `chore: bump version to v{version}`.
 
 3. Push the version bump commit directly to main: `git push`
