@@ -177,6 +177,24 @@ pub(crate) fn protocol_incompatible(status: reqwest::StatusCode, body: &[u8]) ->
     {
         return false;
     }
+    let parameter = error
+        .get("param")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let names_wire_field = |field: &str| {
+        parameter == field
+            || message.contains(&format!("'{field}'"))
+            || message.contains(&format!("\"{field}\""))
+    };
+    if ["input", "messages"].iter().any(|field| {
+        names_wire_field(field)
+            && ["required", "missing", "must provide"]
+                .iter()
+                .any(|needle| message.contains(needle))
+    }) {
+        return true;
+    }
     [
         "cannot post",
         "unknown endpoint",
@@ -553,6 +571,12 @@ mod tests {
             reqwest::StatusCode::UNPROCESSABLE_ENTITY,
             br#"{"error":{"message":"This model only supports the Responses API"}}"#,
         ));
+        for body in [
+            br#"{"error":{"code":"missing_required_parameter","param":"input","message":"Missing required parameter: 'input'."}}"#.as_slice(),
+            br#"{"error":{"code":"invalid_request_error","param":"messages","message":"messages is required"}}"#.as_slice(),
+        ] {
+            assert!(protocol_incompatible(reqwest::StatusCode::BAD_REQUEST, body));
+        }
         for (status, body) in [
             (
                 reqwest::StatusCode::UNAUTHORIZED,
