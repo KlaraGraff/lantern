@@ -17,6 +17,7 @@ import {
   classifySelection,
   contextForRange,
   normalizeInteractionText,
+  textRangeWithinRange,
   viewportRectForRange,
   type ReaderInteraction,
 } from "../../components/reader-interaction";
@@ -131,7 +132,13 @@ type MarkerKind = "lookup" | "vocab";
  * (see `useFoliateView`). How faint the mark is drawn is a separate question
  * from what it is.
  */
-export type FoliateMarker = { color: string; kind: MarkerKind; fade?: "full" | "faded" };
+export type FoliateMarker = {
+  color: string;
+  kind: MarkerKind;
+  fade?: "full" | "faded";
+  /** Stored location, when the visible marker was narrowed from a sentence CFI. */
+  sourceLocation?: string;
+};
 type AppliedAnnotation = { color: string; styleKind: AnnotationStyleKind };
 
 function drawMarkerRects(
@@ -475,7 +482,29 @@ export function useFoliateAnnotations({
         // draw nothing rather than falling into someone else's bucket.
         const mark = wordMarkerForMastery(word.mastery);
         if (!mark || !settings[mark.visibility]) continue;
-        next.set(word.cfi, { color: mark.color, kind: "vocab" });
+        try {
+          const resolved = view.resolveCFI(word.cfi);
+          const content = (view.renderer?.getContents?.() ?? [])
+            .find((entry: { index?: number }) => entry.index === resolved.index);
+          const doc = content?.doc as Document | undefined;
+          if (!doc) continue;
+          const sourceRange = resolved.anchor(doc);
+          const wordRange = textRangeWithinRange(
+            sourceRange,
+            word.word,
+            doc.documentElement.lang || undefined,
+          );
+          if (!wordRange) continue;
+          const visibleCfi = view.getCFI(resolved.index, wordRange);
+          next.set(visibleCfi, {
+            color: mark.color,
+            kind: "vocab",
+            sourceLocation: word.cfi,
+          });
+        } catch {
+          // A stale location draws nothing; it must never fall back to marking
+          // the whole sentence that used to carry the word.
+        }
       }
     }
     autoMarkersRef.current = next;
@@ -610,10 +639,14 @@ export function useFoliateAnnotations({
       if (!doc || typeof index !== "number") continue;
       cleanupPassiveVocabAnnotations(doc);
       if (!passiveVocab.enabled || !supportsWordMarkers || !supportsReflowSettings) continue;
-      const resolveRange = (cfi: string) => {
+      const resolveRange = (cfi: string, word?: string) => {
         try {
           const resolved = view.resolveCFI(cfi);
-          return resolved.index === index ? resolved.anchor(doc) : null;
+          if (resolved.index !== index) return null;
+          const sourceRange = resolved.anchor(doc);
+          return word
+            ? textRangeWithinRange(sourceRange, word, doc.documentElement.lang || undefined)
+            : sourceRange;
         } catch {
           return null;
         }
@@ -625,7 +658,7 @@ export function useFoliateAnnotations({
       // word; the chapter-end pass further down already pays the same price.
       const placed = vocab.flatMap((word) => {
         if (!word.cfi) return [];
-        const range = resolveRange(word.cfi);
+        const range = resolveRange(word.cfi, word.word);
         if (!range) return [];
         let screen = 0;
         if (screenSize > 0) {
@@ -645,7 +678,7 @@ export function useFoliateAnnotations({
         const stage = stages.get(word.cfi);
         if (!stage) return [];
         const label = passiveVocabLabel(word.definition);
-        return label ? [{ cfi: word.cfi, label, stage }] : [];
+        return label ? [{ cfi: word.cfi, word: word.word, label, stage }] : [];
       });
       installPassiveVocabAnnotations({
         doc,

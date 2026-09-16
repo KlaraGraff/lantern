@@ -53,6 +53,8 @@ export interface PassiveVocabCandidate {
 export interface PassiveVocabDomAnnotation {
   cfi: string;
   label: string;
+  /** The saved word used to narrow a legacy sentence/passage CFI. */
+  word?: string;
   /** Defaults to `definition` so a caller that has no mastery data still works. */
   stage?: PassiveVocabVisibleStage;
 }
@@ -61,7 +63,7 @@ export interface PassiveVocabDomInstallOptions {
   doc: Document;
   annotations: Iterable<PassiveVocabDomAnnotation>;
   /** Resolves a stable EPUB CFI in this already-loaded Foliate document. */
-  resolveRange: (cfi: string) => Range | null | undefined;
+  resolveRange: (cfi: string, word?: string) => Range | null | undefined;
   style: PassiveVocabStyle;
   /** A margin rail needs room; compact windows deliberately use ruby instead. */
   narrowViewport?: boolean;
@@ -807,7 +809,7 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
   let markers = 0;
   const rubies: HTMLElement[] = [];
   for (const annotation of annotations) {
-    const range = resolveRange(annotation.cfi);
+    const range = resolveRange(annotation.cfi, annotation.word);
     if (!range || range.collapsed || !annotation.label) continue;
     try {
       if (annotation.stage === "marker") {

@@ -964,7 +964,7 @@ export function useFoliateView({
         const marker = autoMarkersRef.current.get(value);
         if (marker?.kind === "vocab") {
           if (!annotationClickShouldNavigate(ownerDocument?.getSelection() ?? null)) return;
-          setActiveVocabCfi(value);
+          setActiveVocabCfi(marker.sourceLocation ?? value);
           setTracesTab("vocab");
           setSidePanel("traces");
           return;

@@ -211,6 +211,61 @@ function domPointToFlatOffset(run: FlatTextRun, node: Node, offset: number): num
   return run.entries.length > 0 ? run.text.length : null;
 }
 
+/** Finds a saved vocabulary item inside its stored source text without letting
+ * a short Latin word match the middle of a longer one. */
+function textMatchOffsets(source: string, text: string, locale?: string): number[] {
+  const target = text.trim();
+  if (!target || target.length > source.length) return [];
+  const collator = new Intl.Collator(locale, { usage: "search", sensitivity: "accent" });
+  const latinOrNumber = /[\p{Script=Latin}\p{N}_]/u;
+  const matches: number[] = [];
+  for (let index = 0; index <= source.length - target.length; index += 1) {
+    const candidate = source.slice(index, index + target.length);
+    if (collator.compare(candidate, target) !== 0) continue;
+    const before = source[index - 1] ?? "";
+    const after = source[index + target.length] ?? "";
+    if (latinOrNumber.test(target[0] ?? "") && latinOrNumber.test(before)) continue;
+    if (latinOrNumber.test(target[target.length - 1] ?? "") && latinOrNumber.test(after)) continue;
+    matches.push(index);
+  }
+  return matches;
+}
+
+export function textMatchOffset(source: string, text: string, locale?: string): number | null {
+  return textMatchOffsets(source, text, locale)[0] ?? null;
+}
+
+/** Narrows a stored sentence/passage range to the vocabulary item it belongs
+ * to. Returning null is deliberate: a missing match must never decorate the
+ * whole sentence as a fallback. */
+export function textRangeWithinRange(range: Range, text: string, locale?: string): Range | null {
+  for (const root of textRunRootsInRange(range)) {
+    const run = flattenTextRun(root);
+    const start = root.contains(range.startContainer) || root === range.startContainer
+      ? domPointToFlatOffset(run, range.startContainer, range.startOffset) ?? 0
+      : 0;
+    const end = root.contains(range.endContainer) || root === range.endContainer
+      ? domPointToFlatOffset(run, range.endContainer, range.endOffset) ?? run.text.length
+      : run.text.length;
+    // Some older rows carry a point CFI rather than a selected range. Search
+    // its containing text run and choose the matching occurrence nearest that
+    // point; a sentence/passage CFI stays clipped to its own boundaries.
+    const from = range.collapsed ? 0 : start;
+    const to = range.collapsed ? run.text.length : end;
+    const slice = run.text.slice(from, to);
+    const offsets = textMatchOffsets(slice, text, locale);
+    if (offsets.length === 0) continue;
+    const offset = range.collapsed
+      ? offsets.reduce((nearest, candidate) => (
+        Math.abs(candidate + from - start) < Math.abs(nearest + from - start) ? candidate : nearest
+      ))
+      : offsets[0];
+    const matched = slice.slice(offset, offset + text.trim().length);
+    return rangeForFlatSegment(run, { segment: matched, index: from + offset });
+  }
+  return null;
+}
+
 function domPointAtFlatOffset(
   run: FlatTextRun,
   offset: number,

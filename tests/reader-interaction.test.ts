@@ -8,10 +8,18 @@ import {
   readerMenuActivationIndex,
   readerMenuFocusIndex,
   segmentInteractionWords,
+  textMatchOffset,
   sentenceSpansInSlice,
   withInheritedContext,
   type ReaderInteraction,
 } from "../src/components/reader-interaction.ts";
+
+test("saved vocabulary matches only the word inside a sentence", () => {
+  assert.equal(textMatchOffset("It was a privilege I enjoyed daily, without the need of an appointment.", "need"), 48);
+  assert.equal(textMatchOffset("The need was clear.", "NEED"), 4);
+  assert.equal(textMatchOffset("needlework", "need"), null);
+  assert.equal(textMatchOffset("我确实需要帮助", "需要"), 3);
+});
 
 test("selecting text over a vocabulary annotation does not navigate the side panel", () => {
   assert.equal(annotationClickShouldNavigate({ isCollapsed: false, toString: () => "need" } as Selection), false);
