@@ -342,6 +342,7 @@ pub fn ai_create_profile(
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: Option<String>,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -350,12 +351,13 @@ pub fn ai_create_profile(
     enabled: Option<bool>,
     db: State<'_, Db>,
 ) -> AppResult<AiProfileView> {
-    router::create_profile(
+    router::create_profile_with_api_mode(
         &db,
         label,
         provider,
         auth_mode,
         base_url,
+        api_mode.unwrap_or_else(|| "auto".to_string()),
         model,
         temperature,
         reasoning_effort,
@@ -382,6 +384,7 @@ pub fn ai_save_profile(
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: Option<String>,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -389,13 +392,14 @@ pub fn ai_save_profile(
     keep_alive: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<AiProfileView> {
-    router::save_profile(
+    router::save_profile_with_api_mode(
         &db,
         id,
         label,
         provider,
         auth_mode,
         base_url,
+        api_mode.unwrap_or_else(|| "chat_completions".to_string()),
         model,
         temperature,
         reasoning_effort,
@@ -412,6 +416,7 @@ pub fn ai_update_profile(
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: Option<String>,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -419,13 +424,14 @@ pub fn ai_update_profile(
     keep_alive: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<AiProfileView> {
-    router::save_profile(
+    router::save_profile_with_api_mode(
         &db,
         id,
         label,
         provider,
         auth_mode,
         base_url,
+        api_mode.unwrap_or_else(|| "chat_completions".to_string()),
         model,
         temperature,
         reasoning_effort,
@@ -472,6 +478,7 @@ pub async fn ai_test_profile(
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: Option<String>,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -488,6 +495,7 @@ pub async fn ai_test_profile(
         provider,
         auth_mode,
         base_url,
+        api_mode.unwrap_or_else(|| "chat_completions".to_string()),
         model,
         temperature,
         reasoning_effort,

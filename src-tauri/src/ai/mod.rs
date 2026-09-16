@@ -28,6 +28,7 @@ pub(crate) fn http_client() -> &'static reqwest::Client {
 
 pub(crate) const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
+pub(crate) const TOTAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_PROVIDER_ERROR_BYTES: usize = 64 * 1024;
 
 /// The image formats every wired provider family accepts as base64 input.
@@ -122,11 +123,81 @@ pub(crate) fn merge_image_messages<'a>(
 /// goes through here so the rule cannot drift between them.
 pub(crate) fn compat_endpoint(base_url: &str, path: &str) -> String {
     let base = base_url.trim().trim_end_matches('/');
+    for suffix in ["/chat/completions", "/responses"] {
+        if let Some(prefix) = base.strip_suffix(suffix) {
+            return format!("{prefix}/{path}");
+        }
+    }
     if ends_with_version_segment(base) {
         format!("{base}/{path}")
     } else {
         format!("{base}/v1/{path}")
     }
+}
+
+/// Whether a failed OpenAI-shaped request explicitly says the selected wire
+/// endpoint or protocol is unsupported. This deliberately excludes timeouts,
+/// auth, quota, rate limits, server failures and unknown models: none of those
+/// become safer by replaying the same user request through another protocol.
+pub(crate) fn protocol_incompatible(status: reqwest::StatusCode, body: &[u8]) -> bool {
+    if !matches!(status.as_u16(), 400 | 404 | 405 | 410 | 422) {
+        return false;
+    }
+    let value = serde_json::from_slice::<serde_json::Value>(body).ok();
+    let error = value
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .unwrap_or_else(|| value.as_ref().unwrap_or(&serde_json::Value::Null));
+    let code = error
+        .get("code")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if matches!(
+        code.as_str(),
+        "model_not_found" | "invalid_model" | "unknown_model"
+    ) {
+        return false;
+    }
+    if matches!(
+        code.as_str(),
+        "unsupported_protocol" | "unsupported_endpoint" | "route_not_found" | "endpoint_not_found"
+    ) {
+        return true;
+    }
+    let message = error
+        .get("message")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if message.contains("model")
+        && ["not found", "does not exist", "unknown model"]
+            .iter()
+            .any(|needle| message.contains(needle))
+    {
+        return false;
+    }
+    [
+        "cannot post",
+        "unknown endpoint",
+        "unknown route",
+        "no route",
+        "route not found",
+        "endpoint not found",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+        || ([
+            "chat/completions",
+            "responses api",
+            "wire_api",
+            "/responses",
+        ]
+        .iter()
+        .any(|needle| message.contains(needle))
+            && ["not supported", "unsupported", "use ", "only supports"]
+                .iter()
+                .any(|needle| message.contains(needle)))
 }
 
 fn ends_with_version_segment(base: &str) -> bool {
@@ -266,7 +337,9 @@ fn sanitized_error_field(value: Option<&serde_json::Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{compat_endpoint, merge_image_messages, parse_image_data_uri};
+    use super::{
+        compat_endpoint, merge_image_messages, parse_image_data_uri, protocol_incompatible,
+    };
     use crate::commands::ai::ChatMessage;
 
     fn message(role: &str, content: &str) -> ChatMessage {
@@ -441,5 +514,65 @@ mod tests {
             compat_endpoint("https://host.example/v1beta", "models"),
             "https://host.example/v1beta/v1/models"
         );
+    }
+
+    #[test]
+    fn endpoint_suffixes_must_be_complete_path_segments() {
+        assert_eq!(
+            compat_endpoint("https://host.example/myresponses", "responses"),
+            "https://host.example/myresponses/v1/responses"
+        );
+    }
+
+    #[test]
+    fn explicit_endpoint_suffixes_are_replaced_without_duplication() {
+        assert_eq!(
+            compat_endpoint(
+                "https://gateway.example/v1/chat/completions",
+                "chat/completions"
+            ),
+            "https://gateway.example/v1/chat/completions"
+        );
+        assert_eq!(
+            compat_endpoint("https://gateway.example/v1/chat/completions", "responses"),
+            "https://gateway.example/v1/responses"
+        );
+        assert_eq!(
+            compat_endpoint("https://gateway.example/responses", "chat/completions"),
+            "https://gateway.example/chat/completions"
+        );
+    }
+
+    #[test]
+    fn only_explicit_route_rejections_are_protocol_incompatible() {
+        assert!(protocol_incompatible(
+            reqwest::StatusCode::NOT_FOUND,
+            br#"{"error":{"code":"unsupported_endpoint"}}"#,
+        ));
+        assert!(protocol_incompatible(
+            reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+            br#"{"error":{"message":"This model only supports the Responses API"}}"#,
+        ));
+        for (status, body) in [
+            (
+                reqwest::StatusCode::UNAUTHORIZED,
+                br#"{"error":{"code":"invalid_api_key"}}"#.as_slice(),
+            ),
+            (
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":{"code":"rate_limit_exceeded"}}"#.as_slice(),
+            ),
+            (
+                reqwest::StatusCode::NOT_FOUND,
+                br#"{"error":{"code":"model_not_found","message":"model does not exist"}}"#
+                    .as_slice(),
+            ),
+            (
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                br#"{"error":{"code":"server_error"}}"#.as_slice(),
+            ),
+        ] {
+            assert!(!protocol_incompatible(status, body));
+        }
     }
 }

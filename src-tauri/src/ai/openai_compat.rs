@@ -144,6 +144,12 @@ pub async fn stream_chat<R: Runtime>(
             ask_for_usage = false;
             continue;
         }
+        if crate::ai::protocol_incompatible(status, &error_body) {
+            return Err(AppError::Ai(format!(
+                "AI_PROTOCOL_INCOMPATIBLE provider=OpenAI-compatible status={}",
+                status.as_u16()
+            )));
+        }
         return Err(crate::ai::http_status_error_from_body(
             "OpenAI-compatible",
             status,
@@ -152,8 +158,25 @@ pub async fn stream_chat<R: Runtime>(
         ));
     };
 
+    let is_event_stream = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"));
+    if !is_event_stream {
+        let bytes = tokio::time::timeout(crate::ai::STREAM_IDLE_TIMEOUT, response.bytes())
+            .await
+            .map_err(|_| AppError::Ai("AI_STREAM_IDLE_TIMEOUT".to_string()))?
+            .map_err(|error| AppError::Ai(error.to_string()))?;
+        let payload: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+            AppError::Ai("AI_STREAM_PROTOCOL_ERROR: invalid JSON response".to_string())
+        })?;
+        return emit_chat_response(app, event_name, &payload, &emitted, &usage);
+    }
+
     let mut stream = response.bytes_stream();
     let mut decoder = crate::ai::sse::SseDecoder::new();
+    let mut state = ChatStreamState::default();
 
     while let Some(chunk) = tokio::time::timeout(crate::ai::STREAM_IDLE_TIMEOUT, stream.next())
         .await
@@ -161,19 +184,109 @@ pub async fn stream_chat<R: Runtime>(
     {
         let chunk = chunk.map_err(|e| AppError::Ai(e.to_string()))?;
         for data in decoder.push(&chunk)? {
-            if process_data(app, event_name, &data, &emitted, &usage)? {
+            if process_data(app, event_name, &data, &emitted, &usage, &mut state)? {
                 return Ok(());
             }
         }
     }
 
     for data in decoder.finish()? {
-        if process_data(app, event_name, &data, &emitted, &usage)? {
+        if process_data(app, event_name, &data, &emitted, &usage, &mut state)? {
             return Ok(());
         }
     }
 
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
+}
+
+#[derive(Default)]
+struct ChatStreamState {
+    saw_text: bool,
+    saw_tool_call: bool,
+    finish_reason: Option<String>,
+}
+
+fn chat_content(value: &serde_json::Value) -> String {
+    if let Some(text) = value.as_str() {
+        return text.to_string();
+    }
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|part| {
+            matches!(part["type"].as_str(), Some("text") | Some("output_text"))
+                .then(|| part["text"].as_str())
+                .flatten()
+        })
+        .collect()
+}
+
+fn validate_chat_completion(state: &ChatStreamState) -> AppResult<()> {
+    if matches!(
+        state.finish_reason.as_deref(),
+        Some("length") | Some("content_filter")
+    ) {
+        return Err(AppError::Ai("AI_RESPONSE_INCOMPLETE".to_string()));
+    }
+    if state.saw_text {
+        return Ok(());
+    }
+    Err(AppError::Ai(if state.saw_tool_call {
+        "AI_TOOL_CALL_UNSUPPORTED".to_string()
+    } else {
+        "AI_EMPTY_RESPONSE".to_string()
+    }))
+}
+
+fn emit_chat_response<R: Runtime>(
+    app: &AppHandle<R>,
+    event_name: &str,
+    payload: &serde_json::Value,
+    emitted: &AtomicBool,
+    usage: &Mutex<Option<serde_json::Value>>,
+) -> AppResult<()> {
+    if !payload["error"].is_null() {
+        return Err(crate::ai::stream_event_error(
+            "OpenAI-compatible",
+            &payload["error"],
+        ));
+    }
+    if let Some(value) = payload.get("usage").filter(|value| !value.is_null()) {
+        crate::ai::usage::merge_into(usage, value.clone());
+    }
+    let choice = &payload["choices"][0];
+    let text = chat_content(&choice["message"]["content"]);
+    let state = ChatStreamState {
+        saw_text: !text.trim().is_empty(),
+        saw_tool_call: choice["message"]["tool_calls"]
+            .as_array()
+            .is_some_and(|calls| !calls.is_empty()),
+        finish_reason: choice["finish_reason"].as_str().map(str::to_string),
+    };
+    validate_chat_completion(&state)?;
+    emitted.store(true, Ordering::Relaxed);
+    let _ = app.emit(
+        event_name,
+        AiStreamChunk {
+            delta: text,
+            reasoning_delta: None,
+            sources: None,
+            done: false,
+            error: None,
+        },
+    );
+    let _ = app.emit(
+        event_name,
+        AiStreamChunk {
+            delta: String::new(),
+            reasoning_delta: None,
+            sources: None,
+            done: true,
+            error: None,
+        },
+    );
+    Ok(())
 }
 
 /// The parts of one SSE delta the reader can actually see, as
@@ -202,8 +315,10 @@ fn process_data<R: Runtime>(
     data: &str,
     emitted: &AtomicBool,
     usage: &Mutex<Option<serde_json::Value>>,
+    state: &mut ChatStreamState,
 ) -> AppResult<bool> {
     if data == "[DONE]" {
+        validate_chat_completion(state)?;
         let _ = app.emit(
             event_name,
             AiStreamChunk {
@@ -235,6 +350,15 @@ fn process_data<R: Runtime>(
         crate::ai::usage::merge_into(usage, value.clone());
     }
     let (reasoning, content) = visible_output(&parsed["choices"][0]["delta"]);
+    if parsed["choices"][0]["delta"]["tool_calls"]
+        .as_array()
+        .is_some_and(|calls| !calls.is_empty())
+    {
+        state.saw_tool_call = true;
+    }
+    if let Some(reason) = parsed["choices"][0]["finish_reason"].as_str() {
+        state.finish_reason = Some(reason.to_string());
+    }
     if let Some(reasoning) = reasoning {
         emitted.store(true, Ordering::Relaxed);
         let _ = app.emit(
@@ -249,6 +373,9 @@ fn process_data<R: Runtime>(
         );
     }
     if let Some(delta) = content {
+        if !delta.trim().is_empty() {
+            state.saw_text = true;
+        }
         emitted.store(true, Ordering::Relaxed);
         let _ = app.emit(
             event_name,
@@ -335,6 +462,36 @@ mod tests {
             parts[1],
             serde_json::json!({ "type": "text", "text": "extract the words" })
         );
+    }
+
+    #[test]
+    fn completion_validation_distinguishes_empty_tool_only_and_truncated() {
+        let empty = ChatStreamState {
+            finish_reason: Some("stop".into()),
+            ..Default::default()
+        };
+        assert!(validate_chat_completion(&empty)
+            .unwrap_err()
+            .to_string()
+            .contains("AI_EMPTY_RESPONSE"));
+        let tool = ChatStreamState {
+            saw_tool_call: true,
+            finish_reason: Some("tool_calls".into()),
+            ..Default::default()
+        };
+        assert!(validate_chat_completion(&tool)
+            .unwrap_err()
+            .to_string()
+            .contains("AI_TOOL_CALL_UNSUPPORTED"));
+        let truncated = ChatStreamState {
+            saw_text: true,
+            finish_reason: Some("length".into()),
+            ..Default::default()
+        };
+        assert!(validate_chat_completion(&truncated)
+            .unwrap_err()
+            .to_string()
+            .contains("AI_RESPONSE_INCOMPLETE"));
     }
 
     #[test]

@@ -12,6 +12,7 @@ export const CONNECTION_ERROR_KEYS: Record<string, string> = {
   permission: "permission",
   rate_limit: "rateLimit",
   quota: "quota",
+  timeout: "timeout",
   network: "network",
   provider_5xx: "provider5xx",
   protocol: "protocol",

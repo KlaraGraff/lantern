@@ -180,6 +180,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
     (73, include_str!("../migrations/073_quiz_draft_answers.sql")),
     (74, include_str!("../migrations/074_vocab_source.sql")),
+    (75, include_str!("../migrations/075_ai_api_mode.sql")),
 ];
 
 fn register_sqlite_vec() {
@@ -1779,5 +1780,30 @@ mod tests {
             (now, "dev-A".into()),
             "a representation fix must not bump the LWW clock against peers"
         );
+    }
+
+    #[test]
+    fn migration_075_preserves_existing_profiles_on_chat_completions() {
+        let dir = TempDir::new().unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+        Db::run_migrations_up_to(&conn, 74).unwrap();
+        conn.execute(
+            "INSERT INTO ai_profiles
+             (id, label, provider, auth_mode, base_url, model, temperature, enabled, priority, created_at, updated_at)
+             VALUES ('existing', 'Existing', 'custom', 'api_key', 'https://gateway.example/v1', 'model', 0.3, 1, 0, 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        Db::run_migrations_up_to(&conn, 75).unwrap();
+
+        let mode: String = conn
+            .query_row(
+                "SELECT api_mode FROM ai_profiles WHERE id = 'existing'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(mode, "chat_completions");
     }
 }

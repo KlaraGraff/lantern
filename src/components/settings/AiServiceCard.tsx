@@ -43,6 +43,7 @@ export interface AiProfile {
   provider: string;
   auth_mode: "api_key" | "oauth";
   base_url: string | null;
+  api_mode: "auto" | "chat_completions" | "responses";
   model: string;
   temperature: number;
   /** `null` means "send no reasoning parameter", unlike the literal `none`. */
@@ -771,6 +772,22 @@ export default function AiServiceCard({
                   />
                   <span className="mt-1 block text-[10px] leading-4 text-text-muted">{t("settings.ai.baseUrlHint")}</span>
                 </label>
+              )}
+
+              {profile.provider !== "anthropic" && !(profile.auth_mode === "oauth" && profile.provider === "openai") && (
+                <div className={`border-t border-border-light py-3 ${profileBusy ? "pointer-events-none opacity-60" : ""}`}>
+                  <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.apiMode")}</span>
+                  <Select
+                    value={profile.api_mode}
+                    onChange={(api_mode) => onChange({ api_mode: api_mode as AiProfile["api_mode"] })}
+                    options={[
+                      { value: "auto", label: t("settings.ai.apiModeAuto") },
+                      { value: "chat_completions", label: t("settings.ai.apiModeChat") },
+                      { value: "responses", label: t("settings.ai.apiModeResponses") },
+                    ]}
+                  />
+                  <span className="mt-1 block text-[10px] leading-4 text-text-muted">{t("settings.ai.apiModeHint")}</span>
+                </div>
               )}
 
               <div className="border-t border-border-light py-3">

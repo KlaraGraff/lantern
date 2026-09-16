@@ -53,6 +53,7 @@ const PROFILE_CONFIG_KEYS = [
   "provider",
   "auth_mode",
   "base_url",
+  "api_mode",
   "model",
   "temperature",
   "reasoning_effort",
@@ -321,7 +322,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const updateProfile = useCallback((id: string, patch: Partial<AiProfile>) => {
     const nextProfiles = updateOne(profilesRef.current, id, patch);
     replaceProfiles(nextProfiles);
-    if (["provider", "auth_mode", "base_url", "model", "temperature", "reasoning_effort", "keep_alive"].some((key) => key in patch)) {
+    if (["provider", "auth_mode", "base_url", "api_mode", "model", "temperature", "reasoning_effort", "keep_alive"].some((key) => key in patch)) {
       setStaleHealthIds((current) => new Set(current).add(id));
       setTestResults((current) => {
         const next = { ...current };
@@ -355,6 +356,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       provider: profile.provider,
       authMode: profile.auth_mode,
       baseUrl: profile.base_url?.trim() || null,
+      apiMode: profile.api_mode,
       model: profile.model,
       temperature: profile.temperature,
       reasoningEffort: profile.reasoning_effort?.trim() || null,
@@ -539,6 +541,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         provider: preset.provider,
         authMode: "api_key",
         baseUrl: preset.baseUrl,
+        apiMode: "auto",
         model: preset.model,
         temperature: 0.3,
         reasoningEffort: null,
@@ -575,6 +578,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         provider: profile.provider,
         authMode: profile.auth_mode,
         baseUrl: profile.base_url?.trim() || null,
+        apiMode: profile.api_mode,
         model: profile.model,
         temperature: profile.temperature,
         reasoningEffort: profile.reasoning_effort?.trim() || null,
@@ -714,6 +718,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         provider: testedProfile.provider,
         authMode: testedProfile.auth_mode,
         baseUrl: testedProfile.base_url?.trim() || null,
+        apiMode: testedProfile.api_mode,
         model: testedProfile.model,
         temperature: testedProfile.temperature,
         reasoningEffort: testedProfile.reasoning_effort?.trim() || null,

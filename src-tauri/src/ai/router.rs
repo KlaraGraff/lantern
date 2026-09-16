@@ -16,7 +16,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, Emitter, Listener, Runtime};
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex as AsyncMutex};
 
 use crate::commands::ai::ChatMessage;
 use crate::db::Db;
@@ -30,6 +30,7 @@ pub struct AiProfileView {
     pub provider: String,
     pub auth_mode: String,
     pub base_url: Option<String>,
+    pub api_mode: String,
     pub model: String,
     pub temperature: f64,
     /// `None` means "send no reasoning parameter", which is not the same as the
@@ -116,11 +117,39 @@ struct AiCredential {
     secret_ref: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WireProtocol {
+    ChatCompletions,
+    Responses,
+}
+
+fn protocol_cache() -> &'static Mutex<HashMap<String, WireProtocol>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, WireProtocol>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn protocol_locks() -> &'static Mutex<HashMap<String, Arc<AsyncMutex<()>>>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>> = OnceLock::new();
+    LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn protocol_cache_key(profile: &AiProfile, base_url: &str) -> String {
+    format!(
+        "{}|{}|{}|{}",
+        profile.view.id, base_url, profile.view.model, profile.view.api_mode
+    )
+}
+
+fn is_protocol_incompatible(error: &AppError) -> bool {
+    error.to_string().contains("AI_PROTOCOL_INCOMPATIBLE")
+}
+
 type NormalizedProfileConfig = (
     String,
     String,
     String,
     Option<String>,
+    String,
     String,
     f64,
     Option<String>,
@@ -134,6 +163,7 @@ enum AiErrorKind {
     Permission,
     RateLimit,
     Quota,
+    Timeout,
     Network,
     Provider5xx,
     Protocol,
@@ -150,6 +180,7 @@ impl AiErrorKind {
             Self::Permission => "permission",
             Self::RateLimit => "rate_limit",
             Self::Quota => "quota",
+            Self::Timeout => "timeout",
             Self::Network => "network",
             Self::Provider5xx => "provider_5xx",
             Self::Protocol => "protocol",
@@ -168,7 +199,6 @@ impl AiErrorKind {
                 | Self::Quota
                 | Self::Network
                 | Self::Provider5xx
-                | Self::Protocol
         )
     }
 }
@@ -267,7 +297,17 @@ fn classify_error(error: &AppError) -> AiErrorKind {
         AiErrorKind::Quota
     } else if status.is_some_and(|status| (500..600).contains(&status)) {
         AiErrorKind::Provider5xx
-    } else if message.contains("ai_stream_incomplete") || message.contains("protocol") {
+    } else if message.contains("ai_first_byte_timeout")
+        || message.contains("ai_stream_idle_timeout")
+        || message.contains("ai_total_timeout")
+    {
+        AiErrorKind::Timeout
+    } else if message.contains("ai_stream_incomplete")
+        || message.contains("ai_response_incomplete")
+        || message.contains("ai_empty_response")
+        || message.contains("ai_tool_call_unsupported")
+        || message.contains("protocol")
+    {
         AiErrorKind::Protocol
     } else if status.is_some_and(|status| (400..500).contains(&status))
         || message.contains("ai_model_list_invalid")
@@ -475,7 +515,7 @@ pub fn ensure_default_ai_profile(db: &Db) -> AppResult<()> {
 }
 
 const PROFILE_COLUMNS: &str =
-    "id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, state, cooldown_until, last_error_kind, last_used_at, last_latency_ms, reasoning_effort, reasoning_effort_all_features";
+    "id, label, provider, auth_mode, base_url, api_mode, model, temperature, keep_alive, enabled, priority, state, cooldown_until, last_error_kind, last_used_at, last_latency_ms, reasoning_effort, reasoning_effort_all_features";
 
 fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
     Ok(AiProfile {
@@ -485,6 +525,7 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
             provider: row.get("provider")?,
             auth_mode: row.get("auth_mode")?,
             base_url: row.get("base_url")?,
+            api_mode: row.get("api_mode")?,
             model: row.get("model")?,
             temperature: row.get("temperature")?,
             keep_alive: row.get("keep_alive")?,
@@ -1276,9 +1317,12 @@ fn profile_health_state(
             "cooldown",
             Some(timestamp + retry_after.unwrap_or(60 * 1000)),
         ),
-        Some(AiErrorKind::Network | AiErrorKind::Provider5xx | AiErrorKind::Protocol) => {
-            ("cooldown", Some(timestamp + 30 * 1000))
-        }
+        Some(
+            AiErrorKind::Timeout
+            | AiErrorKind::Network
+            | AiErrorKind::Provider5xx
+            | AiErrorKind::Protocol,
+        ) => ("cooldown", Some(timestamp + 30 * 1000)),
         Some(AiErrorKind::Request) => ("active", None),
         Some(AiErrorKind::NotConfigured) => ("unavailable", None),
         Some(AiErrorKind::Cancelled) => return None,
@@ -1305,6 +1349,177 @@ async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
     if cancel.changed().await.is_err() {
         std::future::pending::<()>().await;
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn stream_wire<R: Runtime>(
+    protocol: WireProtocol,
+    app: &AppHandle<R>,
+    profile: &AiProfile,
+    base_url: &str,
+    api_key: &str,
+    messages: &[ChatMessage],
+    event_name: &str,
+    max_tokens: Option<u32>,
+    effort: Option<&str>,
+    emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
+) -> AppResult<()> {
+    match protocol {
+        WireProtocol::Responses => {
+            crate::ai::openai_responses::stream_chat(
+                app,
+                base_url,
+                api_key,
+                &profile.view.model,
+                messages,
+                None,
+                event_name,
+                effort,
+                Some(profile.view.temperature),
+                max_tokens,
+                emitted,
+                usage,
+            )
+            .await
+        }
+        WireProtocol::ChatCompletions => {
+            crate::ai::openai_compat::stream_chat(
+                app,
+                base_url,
+                api_key,
+                &profile.view.model,
+                profile.view.temperature,
+                messages,
+                (profile.view.provider == "ollama")
+                    .then_some(profile.view.keep_alive.as_deref())
+                    .flatten(),
+                event_name,
+                max_tokens,
+                effort,
+                emitted,
+                usage,
+            )
+            .await
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn stream_openai_shaped<R: Runtime>(
+    app: &AppHandle<R>,
+    profile: &AiProfile,
+    base_url: &str,
+    api_key: &str,
+    messages: &[ChatMessage],
+    event_name: &str,
+    max_tokens: Option<u32>,
+    effort: Option<&str>,
+    emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
+) -> AppResult<()> {
+    let explicit = match profile.view.api_mode.as_str() {
+        "responses" => Some(WireProtocol::Responses),
+        "chat_completions" => Some(WireProtocol::ChatCompletions),
+        _ => None,
+    };
+    if let Some(protocol) = explicit {
+        return stream_wire(
+            protocol, app, profile, base_url, api_key, messages, event_name, max_tokens, effort,
+            emitted, usage,
+        )
+        .await;
+    }
+
+    let key = protocol_cache_key(profile, base_url);
+    let cached = protocol_cache()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&key).copied());
+    let mut rejected_protocol = None;
+    if let Some(protocol) = cached {
+        let result = stream_wire(
+            protocol,
+            app,
+            profile,
+            base_url,
+            api_key,
+            messages,
+            event_name,
+            max_tokens,
+            effort,
+            Arc::clone(&emitted),
+            Arc::clone(&usage),
+        )
+        .await;
+        if !matches!(&result, Err(error) if is_protocol_incompatible(error))
+            || emitted.load(Ordering::Relaxed)
+        {
+            return result;
+        }
+        if let Ok(mut cache) = protocol_cache().lock() {
+            if cache.get(&key) == Some(&protocol) {
+                cache.remove(&key);
+            }
+        }
+        rejected_protocol = Some(protocol);
+    }
+
+    let lock = protocol_locks()
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?
+        .entry(key.clone())
+        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+        .clone();
+    let _guard = lock.lock().await;
+    if let Some(protocol) = protocol_cache()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&key).copied())
+    {
+        return stream_wire(
+            protocol, app, profile, base_url, api_key, messages, event_name, max_tokens, effort,
+            emitted, usage,
+        )
+        .await;
+    }
+
+    let candidates = match rejected_protocol {
+        Some(WireProtocol::ChatCompletions) => vec![WireProtocol::Responses],
+        Some(WireProtocol::Responses) => vec![WireProtocol::ChatCompletions],
+        None => vec![WireProtocol::ChatCompletions, WireProtocol::Responses],
+    };
+    for protocol in candidates {
+        let result = stream_wire(
+            protocol,
+            app,
+            profile,
+            base_url,
+            api_key,
+            messages,
+            event_name,
+            max_tokens,
+            effort,
+            Arc::clone(&emitted),
+            Arc::clone(&usage),
+        )
+        .await;
+        match result {
+            Ok(()) => {
+                if let Ok(mut cache) = protocol_cache().lock() {
+                    cache.insert(key.clone(), protocol);
+                }
+                return Ok(());
+            }
+            Err(error)
+                if rejected_protocol.is_none()
+                    && protocol == WireProtocol::ChatCompletions
+                    && is_protocol_incompatible(&error)
+                    && !emitted.load(Ordering::Relaxed) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(AppError::Ai("AI_PROTOCOL_INCOMPATIBLE".to_string()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1352,37 +1567,21 @@ async fn stream_once<R: Runtime>(
             _ if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" => {
                 Box::pin(crate::ai::openai_responses::stream_chat(
                     app,
-                    "https://chatgpt.com/backend-api/codex",
+                    "https://chatgpt.com/backend-api/codex/responses",
                     api_key,
                     &profile.view.model,
                     messages,
                     oauth_account_id,
                     event_name,
                     effort,
+                    None,
+                    None,
                     emitted,
                     usage,
                 ))
             }
-            _ => Box::pin(crate::ai::openai_compat::stream_chat(
-                app,
-                base_url,
-                api_key,
-                &profile.view.model,
-                profile.view.temperature,
-                messages,
-                // `keep_alive` is Ollama's own request field, not a general
-                // property of a local model server: LM Studio does not accept
-                // it and idles its models by its own Developer-settings TTL
-                // instead. So this stays keyed on the provider string rather
-                // than `is_keyless_local_provider` — sending it to LM Studio
-                // would just be an unknown field in the request body.
-                (profile.view.provider == "ollama")
-                    .then_some(profile.view.keep_alive.as_deref())
-                    .flatten(),
-                event_name,
-                max_tokens,
-                effort,
-                emitted,
+            _ => Box::pin(stream_openai_shaped(
+                app, profile, base_url, api_key, messages, event_name, max_tokens, effort, emitted,
                 usage,
             )),
         };
@@ -1398,7 +1597,7 @@ async fn stream_once<R: Runtime>(
 /// effort. The retry is only safe before any token reached the frontend, so it
 /// is gated on `emitted` exactly like credential failover is.
 #[allow(clippy::too_many_arguments)]
-async fn stream_once_with_effort_fallback<R: Runtime>(
+async fn stream_once_with_effort_fallback_inner<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
     profile: &AiProfile,
@@ -1456,6 +1655,46 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
         cancel,
     )
     .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn stream_once_with_effort_fallback<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    profile: &AiProfile,
+    api_key: &str,
+    oauth_account_id: Option<&str>,
+    messages: &[ChatMessage],
+    event_name: &str,
+    max_tokens: Option<u32>,
+    effort: Option<&str>,
+    persist_clear: bool,
+    cache_last_message: bool,
+    emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
+    cancel: &mut watch::Receiver<bool>,
+) -> AppResult<()> {
+    tokio::time::timeout(
+        crate::ai::TOTAL_REQUEST_TIMEOUT,
+        stream_once_with_effort_fallback_inner(
+            app,
+            db,
+            profile,
+            api_key,
+            oauth_account_id,
+            messages,
+            event_name,
+            max_tokens,
+            effort,
+            persist_clear,
+            cache_last_message,
+            emitted,
+            usage,
+            cancel,
+        ),
+    )
+    .await
+    .map_err(|_| AppError::Ai("AI_TOTAL_TIMEOUT".to_string()))?
 }
 
 fn resolve_base_url(profile: &AiProfileView) -> AppResult<&str> {
@@ -1634,11 +1873,12 @@ pub async fn list_models(
     base_url: Option<String>,
 ) -> AppResult<Vec<String>> {
     let mut profile = profile_by_id(db, profile_id)?;
-    let (_, provider, auth_mode, base_url, _, _, _) = normalize_profile_config(
+    let (_, provider, auth_mode, base_url, _, _, _, _) = normalize_profile_config(
         profile.view.label.clone(),
         provider,
         auth_mode,
         base_url,
+        profile.view.api_mode.clone(),
         profile.view.model.clone(),
         profile.view.temperature,
         profile.view.keep_alive.clone(),
@@ -1724,22 +1964,27 @@ pub async fn stream_with_failover<R: Runtime>(
                 .map(register_request)
                 .unwrap_or_else(|| watch::channel(false).1)
         });
-    let result = stream_with_failover_inner(
-        app,
-        db,
-        secrets,
-        messages,
-        event_name,
-        max_tokens,
-        purpose,
-        retry,
-        origin,
-        feature,
-        false,
-        None,
-        &mut cancel,
+    let result = tokio::time::timeout(
+        crate::ai::TOTAL_REQUEST_TIMEOUT,
+        stream_with_failover_inner(
+            app,
+            db,
+            secrets,
+            messages,
+            event_name,
+            max_tokens,
+            purpose,
+            retry,
+            origin,
+            feature,
+            false,
+            None,
+            &mut cancel,
+        ),
     )
-    .await;
+    .await
+    .map_err(|_| AppError::Ai("AI_TOTAL_TIMEOUT".to_string()))
+    .and_then(|result| result);
     if let Some(id) = request_id {
         finish_request(id);
     }
@@ -1851,22 +2096,27 @@ pub async fn complete_with_failover_cached<R: Runtime>(
                 .map(register_request)
                 .unwrap_or_else(|| watch::channel(false).1)
         });
-    let routed = stream_with_failover_inner(
-        app,
-        db,
-        secrets,
-        messages,
-        &event_name,
-        max_tokens,
-        purpose,
-        retry,
-        origin,
-        feature,
-        cache_last_message,
-        pinned_profile_id,
-        &mut cancel,
+    let routed = tokio::time::timeout(
+        crate::ai::TOTAL_REQUEST_TIMEOUT,
+        stream_with_failover_inner(
+            app,
+            db,
+            secrets,
+            messages,
+            &event_name,
+            max_tokens,
+            purpose,
+            retry,
+            origin,
+            feature,
+            cache_last_message,
+            pinned_profile_id,
+            &mut cancel,
+        ),
     )
-    .await;
+    .await
+    .map_err(|_| AppError::Ai("AI_TOTAL_TIMEOUT".to_string()))
+    .and_then(|result| result);
     app.unlisten(listener_id);
     if let Some(id) = request_id {
         finish_request(id);
@@ -2144,19 +2394,24 @@ pub async fn complete_with_profile<R: Runtime>(
                 .map(register_request)
                 .unwrap_or_else(|| watch::channel(false).1)
         });
-    let routed = stream_with_profile_inner(
-        app,
-        db,
-        secrets,
-        profile_id,
-        messages,
-        &event_name,
-        max_tokens,
-        origin,
-        feature,
-        &mut cancel,
+    let routed = tokio::time::timeout(
+        crate::ai::TOTAL_REQUEST_TIMEOUT,
+        stream_with_profile_inner(
+            app,
+            db,
+            secrets,
+            profile_id,
+            messages,
+            &event_name,
+            max_tokens,
+            origin,
+            feature,
+            &mut cancel,
+        ),
     )
-    .await;
+    .await
+    .map_err(|_| AppError::Ai("AI_TOTAL_TIMEOUT".to_string()))
+    .and_then(|result| result);
     app.unlisten(listener_id);
     if let Some(id) = request_id {
         finish_request(id);
@@ -2508,11 +2763,13 @@ pub fn list_profiles(db: &Db) -> AppResult<Vec<AiProfileView>> {
     profiles(db, false).map(|items| items.into_iter().map(|item| item.view).collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn normalize_profile_config(
     label: String,
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: String,
     model: String,
     temperature: f64,
     keep_alive: Option<String>,
@@ -2520,6 +2777,7 @@ fn normalize_profile_config(
     let label = label.trim().to_string();
     let provider = provider.trim().to_ascii_lowercase();
     let auth_mode = auth_mode.trim().to_ascii_lowercase();
+    let api_mode = api_mode.trim().to_ascii_lowercase();
     let model = model.trim().to_string();
     let base_url = base_url
         .map(|value| value.trim().to_string())
@@ -2542,6 +2800,9 @@ fn normalize_profile_config(
     {
         return Err(AppError::Other("AI_AUTH_MODE_INVALID".to_string()));
     }
+    if !matches!(api_mode.as_str(), "auto" | "chat_completions" | "responses") {
+        return Err(AppError::Other("AI_API_MODE_INVALID".to_string()));
+    }
     // An empty model, and a custom endpoint with no address, are the two ways a
     // profile can be half-built. Both are accepted here on purpose: the catalog
     // adds a local model server before anyone knows which model it will serve,
@@ -2557,7 +2818,13 @@ fn normalize_profile_config(
     if let Some(url) = base_url.as_deref() {
         let parsed = reqwest::Url::parse(url)
             .map_err(|_| AppError::Other("AI_BASE_URL_INVALID".to_string()))?;
-        if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        if !matches!(parsed.scheme(), "http" | "https")
+            || parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
             return Err(AppError::Other("AI_BASE_URL_INVALID".to_string()));
         }
     }
@@ -2567,6 +2834,7 @@ fn normalize_profile_config(
         provider,
         auth_mode,
         base_url,
+        api_mode,
         model,
         temperature,
         keep_alive,
@@ -2574,12 +2842,13 @@ fn normalize_profile_config(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn create_profile(
+pub fn create_profile_with_api_mode(
     db: &Db,
     label: String,
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: String,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -2587,12 +2856,13 @@ pub fn create_profile(
     keep_alive: Option<String>,
     enabled: bool,
 ) -> AppResult<AiProfileView> {
-    let (label, provider, auth_mode, base_url, model, temperature, keep_alive) =
+    let (label, provider, auth_mode, base_url, api_mode, model, temperature, keep_alive) =
         normalize_profile_config(
             label,
             provider,
             auth_mode,
             base_url,
+            api_mode,
             model,
             temperature,
             keep_alive,
@@ -2611,22 +2881,54 @@ pub fn create_profile(
         |row| row.get(0),
     )?;
     tx.execute(
-        "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, reasoning_effort, reasoning_effort_all_features, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
-        params![id, label, provider, auth_mode, base_url, model, temperature, reasoning_effort, reasoning_effort_all_features as i64, keep_alive, enabled as i64, priority, timestamp],
+        "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, api_mode, model, temperature, reasoning_effort, reasoning_effort_all_features, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+        params![id, label, provider, auth_mode, base_url, api_mode, model, temperature, reasoning_effort, reasoning_effort_all_features as i64, keep_alive, enabled as i64, priority, timestamp],
     )?;
     tx.commit()?;
     drop(conn);
     Ok(profile_by_id(db, &id)?.view)
 }
 
+#[allow(clippy::too_many_arguments)]
+#[cfg(test)]
+pub fn create_profile(
+    db: &Db,
+    label: String,
+    provider: String,
+    auth_mode: String,
+    base_url: Option<String>,
+    model: String,
+    temperature: f64,
+    reasoning_effort: Option<String>,
+    reasoning_effort_all_features: bool,
+    keep_alive: Option<String>,
+    enabled: bool,
+) -> AppResult<AiProfileView> {
+    create_profile_with_api_mode(
+        db,
+        label,
+        provider,
+        auth_mode,
+        base_url,
+        "chat_completions".to_string(),
+        model,
+        temperature,
+        reasoning_effort,
+        reasoning_effort_all_features,
+        keep_alive,
+        enabled,
+    )
+}
+
 pub fn duplicate_profile(db: &Db, id: &str, label: Option<String>) -> AppResult<AiProfileView> {
     let source = profile_by_id(db, id)?.view;
-    create_profile(
+    create_profile_with_api_mode(
         db,
         label.unwrap_or_else(|| format!("{} copy", source.label)),
         source.provider,
         source.auth_mode,
         source.base_url,
+        source.api_mode,
         source.model,
         source.temperature,
         source.reasoning_effort,
@@ -2637,13 +2939,14 @@ pub fn duplicate_profile(db: &Db, id: &str, label: Option<String>) -> AppResult<
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn save_profile(
+pub fn save_profile_with_api_mode(
     db: &Db,
     id: String,
     label: String,
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: String,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -2651,12 +2954,13 @@ pub fn save_profile(
     keep_alive: Option<String>,
 ) -> AppResult<AiProfileView> {
     let existing = profile_by_id(db, &id)?.view;
-    let (label, provider, auth_mode, base_url, model, temperature, keep_alive) =
+    let (label, provider, auth_mode, base_url, api_mode, model, temperature, keep_alive) =
         normalize_profile_config(
             label,
             provider,
             auth_mode,
             base_url,
+            api_mode,
             model,
             temperature,
             keep_alive,
@@ -2664,7 +2968,8 @@ pub fn save_profile(
     let reasoning_effort = normalize_reasoning_effort(reasoning_effort)?;
     let credential_health_stale = existing.provider != provider
         || existing.auth_mode != auth_mode
-        || existing.base_url != base_url;
+        || existing.base_url != base_url
+        || existing.api_mode != api_mode;
     let profile_health_stale = credential_health_stale
         || existing.model != model
         || existing.temperature != temperature
@@ -2674,8 +2979,8 @@ pub fn save_profile(
     let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     let tx = conn.transaction()?;
     let changed = tx.execute(
-        "UPDATE ai_profiles SET label = ?1, provider = ?2, auth_mode = ?3, base_url = ?4, model = ?5, temperature = ?6, keep_alive = ?7, reasoning_effort = ?11, reasoning_effort_all_features = ?12, state = CASE WHEN ?8 = 1 THEN 'active' ELSE state END, cooldown_until = CASE WHEN ?8 = 1 THEN NULL ELSE cooldown_until END, last_error_kind = CASE WHEN ?8 = 1 THEN NULL ELSE last_error_kind END, last_used_at = CASE WHEN ?8 = 1 THEN NULL ELSE last_used_at END, last_latency_ms = CASE WHEN ?8 = 1 THEN NULL ELSE last_latency_ms END, updated_at = ?9 WHERE id = ?10",
-        params![label, provider, auth_mode, base_url, model, temperature, keep_alive, profile_health_stale as i64, timestamp, id, reasoning_effort, reasoning_effort_all_features as i64],
+        "UPDATE ai_profiles SET label = ?1, provider = ?2, auth_mode = ?3, base_url = ?4, model = ?5, temperature = ?6, keep_alive = ?7, reasoning_effort = ?11, reasoning_effort_all_features = ?12, api_mode = ?13, state = CASE WHEN ?8 = 1 THEN 'active' ELSE state END, cooldown_until = CASE WHEN ?8 = 1 THEN NULL ELSE cooldown_until END, last_error_kind = CASE WHEN ?8 = 1 THEN NULL ELSE last_error_kind END, last_used_at = CASE WHEN ?8 = 1 THEN NULL ELSE last_used_at END, last_latency_ms = CASE WHEN ?8 = 1 THEN NULL ELSE last_latency_ms END, updated_at = ?9 WHERE id = ?10",
+        params![label, provider, auth_mode, base_url, model, temperature, keep_alive, profile_health_stale as i64, timestamp, id, reasoning_effort, reasoning_effort_all_features as i64, api_mode],
     )?;
     if changed != 1 {
         return Err(AppError::Other("AI_PROFILE_NOT_FOUND".to_string()));
@@ -3096,18 +3401,20 @@ fn profile_for_connection_test(
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: String,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
     keep_alive: Option<String>,
 ) -> AppResult<(AiProfile, bool)> {
     let mut profile = profile_by_id(db, profile_id)?;
-    let (_, provider, auth_mode, base_url, model, temperature, keep_alive) =
+    let (_, provider, auth_mode, base_url, api_mode, model, temperature, keep_alive) =
         normalize_profile_config(
             profile.view.label.clone(),
             provider,
             auth_mode,
             base_url,
+            api_mode,
             model,
             temperature,
             keep_alive,
@@ -3116,6 +3423,7 @@ fn profile_for_connection_test(
     let uses_saved_config = profile.view.provider == provider
         && profile.view.auth_mode == auth_mode
         && profile.view.base_url == base_url
+        && profile.view.api_mode == api_mode
         && profile.view.model == model
         && profile.view.temperature == temperature
         && profile.view.reasoning_effort == reasoning_effort
@@ -3123,6 +3431,7 @@ fn profile_for_connection_test(
     profile.view.provider = provider;
     profile.view.auth_mode = auth_mode;
     profile.view.base_url = base_url;
+    profile.view.api_mode = api_mode;
     profile.view.model = model;
     profile.view.temperature = temperature;
     profile.view.reasoning_effort = reasoning_effort;
@@ -3131,7 +3440,7 @@ fn profile_for_connection_test(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn test_profile<R: Runtime>(
+async fn test_profile_inner<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
@@ -3139,6 +3448,7 @@ pub async fn test_profile<R: Runtime>(
     provider: String,
     auth_mode: String,
     base_url: Option<String>,
+    api_mode: String,
     model: String,
     temperature: f64,
     reasoning_effort: Option<String>,
@@ -3150,6 +3460,7 @@ pub async fn test_profile<R: Runtime>(
         provider,
         auth_mode,
         base_url,
+        api_mode,
         model,
         temperature,
         reasoning_effort,
@@ -3418,6 +3729,42 @@ pub async fn test_profile<R: Runtime>(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn test_profile<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    secrets: &Secrets,
+    profile_id: &str,
+    provider: String,
+    auth_mode: String,
+    base_url: Option<String>,
+    api_mode: String,
+    model: String,
+    temperature: f64,
+    reasoning_effort: Option<String>,
+    keep_alive: Option<String>,
+) -> AppResult<AiConnectionTestResult> {
+    tokio::time::timeout(
+        crate::ai::TOTAL_REQUEST_TIMEOUT,
+        test_profile_inner(
+            app,
+            db,
+            secrets,
+            profile_id,
+            provider,
+            auth_mode,
+            base_url,
+            api_mode,
+            model,
+            temperature,
+            reasoning_effort,
+            keep_alive,
+        ),
+    )
+    .await
+    .map_err(|_| AppError::Ai("AI_TOTAL_TIMEOUT".to_string()))?
+}
+
 pub fn has_configured_service(db: &Db) -> bool {
     let Ok(profiles) = profiles(db, true) else {
         return false;
@@ -3553,6 +3900,7 @@ mod tests {
             provider: "custom".into(),
             auth_mode: "api_key".into(),
             base_url: Some("https://gateway.example".into()),
+            api_mode: "chat_completions".into(),
             model: "m".into(),
             temperature: 0.3,
             reasoning_effort: Some("high".into()),
@@ -3733,6 +4081,19 @@ mod tests {
         assert!(!classify_error(&error).retryable());
     }
 
+    #[test]
+    fn timeouts_are_explicit_and_never_replayed() {
+        for code in [
+            "AI_FIRST_BYTE_TIMEOUT",
+            "AI_STREAM_IDLE_TIMEOUT",
+            "AI_TOTAL_TIMEOUT",
+        ] {
+            let kind = classify_error(&AppError::Ai(code.to_string()));
+            assert_eq!(kind, AiErrorKind::Timeout);
+            assert!(!may_continue_after(kind, false));
+        }
+    }
+
     /// Stop and start racing each other must never both come up empty. Either
     /// the cancel finds the live request, or the registration finds the flag
     /// the cancel left behind — never neither, which is a request that keeps
@@ -3858,6 +4219,7 @@ mod tests {
             AiErrorKind::Permission,
             AiErrorKind::Quota,
             AiErrorKind::RateLimit,
+            AiErrorKind::Timeout,
             AiErrorKind::Network,
             AiErrorKind::Provider5xx,
             AiErrorKind::Protocol,
@@ -3916,13 +4278,12 @@ mod tests {
     }
 
     #[test]
-    fn rate_limits_and_outages_continue_but_malformed_requests_do_not() {
+    fn rate_limits_and_outages_continue_but_uncertain_replays_do_not() {
         for kind in [
             AiErrorKind::RateLimit,
             AiErrorKind::Quota,
             AiErrorKind::Network,
             AiErrorKind::Provider5xx,
-            AiErrorKind::Protocol,
         ] {
             assert!(may_continue_after(kind, false), "{}", kind.as_str());
         }
@@ -3930,6 +4291,8 @@ mod tests {
         // was cancelled on purpose. Neither is worth another model.
         for kind in [
             AiErrorKind::Request,
+            AiErrorKind::Timeout,
+            AiErrorKind::Protocol,
             AiErrorKind::NotConfigured,
             AiErrorKind::Cancelled,
         ] {
@@ -3988,6 +4351,7 @@ mod tests {
         for kind in [
             AiErrorKind::Network,
             AiErrorKind::Provider5xx,
+            AiErrorKind::Timeout,
             AiErrorKind::Protocol,
         ] {
             assert_eq!(
@@ -4428,6 +4792,7 @@ mod tests {
             provider: provider.to_string(),
             auth_mode: "api_key".to_string(),
             base_url: base_url.map(str::to_string),
+            api_mode: "chat_completions".to_string(),
             model: "model".to_string(),
             temperature: 0.2,
             reasoning_effort: None,
@@ -4603,6 +4968,7 @@ mod tests {
             "deepseek".to_string(),
             "api_key".to_string(),
             None,
+            "chat_completions".to_string(),
             "deepseek-v4-flash".to_string(),
             0.3,
             None,
@@ -4619,6 +4985,7 @@ mod tests {
             "deepseek".to_string(),
             "oauth".to_string(),
             None,
+            "chat_completions".to_string(),
             "deepseek-v4-flash".to_string(),
             0.3,
             None,
@@ -5108,6 +5475,242 @@ mod tests {
         format!("{}data: [DONE]\n\n", sse_delta(text))
     }
 
+    fn responses_sse_answer(text: &str) -> String {
+        format!(
+            "data: {{\"type\":\"response.output_text.delta\",\"delta\":{text:?}}}\n\ndata: {{\"type\":\"response.completed\",\"response\":{{\"status\":\"completed\",\"output\":[{{\"type\":\"message\",\"status\":\"completed\",\"content\":[{{\"type\":\"output_text\",\"text\":{text:?}}}]}}]}}}}\n\n"
+        )
+    }
+
+    async fn protocol_server(
+        responses: Vec<(&'static str, &'static str, String)>,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&paths);
+        tokio::spawn(async move {
+            for (status, content_type, body) in responses {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 4096];
+                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let Ok(read) = stream.read(&mut buffer).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                }
+                if let Some(path) = String::from_utf8_lossy(&request)
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                {
+                    captured.lock().unwrap().push(path.to_string());
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        });
+        (format!("http://{address}"), paths)
+    }
+
+    async fn protocol_profile(
+        db: &Db,
+        secrets: &Secrets,
+        base_url: String,
+        api_mode: &str,
+    ) -> AiProfileView {
+        let profile = create_profile_with_api_mode(
+            db,
+            "Auto".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some(base_url),
+            api_mode.to_string(),
+            "model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+        add_credential(
+            db,
+            secrets,
+            profile.id.clone(),
+            "Key".to_string(),
+            "secret".to_string(),
+        )
+        .unwrap();
+        profile
+    }
+
+    #[tokio::test]
+    async fn auto_switches_once_after_an_explicit_endpoint_rejection() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let (base_url, paths) = protocol_server(vec![
+            (
+                "404 Not Found",
+                "application/json",
+                r#"{"error":{"code":"unsupported_endpoint"}}"#.to_string(),
+            ),
+            ("200 OK", "text/event-stream", responses_sse_answer("OK")),
+        ])
+        .await;
+        protocol_profile(&db, &secrets, base_url, "auto").await;
+        let app = tauri::test::mock_app();
+
+        route(&app, &db, &secrets).await.unwrap();
+
+        assert_eq!(
+            *paths.lock().unwrap(),
+            vec!["/v1/chat/completions", "/v1/responses"]
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_auto_requests_share_the_first_protocol_probe() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let (base_url, paths) = protocol_server(vec![
+            (
+                "404 Not Found",
+                "application/json",
+                r#"{"error":{"code":"unsupported_endpoint"}}"#.to_string(),
+            ),
+            ("200 OK", "text/event-stream", responses_sse_answer("first")),
+            (
+                "200 OK",
+                "text/event-stream",
+                responses_sse_answer("second"),
+            ),
+        ])
+        .await;
+        protocol_profile(&db, &secrets, base_url, "auto").await;
+        let app = tauri::test::mock_app();
+
+        let (first, second) = tokio::join!(route(&app, &db, &secrets), route(&app, &db, &secrets));
+        first.unwrap();
+        second.unwrap();
+
+        assert_eq!(
+            *paths.lock().unwrap(),
+            vec!["/v1/chat/completions", "/v1/responses", "/v1/responses"]
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_and_rate_limit_failures_never_switch_protocol() {
+        for (status, body) in [
+            (
+                "401 Unauthorized",
+                r#"{"error":{"code":"invalid_api_key"}}"#,
+            ),
+            (
+                "429 Too Many Requests",
+                r#"{"error":{"code":"rate_limit_exceeded"}}"#,
+            ),
+        ] {
+            let directory = tempfile::TempDir::new().unwrap();
+            let db = Db::init(directory.path()).unwrap();
+            let secrets = Secrets::init_in_memory().unwrap();
+            let (base_url, paths) =
+                protocol_server(vec![(status, "application/json", body.to_string())]).await;
+            protocol_profile(&db, &secrets, base_url, "auto").await;
+            let app = tauri::test::mock_app();
+
+            assert!(route(&app, &db, &secrets).await.is_err());
+            assert_eq!(*paths.lock().unwrap(), vec!["/v1/chat/completions"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_protocol_is_obeyed_without_probing_the_other_endpoint() {
+        for (mode, expected_path, body) in [
+            (
+                "chat_completions",
+                "/v1/chat/completions",
+                sse_answer("chat"),
+            ),
+            (
+                "responses",
+                "/v1/responses",
+                responses_sse_answer("responses"),
+            ),
+        ] {
+            let directory = tempfile::TempDir::new().unwrap();
+            let db = Db::init(directory.path()).unwrap();
+            let secrets = Secrets::init_in_memory().unwrap();
+            let (base_url, paths) =
+                protocol_server(vec![("200 OK", "text/event-stream", body)]).await;
+            protocol_profile(&db, &secrets, base_url, mode).await;
+            let app = tauri::test::mock_app();
+
+            route(&app, &db, &secrets).await.unwrap();
+            assert_eq!(*paths.lock().unwrap(), vec![expected_path]);
+        }
+    }
+
+    #[tokio::test]
+    async fn both_protocols_accept_complete_non_stream_json_responses() {
+        for (mode, expected_path, body) in [
+            (
+                "chat_completions",
+                "/v1/chat/completions",
+                r#"{"choices":[{"finish_reason":"stop","message":{"content":"chat"}}]}"#.to_string(),
+            ),
+            (
+                "responses",
+                "/v1/responses",
+                r#"{"status":"completed","output":[{"type":"message","status":"completed","content":[{"type":"output_text","text":"responses"}]}]}"#.to_string(),
+            ),
+        ] {
+            let directory = tempfile::TempDir::new().unwrap();
+            let db = Db::init(directory.path()).unwrap();
+            let secrets = Secrets::init_in_memory().unwrap();
+            let (base_url, paths) = protocol_server(vec![("200 OK", "application/json", body)]).await;
+            protocol_profile(&db, &secrets, base_url, mode).await;
+            let app = tauri::test::mock_app();
+
+            route(&app, &db, &secrets).await.unwrap();
+            assert_eq!(*paths.lock().unwrap(), vec![expected_path]);
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_and_truncated_streams_are_not_replayed_through_another_protocol() {
+        for body in ["data: [DONE]\n\n".to_string(), sse_delta("partial")] {
+            let directory = tempfile::TempDir::new().unwrap();
+            let db = Db::init(directory.path()).unwrap();
+            let secrets = Secrets::init_in_memory().unwrap();
+            let (base_url, paths) = protocol_server(vec![
+                ("200 OK", "text/event-stream", body),
+                (
+                    "200 OK",
+                    "text/event-stream",
+                    responses_sse_answer("must not run"),
+                ),
+            ])
+            .await;
+            protocol_profile(&db, &secrets, base_url, "auto").await;
+            let app = tauri::test::mock_app();
+
+            assert!(route(&app, &db, &secrets).await.is_err());
+            assert_eq!(*paths.lock().unwrap(), vec!["/v1/chat/completions"]);
+        }
+    }
+
     /// A brand-new install has no `ai_profiles` row at all, and nothing else
     /// creates the first one — this is all that stands between a fresh reader
     /// and an AI settings page with nothing to configure.
@@ -5127,6 +5730,7 @@ mod tests {
         assert_eq!(profiles[0].provider, "deepseek");
         assert_eq!(profiles[0].model, DEEPSEEK_DEFAULT_MODEL);
         assert_eq!(profiles[0].auth_mode, "api_key");
+        assert_eq!(profiles[0].api_mode, "chat_completions");
         // No base URL of its own: `resolve_base_url` supplies DeepSeek's, so a
         // change of endpoint reaches this profile too.
         assert_eq!(profiles[0].base_url, None);
