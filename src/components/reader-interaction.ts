@@ -32,6 +32,12 @@ export interface ReaderInteraction {
   locale?: string;
 }
 
+/** A real text selection owns the click that created it. Annotation overlays
+ * underneath may refresh, but must not navigate the side panel mid-lookup. */
+export function annotationClickShouldNavigate(selection: Selection | null): boolean {
+  return !selection || selection.isCollapsed || !selection.toString().trim();
+}
+
 // EPUB content documents are parsed as XML (`application/xhtml+xml`), where
 // `tagName` keeps the source casing — `"p"`, not `"P"` as in an HTML document.
 // Comparing without normalising made every block-level lookup fail in a book,

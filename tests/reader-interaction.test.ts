@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  annotationClickShouldNavigate,
   normalizeInteractionText,
   rangeFromSelectionSnapshotAtPoint,
   readerMenuActivationIndex,
@@ -11,6 +12,12 @@ import {
   withInheritedContext,
   type ReaderInteraction,
 } from "../src/components/reader-interaction.ts";
+
+test("selecting text over a vocabulary annotation does not navigate the side panel", () => {
+  assert.equal(annotationClickShouldNavigate({ isCollapsed: false, toString: () => "need" } as Selection), false);
+  assert.equal(annotationClickShouldNavigate({ isCollapsed: true, toString: () => "" } as Selection), true);
+  assert.equal(annotationClickShouldNavigate(null), true);
+});
 
 const words = (value: string, locale = "en") => (
   segmentInteractionWords(value, locale).map(({ segment }) => segment)

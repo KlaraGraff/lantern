@@ -15,6 +15,7 @@ import {
   type ReaderCapabilities,
 } from "../../components/reader-settings";
 import {
+  annotationClickShouldNavigate,
   classifySelection,
   contextForRange,
   normalizeInteractionText,
@@ -962,6 +963,7 @@ export function useFoliateView({
         });
         const marker = autoMarkersRef.current.get(value);
         if (marker?.kind === "vocab") {
+          if (!annotationClickShouldNavigate(ownerDocument?.getSelection() ?? null)) return;
           setActiveVocabCfi(value);
           setTracesTab("vocab");
           setSidePanel("traces");
