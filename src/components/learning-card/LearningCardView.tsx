@@ -140,11 +140,23 @@ export default function LearningCardView({
   const { t } = useTranslation();
   const titleId = useId();
   const reasoningRef = useRef<HTMLDivElement>(null);
+  const reasoningWasInProgress = useRef(false);
   const { rootRef: bodyRef, selectionProps } = usePanelTextSelection<HTMLDivElement>(onSelectText);
-  // Open while the thinking is the only thing happening, closed once the answer
-  // takes over — until the reader says otherwise, and then it is their call.
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
   const reasoningOpen = reasoningExpanded ?? thinking;
+  const hasReasoning = Boolean(reasoning.trim());
+  const showReasoning = thinking || hasReasoning;
+
+  // The answer taking over is an explicit transition, so it wins over any
+  // temporary expansion choice made while reasoning was still streaming.
+  useEffect(() => {
+    if (!reasoningWasInProgress.current && thinking) {
+      setReasoningExpanded(null);
+    } else if (reasoningWasInProgress.current && !thinking) {
+      setReasoningExpanded(false);
+    }
+    reasoningWasInProgress.current = thinking;
+  }, [thinking]);
 
   // Thinking is worth watching only at the end where it is still being written.
   useEffect(() => {
@@ -270,7 +282,7 @@ export default function LearningCardView({
           </div>
         ) : (
           <>
-            {reasoning && (
+            {showReasoning && (
               <div className="border-b border-border/60 px-4 py-2">
                 <button
                   type="button"
@@ -280,14 +292,21 @@ export default function LearningCardView({
                 >
                   {reasoningOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   {thinking && <Loader2 size={11} className="shrink-0 animate-spin" aria-hidden="true" />}
-                  <span>{t(thinking ? "ai.reasoningStreaming" : "ai.reasoning")}</span>
+                  <span>{t("ai.reasoning")}</span>
                 </button>
                 {reasoningOpen && (
                   <div
                     ref={reasoningRef}
+                    aria-busy={thinking}
                     className="mt-1.5 max-h-28 overflow-y-auto whitespace-pre-wrap text-[11px] leading-[17px] text-text-muted"
                   >
-                    {reasoning}
+                    {hasReasoning ? reasoning : (
+                      <div role="status" aria-label={t("ai.thinking")} className="space-y-2 py-0.5">
+                        <span className="sr-only">{t("ai.thinking")}</span>
+                        <div aria-hidden="true" className="h-2.5 w-4/5 animate-pulse rounded bg-border/70" />
+                        <div aria-hidden="true" className="h-2.5 w-3/5 animate-pulse rounded bg-border/50" />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

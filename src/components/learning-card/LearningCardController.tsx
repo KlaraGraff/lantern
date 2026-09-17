@@ -235,6 +235,10 @@ export default function LearningCardController({
           }
         }
 
+        // A cache miss is the point where an AI request actually begins. Show
+        // the reasoning region immediately, even when this provider has not
+        // emitted its first reasoning token yet.
+        setThinking(true);
         unlisten = await listen<LearningCardStreamChunk>(
           `ai-learning-card-chunk-${requestId}`,
           (event) => {
