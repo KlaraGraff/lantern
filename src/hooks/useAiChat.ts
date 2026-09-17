@@ -1567,6 +1567,13 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     if (!bookId) return;
     // Stop any active stream
     if (streamingRef.current || activeRequestIdRef.current) stopActiveStream();
+    // A reset wins over an older initialize still reading the previous chat.
+    // Otherwise that request can land a moment later and put the history back
+    // underneath a fresh selection.
+    initializationGenerationRef.current += 1;
+    initializationPromiseRef.current = null;
+    initializedBookRef.current = bookId;
+    setInitializingSynced(false);
     titleGenerationRef.current += 1;
     setTitling(false);
     // Show empty state, lazy create on next send

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -130,7 +130,7 @@ function SectionContextNotice({
   );
 }
 
-export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onRetryWithWholeBook, onRetry, onQuoteReply, onSwapAlias }: MessageBubbleProps) {
+function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onRetryWithWholeBook, onRetry, onQuoteReply, onSwapAlias }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
@@ -372,3 +372,8 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     </div>
   );
 }
+
+// Opening the selection menu updates Reader state outside this subtree. Keeping
+// a settled message's DOM intact is what preserves the browser's native blue
+// selection instead of making it jump to a surviving node or disappear.
+export default memo(MessageBubble);

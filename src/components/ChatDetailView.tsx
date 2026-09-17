@@ -10,7 +10,8 @@ import Button from "./ui/Button";
 import MessageBubble from "./MessageBubble";
 import { TOP_INSET } from "../utils/top-inset";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
-import { isSendKey } from "./chat-input-keys";
+import { chatSendHintKey, isSendKey } from "./chat-input-keys";
+import { platform } from "../services/platform";
 
 interface ChatDetailViewProps {
   chat: ChatSummary;
@@ -57,7 +58,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!isSendKey(e, coarsePointer)) return;
+    if (!isSendKey(e, coarsePointer, platform.id)) return;
     e.preventDefault();
     handleSend();
   };
@@ -238,7 +239,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
           </button>
         </div>
         <p className="text-[12px] text-text-muted">
-          {t(coarsePointer ? "ai.sendHintTouch" : "ai.sendHint")}
+          {t(chatSendHintKey(coarsePointer, platform.id))}
         </p>
       </div>
 

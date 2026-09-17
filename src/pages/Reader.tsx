@@ -207,6 +207,11 @@ export default function Reader() {
     if (typeof idx === "number" && idx > 0) void navigate(-1);
     else void navigate("/");
   }, [navigate]);
+  const openMainLibrary = useCallback(() => {
+    void invoke("open_library_on_main", { filter: "all" }).catch((error) => {
+      console.error("Failed to open the main library:", error);
+    });
+  }, []);
   const [book, setBook] = useState<Book | null>(null);
   // The trip that brought the reader into this book from another one's chat,
   // and the two things that can go wrong with it: the sentence not being
@@ -1991,6 +1996,11 @@ export default function Reader() {
     })();
   }, [book?.id, book?.title, navigate]);
 
+  const navigateToQuotedSource = useCallback((quote: QuotedSource) => {
+    closeNarrowPanels();
+    navigateToQuote(quote);
+  }, [closeNarrowPanels, navigateToQuote]);
+
   if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3">
@@ -2494,15 +2504,18 @@ export default function Reader() {
 
         {isNarrow ? (
           <div className="flex h-10 min-w-0 flex-1 items-center gap-1 px-1">
-            {/* A standalone reader window has no library to go back to — routing
-                it to "/" would replace the book with the shelf inside a window
-                that exists to hold one book. The desktop header solves this by
-                swapping the back button for the mark; the strip does the same,
-                which also keeps the title centred between two equal boxes. */}
+            {/* A standalone reader cannot route to its own shelf without
+                replacing the book, so the book mark reveals the main window's
+                library instead. */}
             {isStandaloneWindow ? (
-              <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent">
+              <button
+                type="button"
+                onClick={openMainLibrary}
+                aria-label={t("reader.returnToLibrary")}
+                className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent"
+              >
                 <BookOpen size={18} className="text-white" />
-              </div>
+              </button>
             ) : (
               <button
                 type="button"
@@ -2557,9 +2570,14 @@ export default function Reader() {
         {/* Left section */}
         <div className="flex min-w-0 items-center gap-2 md:min-w-[auto] md:gap-3">
           {isStandaloneWindow ? (
-            <div className="hidden size-10 rounded-lg bg-accent md:flex items-center justify-center">
+            <button
+              type="button"
+              onClick={openMainLibrary}
+              aria-label={t("reader.returnToLibrary")}
+              className="hidden size-10 cursor-pointer items-center justify-center rounded-lg bg-accent md:flex"
+            >
               <BookOpen size={18} className="text-white" />
-            </div>
+            </button>
           ) : (
             <>
               {/* 36px is under the 44px both Apple and WCAG 2.5.5 ask for. The
@@ -3188,7 +3206,7 @@ export default function Reader() {
                   // touch `sidePanel` — so without this the other book opens
                   // underneath a full-screen AI panel, hiding both the passage
                   // and the offer to go back.
-                  onNavigateToQuote={(quote) => { closeNarrowPanels(); navigateToQuote(quote); }}
+                  onNavigateToQuote={navigateToQuotedSource}
                   onLookupWord={lookupWordInPanel}
                   onSelectText={openPanelSelectionMenu}
                 />
@@ -3273,13 +3291,17 @@ export default function Reader() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex h-12 items-center gap-1 px-1">
-              {/* Same swap as the silent strip above: a standalone window has
-                  no library to go back to, and routing it to "/" would strand
-                  the one book it exists to hold. */}
+              {/* Same handoff as the silent strip above: reveal the library in
+                  the main window without replacing this reader window. */}
               {isStandaloneWindow ? (
-                <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-accent">
+                <button
+                  type="button"
+                  onClick={openMainLibrary}
+                  aria-label={t("reader.returnToLibrary")}
+                  className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent"
+                >
                   <BookOpen size={18} className="text-white" />
-                </div>
+                </button>
               ) : (
                 <button
                   type="button"

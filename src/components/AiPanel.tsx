@@ -10,7 +10,8 @@ import type { AiChatScope, CitedSource, ContextKind, QuotedSource } from "../hoo
 import IndexManagerModal from "./IndexManagerModal";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { usePanelTextSelection, type PanelSelectionSource } from "../hooks/usePanelTextSelection";
-import { isSendKey } from "./chat-input-keys";
+import { chatSendHintKey, isSendKey } from "./chat-input-keys";
+import { platform } from "../services/platform";
 
 interface AiPanelProps {
   bookId?: string;
@@ -254,15 +255,19 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
     ));
   }, []);
 
-  // Handle context from the "Quote" context-menu action — pin it as a pending
-  // quote chip above the composer. Does NOT reset the chat or auto-send: the
-  // quote attaches to the existing session conversation and rides along with
-  // the user's next message.
+  // A fresh selection starts a fresh conversation. Besides keeping an unrelated
+  // answer out of the model's history, replacing the pending quote here means
+  // the chip can never show an older selection beside the one just chosen.
   useEffect(() => {
     if (!context) return;
-    addQuote(context);
+    void reset();
+    setPendingQuotes([context]);
+    setAutoQuote(undefined);
+    dismissedSelectionRef.current = undefined;
+    setInput("");
+    setScope("auto");
     onContextConsumed?.();
-  }, [addQuote, context, onContextConsumed]);
+  }, [context, onContextConsumed, reset]);
 
   // Quoting an answer is the start of a follow-up, so the composer takes focus.
   const quoteReply = useCallback((text: string) => {
@@ -303,7 +308,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isSendKey(e, coarsePointer)) {
+    if (isSendKey(e, coarsePointer, platform.id)) {
       e.preventDefault();
       handleSend();
     } else if (e.key === "Escape" && quoteChips.length > 0) {
@@ -325,6 +330,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
       setPickerOpen(false);
       setInput("");
       setScope("auto");
+      clearQuotes();
       setNewChatFlash(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setNewChatFlash(false));
@@ -597,7 +603,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
             </button>
           </div>
         ))}
-        <div className="flex gap-2 items-start">
+        <div className="relative">
           <textarea
             ref={composerRef}
             value={input}
@@ -609,14 +615,14 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
             autoCorrect="off"
             autoCapitalize="off"
             rows={2}
-            className="flex-1 h-[60px] bg-bg-input rounded-lg px-3 py-2 text-[14px] text-text-primary placeholder:text-text-placeholder tracking-[-0.15px] leading-5 outline-none border border-transparent focus:border-accent resize-none"
+            className="h-[92px] w-full resize-none rounded-[14px] border border-transparent bg-bg-input pb-10 pl-3 pr-12 pt-2 text-[14px] leading-5 tracking-[-0.15px] text-text-primary outline-none placeholder:text-text-placeholder focus:border-accent"
           />
           <button
             onClick={streaming ? cancel : handleSend}
             title={streaming ? t("ai.stop") : t("ai.send")}
             aria-label={streaming ? t("ai.stop") : t("ai.send")}
             disabled={!streaming && (!input.trim() || initializing)}
-            className={`size-[60px] shrink-0 rounded-lg flex items-center justify-center cursor-pointer bg-accent text-white ${
+            className={`absolute bottom-2 right-2 flex size-8 items-center justify-center rounded-full bg-accent text-white shadow-sm cursor-pointer ${
               !streaming && (!input.trim() || initializing) ? "opacity-50" : ""
             }`}
           >
@@ -629,7 +635,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className="text-[12px] text-text-muted truncate">
-            {t(coarsePointer ? "ai.sendHintTouch" : "ai.sendHint")}
+            {t(chatSendHintKey(coarsePointer, platform.id))}
           </p>
           <ScopePicker scope={scope} onChange={setScope} />
         </div>

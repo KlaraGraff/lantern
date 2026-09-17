@@ -7,8 +7,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowUp, MessageCircleQuestion, X } from 'lucide-react'
 import { aiErrorMessageKey, getAiErrorCode } from '../../utils/aiError.ts'
-import { isSendKey } from '../../components/chat-input-keys.ts'
+import { chatSendHintKey, isSendKey } from '../../components/chat-input-keys.ts'
 import { useCoarsePointer } from '../../hooks/useCoarsePointer.ts'
+import { platform } from '../../services/platform.ts'
 import type { AskThread } from '../../quiz/types.ts'
 
 const NARROW_QUERY = '(max-width: 900px)'
@@ -163,7 +164,7 @@ export default function AskDrawer(props: {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (isSendKey(e, coarsePointer)) {
+              if (isSendKey(e, coarsePointer, platform.id)) {
                 e.preventDefault()
                 handleSubmit()
               }
@@ -181,7 +182,7 @@ export default function AskDrawer(props: {
           </button>
         </div>
         <p className="mt-2 text-[11px] leading-[1.6] text-text-muted">
-          {t(coarsePointer ? 'ai.sendHintTouch' : 'ai.sendHint')}
+          {t(chatSendHintKey(coarsePointer, platform.id))}
         </p>
       </div>
     </div>
