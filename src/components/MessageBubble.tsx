@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -135,6 +135,25 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const reasoningRef = useRef<HTMLDivElement>(null);
+  const reasoningWasInProgress = useRef(false);
+  const reasoningInProgress = msg.role === "assistant" && streaming && isLast && !msg.content;
+  const reasoningOpen = reasoningExpanded ?? reasoningInProgress;
+
+  // Keep the newest model-provided reasoning visible while it streams, then
+  // close it as soon as the answer itself takes over.
+  useEffect(() => {
+    if (reasoningWasInProgress.current && !reasoningInProgress) {
+      setReasoningExpanded(false);
+    }
+    reasoningWasInProgress.current = reasoningInProgress;
+  }, [reasoningInProgress]);
+
+  useEffect(() => {
+    if (!reasoningInProgress || !reasoningOpen) return;
+    const element = reasoningRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [msg.reasoning, reasoningInProgress, reasoningOpen]);
   // One quote lives in the message's own columns; stacked quotes in metadata.
   const quotes = msg.contexts?.length
     ? msg.contexts
@@ -178,8 +197,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
       );
     }
     const hasReasoning = Boolean(msg.reasoning?.trim());
-    const reasoningInProgress = streaming && isLast && !msg.content;
-    const reasoningOpen = reasoningExpanded ?? reasoningInProgress;
+    const showReasoning = hasReasoning || reasoningInProgress;
     const sources = msg.sources ?? [];
     const citedSources = citedSourcesInContent(msg.content, sources);
     // Not `quotes` — that name already belongs to what the reader quoted into
@@ -209,7 +227,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
 
     return (
       <div ref={bubbleRef} className={`group bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
-        {hasReasoning && (
+        {showReasoning && (
           <div className={msg.content ? "mb-2 border-b border-border pb-2" : ""}>
             <button
               type="button"
@@ -218,12 +236,22 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
               className="flex w-full items-center gap-1.5 text-left text-[12px] font-medium text-text-muted hover:text-text-primary cursor-pointer"
             >
               {reasoningOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              {reasoningInProgress && <Loader2 size={12} className="animate-spin" />}
-              <span>{t(reasoningInProgress ? "ai.reasoningStreaming" : "ai.reasoning")}</span>
+              {reasoningInProgress && <Loader2 size={12} className="shrink-0 animate-spin" aria-hidden="true" />}
+              <span>{t("ai.reasoning")}</span>
             </button>
             {reasoningOpen && (
-              <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-[12px] leading-[18px] text-text-muted">
-                {msg.reasoning}
+              <div
+                ref={reasoningRef}
+                aria-busy={reasoningInProgress}
+                className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-[12px] leading-[18px] text-text-muted"
+              >
+                {hasReasoning ? msg.reasoning : (
+                  <div role="status" aria-label={t("ai.thinking")} className="space-y-2 py-0.5">
+                    <span className="sr-only">{t("ai.thinking")}</span>
+                    <div aria-hidden="true" className="h-2.5 w-4/5 animate-pulse rounded bg-border/70" />
+                    <div aria-hidden="true" className="h-2.5 w-3/5 animate-pulse rounded bg-border/50" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -236,12 +264,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
             onSwapAlias={onSwapAlias ? (canonical) => onSwapAlias(msg.id, canonical) : undefined}
           />
         )}
-        {streaming && !msg.content && isLast && !hasReasoning ? (
-          <span className="flex items-center gap-1.5 text-[14px] text-text-muted">
-            <Loader2 size={14} className="animate-spin" />
-            {t("ai.thinking")}
-          </span>
-        ) : msg.content ? (
+        {msg.content ? (
           <div>
             <AiMarkdown
               size="chat"

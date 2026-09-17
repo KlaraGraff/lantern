@@ -1086,6 +1086,7 @@ pub fn run() {
             // Chats
             commands::chats::create_chat,
             commands::chats::list_chats,
+            commands::chats::find_chat_by_context_cfi,
             commands::chats::list_all_chats,
             commands::chats::get_chat,
             commands::chats::delete_chat,

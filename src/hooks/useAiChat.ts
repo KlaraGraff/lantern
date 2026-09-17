@@ -773,6 +773,21 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     }
   }, []);
 
+  const findChatIdByContextCfi = useCallback(async (contextCfi: string) => {
+    const currentBookId = bookIdRef.current;
+    if (!currentBookId || !contextCfi) return undefined;
+    try {
+      const chat = await invoke<ChatRecord | null>("find_chat_by_context_cfi", {
+        bookId: currentBookId,
+        contextCfi,
+      });
+      return chat?.id;
+    } catch (err) {
+      console.error("Failed to find chat for selection:", err);
+      return undefined;
+    }
+  }, []);
+
   const loadChat = useCallback(async (id: string) => {
     // Stop any active stream
     if (streamingRef.current || activeRequestIdRef.current) stopActiveStream();
@@ -1589,6 +1604,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     summaryProgress,
     bookAiState,
     summariesAuto: settings.ai_summaries_auto !== "false",
+    newPassageStartsNewChat: settings.ai_new_passage_new_chat !== "false",
+    newPassageStartsNewChatWhileOpen: settings.ai_new_passage_new_chat_while_open !== "false",
+    resumeChatAtSamePassage: settings.ai_resume_chat_at_same_passage !== "false",
     spoilerGuardEnabled,
     setSpoilerGuardEnabled,
     prepareBookOverview,
@@ -1604,6 +1622,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     chatId,
     chats,
     loadChat,
+    findChatIdByContextCfi,
     createChat,
     deleteChat,
     renameChat,

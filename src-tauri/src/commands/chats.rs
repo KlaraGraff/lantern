@@ -170,6 +170,70 @@ pub fn list_chats(book_id: String, db: State<'_, Db>) -> AppResult<Vec<Chat>> {
     query_chats(&db, &book_id)
 }
 
+fn message_metadata_has_context_cfi(metadata: Option<&str>, context_cfi: &str) -> bool {
+    if context_cfi.is_empty() {
+        return false;
+    }
+    let Some(metadata) = metadata else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(metadata) else {
+        return false;
+    };
+    if value.get("cfi").and_then(serde_json::Value::as_str) == Some(context_cfi) {
+        return true;
+    }
+    value
+        .get("contexts")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|contexts| {
+            contexts.iter().any(|context| {
+                context.get("cfi").and_then(serde_json::Value::as_str) == Some(context_cfi)
+            })
+        })
+}
+
+pub(crate) fn find_chat_by_context_cfi_inner(
+    db: &Db,
+    book_id: &str,
+    context_cfi: &str,
+) -> AppResult<Option<Chat>> {
+    let conn = db.reader();
+    let mut stmt = conn.prepare(
+        "SELECT c.id, c.book_id, c.title, c.model, c.pinned, c.metadata,
+                c.created_at, c.updated_at, m.metadata AS message_metadata
+         FROM chats c
+         JOIN chat_messages m ON m.chat_id = c.id
+         WHERE c.book_id = ?1 AND m.role = 'user'
+         ORDER BY m.created_at DESC, m.rowid DESC",
+    )?;
+    let rows = stmt.query_map(params![book_id], |row| {
+        Ok((
+            row_to_chat(row)?,
+            row.get::<_, Option<String>>("message_metadata")?,
+        ))
+    })?;
+    for row in rows {
+        let (chat, metadata) = row?;
+        if message_metadata_has_context_cfi(metadata.as_deref(), context_cfi) {
+            return Ok(Some(chat));
+        }
+    }
+    Ok(None)
+}
+
+/// Finds the most recently used conversation that quoted this exact book
+/// range. The displayed text is deliberately absent from the lookup: identical
+/// words at different positions must remain separate conversations.
+#[tauri::command]
+pub fn find_chat_by_context_cfi(
+    book_id: String,
+    context_cfi: String,
+    db: State<'_, Db>,
+) -> AppResult<Option<Chat>> {
+    find_chat_by_context_cfi_inner(&db, &book_id, &context_cfi)
+}
+
 #[tauri::command]
 pub fn list_all_chats(db: State<'_, Db>) -> AppResult<Vec<Chat>> {
     let conn = db.reader();
@@ -841,6 +905,79 @@ mod tests {
         assert_eq!(msgs[1].content, "Second");
         assert_eq!(msgs[2].content, "Third");
         assert_eq!(msgs[2].context, Some("some highlighted text".to_string()));
+    }
+
+    #[test]
+    fn test_find_chat_by_exact_context_cfi_not_display_text() {
+        let (_dir, db) = setup();
+        insert_chat(&db, "c1", "book1", "First occurrence");
+        insert_chat(&db, "c2", "book1", "Second occurrence");
+        insert_chat(&db, "c3", "book2", "Other book");
+
+        let conn = db.conn.lock().unwrap();
+        let t1: i64 = 1704067200000;
+        let t2: i64 = 1704067201000;
+        conn.execute(
+            "INSERT INTO chat_messages
+             (id, chat_id, role, content, context, metadata, created_at, updated_at)
+             VALUES ('m1', 'c1', 'user', 'What does this mean?', 'remain', ?1, ?2, ?2)",
+            params![r#"{"cfi":"epubcfi(/6/2!/4/2:10,/4/2:16)"}"#, t1],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chat_messages
+             (id, chat_id, role, content, context, metadata, created_at, updated_at)
+             VALUES ('m2', 'c2', 'user', 'What does this mean?', 'remain', ?1, ?2, ?2)",
+            params![r#"{"cfi":"epubcfi(/6/4!/4/2:10,/4/2:16)"}"#, t2],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chat_messages
+             (id, chat_id, role, content, context, metadata, created_at, updated_at)
+             VALUES ('m3', 'c3', 'user', 'What does this mean?', 'remain', ?1, ?2, ?2)",
+            params![r#"{"cfi":"epubcfi(/6/2!/4/2:10,/4/2:16)"}"#, t2],
+        )
+        .unwrap();
+        drop(conn);
+
+        let first = find_chat_by_context_cfi_inner(&db, "book1", "epubcfi(/6/2!/4/2:10,/4/2:16)")
+            .unwrap()
+            .unwrap();
+        let second = find_chat_by_context_cfi_inner(&db, "book1", "epubcfi(/6/4!/4/2:10,/4/2:16)")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(first.id, "c1");
+        assert_eq!(second.id, "c2");
+        assert!(
+            find_chat_by_context_cfi_inner(&db, "book1", "epubcfi(/missing)")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_find_chat_matches_any_stacked_quote_location() {
+        let (_dir, db) = setup();
+        insert_chat(&db, "c1", "book1", "Comparison");
+        let conn = db.conn.lock().unwrap();
+        let now: i64 = 1704067200000;
+        conn.execute(
+            "INSERT INTO chat_messages
+             (id, chat_id, role, content, context, metadata, created_at, updated_at)
+             VALUES ('m1', 'c1', 'user', 'Compare these', 'first', ?1, ?2, ?2)",
+            params![
+                r#"{"cfi":"epubcfi(/first)","contexts":[{"text":"first","cfi":"epubcfi(/first)"},{"text":"second","cfi":"epubcfi(/second)"}]}"#,
+                now
+            ],
+        )
+        .unwrap();
+        drop(conn);
+
+        let found = find_chat_by_context_cfi_inner(&db, "book1", "epubcfi(/second)")
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.id, "c1");
     }
 
     // --- metadata JSON field ---

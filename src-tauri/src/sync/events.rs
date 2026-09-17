@@ -59,6 +59,10 @@ pub fn is_supported_event_schema_version(version: u32) -> bool {
 /// acquired. Nobody wants to curate the same seven links twice, and the list
 /// is per-user by construction — it names places, not screens.
 ///
+/// Conversation-routing choices are the fourth exception. They express how
+/// one reader separates discussions, and changing devices should not change
+/// whether a newly quoted passage opens or resumes a conversation.
+///
 /// So the gate is a key whitelist, not a table. The writer (which decides
 /// whether to emit at all), the reader (`apply_setting_set`), and `dump_state`
 /// (which selects the rows a snapshot carries) all consult it. So do
@@ -73,7 +77,7 @@ pub fn is_syncable_setting(per_book: bool, key: &str) -> bool {
     if per_book {
         key == "font"
     } else {
-        key == "font_family" || key == BOOK_SOURCES_KEY
+        key == "font_family" || key == BOOK_SOURCES_KEY || AI_CHAT_ROUTING_KEYS.contains(&key)
     }
 }
 
@@ -100,6 +104,14 @@ pub fn is_syncable_setting(per_book: bool, key: &str) -> bool {
 /// *writing* them, so it has nothing stamped with its own clock to beat an
 /// older peer's curated list in the LWW compare.
 const BOOK_SOURCES_KEY: &str = "book_sources";
+
+/// Conversation boundaries describe how this reader wants related questions
+/// grouped, so they follow the person rather than the screen they were set on.
+const AI_CHAT_ROUTING_KEYS: &[&str] = &[
+    "ai_new_passage_new_chat",
+    "ai_new_passage_new_chat_while_open",
+    "ai_resume_chat_at_same_passage",
+];
 
 /// The four marker toggles, spelled the same in `settings` and `book_settings`
 /// — global and per-book live in different tables, so one name serves both.
@@ -1254,6 +1266,9 @@ mod tests {
             "show_new_vocab_markers",
             "show_learning_markers",
             "show_mastered_markers",
+            "ai_new_passage_new_chat",
+            "ai_new_passage_new_chat_while_open",
+            "ai_resume_chat_at_same_passage",
         ] {
             assert!(
                 is_syncable_setting(false, key),
@@ -1284,7 +1299,15 @@ mod tests {
                 "the global key {key} must stay on this device"
             );
         }
-        for key in ["reader_theme", "font_size", "font_family", "book_sources"] {
+        for key in [
+            "reader_theme",
+            "font_size",
+            "font_family",
+            "book_sources",
+            "ai_new_passage_new_chat",
+            "ai_new_passage_new_chat_while_open",
+            "ai_resume_chat_at_same_passage",
+        ] {
             assert!(
                 !is_syncable_setting(true, key),
                 "the per-book key {key} must stay on this device"

@@ -18,3 +18,28 @@ export function previousAssistantBeforeLatestUser<
   const candidate = messages[latestUserIndex - 1];
   return candidate?.role === "assistant" ? candidate : undefined;
 }
+
+export interface PassageRoutingPreferences {
+  newPassageStartsNewChat: boolean;
+  newPassageStartsNewChatWhileOpen: boolean;
+}
+
+export type PassageRoute = "current" | "new" | "resume";
+
+/**
+ * Chooses a conversation for one externally quoted book range. Text is not an
+ * input: two identical words at different locations must never share a route.
+ */
+export function passageRoute(
+  panelWasActive: boolean,
+  currentChatId: string | null,
+  matchedChatId: string | undefined,
+  preferences: PassageRoutingPreferences,
+): PassageRoute {
+  if (matchedChatId) {
+    return matchedChatId === currentChatId ? "current" : "resume";
+  }
+  if (!preferences.newPassageStartsNewChat) return "current";
+  if (panelWasActive && !preferences.newPassageStartsNewChatWhileOpen) return "current";
+  return "new";
+}

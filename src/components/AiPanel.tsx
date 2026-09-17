@@ -12,8 +12,10 @@ import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { usePanelTextSelection, type PanelSelectionSource } from "../hooks/usePanelTextSelection";
 import { chatSendHintKey, isSendKey } from "./chat-input-keys";
 import { platform } from "../services/platform";
+import { passageRoute } from "../hooks/aiChatRouting";
 
 interface AiPanelProps {
+  active: boolean;
   bookId?: string;
   bookTitle?: string;
   bookAuthor?: string;
@@ -142,7 +144,11 @@ interface ComposerQuote {
   focusWord?: string;
 }
 
-function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onLookupWord, onSelectText }: AiPanelProps) {
+function quoteIdentity(quote: ComposerQuote): string {
+  return quote.cfi ? `passage:${quote.cfi}` : `${quote.kind ?? "passage"}:${quote.text}`;
+}
+
+function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onLookupWord, onSelectText }: AiPanelProps) {
   const { t } = useTranslation();
   const coarsePointer = useCoarsePointer();
 
@@ -154,7 +160,8 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
   const {
     messages, streaming, send, retryWithWholeBook, retryFailed, swapAlias, cancel, initialize,
     chatId, chats, titling, initializing, groundingStatus, summaryProgress, bookAiState,
-    summariesAuto, spoilerGuardEnabled, setSpoilerGuardEnabled, prepareBookOverview, loadChat, deleteChat, renameChat, reset,
+    newPassageStartsNewChat, newPassageStartsNewChatWhileOpen, resumeChatAtSamePassage,
+    summariesAuto, spoilerGuardEnabled, setSpoilerGuardEnabled, prepareBookOverview, loadChat, findChatIdByContextCfi, deleteChat, renameChat, reset,
   } = useAiChat(bookId, {
     title: bookTitle,
     author: bookAuthor,
@@ -182,6 +189,13 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
   // swallows the other, and so a dismissal can be remembered per passage.
   const [autoQuote, setAutoQuote] = useState<ComposerQuote | undefined>();
   const dismissedSelectionRef = useRef<string | undefined>(undefined);
+  const panelWasActiveRef = useRef(false);
+  const contextRoutingGenerationRef = useRef(0);
+  const [contextRouting, setContextRouting] = useState(false);
+  const visibleChatIdRef = useRef(chatId);
+  useEffect(() => {
+    visibleChatIdRef.current = chatId;
+  }, [chatId]);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -221,7 +235,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
 
   const readSelection = useCallback((): ComposerQuote | undefined => {
     const found = getSelectionQuote?.();
-    if (!found || found.text === dismissedSelectionRef.current) return undefined;
+    if (!found || quoteIdentity(found) === dismissedSelectionRef.current) return undefined;
     return found;
   }, [getSelectionQuote]);
 
@@ -245,29 +259,87 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
     }
     // Remember which passage was waved off so refocusing does not resurrect it,
     // while a different selection still gets its own chip.
-    dismissedSelectionRef.current = autoQuote?.text;
+    dismissedSelectionRef.current = autoQuote ? quoteIdentity(autoQuote) : undefined;
     setAutoQuote(undefined);
   };
 
   const addQuote = useCallback((quote: ComposerQuote) => {
     setPendingQuotes((current) => (
-      current.some((item) => item.text === quote.text) ? current : [...current, quote]
+      current.some((item) => quoteIdentity(item) === quoteIdentity(quote)) ? current : [...current, quote]
     ));
   }, []);
 
-  // A fresh selection starts a fresh conversation. Besides keeping an unrelated
-  // answer out of the model's history, replacing the pending quote here means
-  // the chip can never show an older selection beside the one just chosen.
+  // Book locations route conversations; display text never does. A reply quote
+  // never enters this effect, and a detached quote without a location stays in
+  // the visible conversation. Those two fixed rules keep summarising an answer
+  // from unexpectedly navigating away.
   useEffect(() => {
-    if (!context) return;
-    void reset();
-    setPendingQuotes([context]);
+    const wasActive = panelWasActiveRef.current;
+    panelWasActiveRef.current = active;
+    const generation = contextRoutingGenerationRef.current + 1;
+    contextRoutingGenerationRef.current = generation;
+
+    if (!active || !context) {
+      setContextRouting(false);
+      return;
+    }
+
+    if (!context.cfi) {
+      addQuote(context);
+      setAutoQuote(undefined);
+      dismissedSelectionRef.current = undefined;
+      onContextConsumed?.();
+      return;
+    }
+
+    setContextRouting(true);
     setAutoQuote(undefined);
     dismissedSelectionRef.current = undefined;
-    setInput("");
-    setScope("auto");
-    onContextConsumed?.();
-  }, [context, onContextConsumed, reset]);
+
+    let disposed = false;
+    void (async () => {
+      const matchedChatId = resumeChatAtSamePassage
+        ? await findChatIdByContextCfi(context.cfi as string)
+        : undefined;
+      if (disposed || contextRoutingGenerationRef.current !== generation) return;
+
+      const route = passageRoute(wasActive, visibleChatIdRef.current, matchedChatId, {
+        newPassageStartsNewChat,
+        newPassageStartsNewChatWhileOpen,
+      });
+      if (route === "resume") {
+        setPendingQuotes([context]);
+        setInput("");
+        setScope("auto");
+        await loadChat(matchedChatId as string);
+      } else if (route === "new") {
+        setPendingQuotes([context]);
+        setInput("");
+        setScope("auto");
+        await reset();
+      } else {
+        addQuote(context);
+      }
+      if (disposed || contextRoutingGenerationRef.current !== generation) return;
+      setContextRouting(false);
+      onContextConsumed?.();
+    })();
+
+    return () => {
+      disposed = true;
+    };
+  }, [
+    active,
+    context,
+    addQuote,
+    findChatIdByContextCfi,
+    loadChat,
+    newPassageStartsNewChat,
+    newPassageStartsNewChatWhileOpen,
+    onContextConsumed,
+    reset,
+    resumeChatAtSamePassage,
+  ]);
 
   // Quoting an answer is the start of a follow-up, so the composer takes focus.
   const quoteReply = useCallback((text: string) => {
@@ -276,7 +348,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
   }, [addQuote]);
 
   // Explicit quotes, plus the reader selection once the composer picked it up.
-  const quoteChips = autoQuote && !pendingQuotes.some((quote) => quote.text === autoQuote.text)
+  const quoteChips = autoQuote && !pendingQuotes.some((quote) => quoteIdentity(quote) === quoteIdentity(autoQuote))
     ? [...pendingQuotes, autoQuote]
     : pendingQuotes;
 
@@ -294,7 +366,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
     quotes.find((quote) => quote.focusWord)?.focusWord;
 
   const handleSend = () => {
-    if (!input.trim() || streaming || initializing) return;
+    if (!input.trim() || streaming || initializing || contextRouting) return;
     pinLatestQuestion();
     const quotes = takeQuotes();
     send(input.trim(), quotes[0]?.text, quotes[0]?.cfi, quotes[0]?.analysis, {
@@ -518,7 +590,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
                 <button
                   key={prompt}
                   onClick={() => {
-                    if (initializing) return;
+                    if (initializing || contextRouting) return;
                     pinLatestQuestion();
                     const quotes = takeQuotes();
                     send(prompt, quotes[0]?.text, quotes[0]?.cfi, quotes[0]?.analysis, {
@@ -529,7 +601,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
                     });
                     clearQuotes();
                   }}
-                  disabled={initializing}
+                  disabled={initializing || contextRouting}
                   className="px-3 py-1.5 rounded-full text-[12px] font-medium text-accent-text bg-accent-bg border border-accent/30 hover:opacity-80 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-default"
                 >
                   {prompt}
@@ -580,7 +652,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
             Quote action or from whatever is selected in the reader */}
         {quoteChips.map((quote) => (
           <div
-            key={`${quote.kind ?? "passage"}:${quote.text}`}
+            key={quoteIdentity(quote)}
             className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-[rgba(192,132,252,0.12)] border-l-2 border-[#c084fc]"
           >
             <div className="flex-1 min-w-0">
@@ -621,9 +693,9 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
             onClick={streaming ? cancel : handleSend}
             title={streaming ? t("ai.stop") : t("ai.send")}
             aria-label={streaming ? t("ai.stop") : t("ai.send")}
-            disabled={!streaming && (!input.trim() || initializing)}
+            disabled={!streaming && (!input.trim() || initializing || contextRouting)}
             className={`absolute bottom-2 right-2 flex size-8 items-center justify-center rounded-full bg-accent text-white shadow-sm cursor-pointer ${
-              !streaming && (!input.trim() || initializing) ? "opacity-50" : ""
+              !streaming && (!input.trim() || initializing || contextRouting) ? "opacity-50" : ""
             }`}
           >
             {streaming ? (

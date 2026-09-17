@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { AlertCircle, Loader2, Plus } from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
 import Select from "../ui/Select";
@@ -930,6 +930,50 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           onChange={(enabled) => void saveSetting("ai_spoiler_guard", enabled ? "true" : "false")}
           label={t("settings.ai.spoilerGuard")}
         />
+      </div>
+      <div className="mb-4 border-b border-border py-3">
+        <div className="flex min-h-[49px] items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.newPassageNewChat")}</h4>
+            <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.newPassageNewChatHint")}</p>
+          </div>
+          <Toggle
+            checked={settings.ai_new_passage_new_chat !== "false"}
+            onChange={(enabled) => void saveSetting("ai_new_passage_new_chat", enabled ? "true" : "false")}
+            label={t("settings.ai.newPassageNewChat")}
+          />
+        </div>
+        <details className="group mt-2 border-t border-border pt-2">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-medium text-text-muted hover:text-text-primary [&::-webkit-details-marker]:hidden">
+            <ChevronDown size={13} className="transition-transform group-open:rotate-180" />
+            {t("settings.ai.chatRoutingDetails")}
+          </summary>
+          <div className="ml-[19px] mt-2 divide-y divide-border rounded-lg bg-bg-input px-3">
+            <div className="flex min-h-[62px] items-center justify-between gap-4 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[12px] font-medium text-text-primary">{t("settings.ai.newPassageWhileOpen")}</p>
+                <p className="mt-0.5 text-[10px] leading-[1.5] text-text-muted">{t("settings.ai.newPassageWhileOpenHint")}</p>
+              </div>
+              <Toggle
+                checked={settings.ai_new_passage_new_chat_while_open !== "false"}
+                disabled={settings.ai_new_passage_new_chat === "false"}
+                onChange={(enabled) => void saveSetting("ai_new_passage_new_chat_while_open", enabled ? "true" : "false")}
+                label={t("settings.ai.newPassageWhileOpen")}
+              />
+            </div>
+            <div className="flex min-h-[62px] items-center justify-between gap-4 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[12px] font-medium text-text-primary">{t("settings.ai.resumeSamePassage")}</p>
+                <p className="mt-0.5 text-[10px] leading-[1.5] text-text-muted">{t("settings.ai.resumeSamePassageHint")}</p>
+              </div>
+              <Toggle
+                checked={settings.ai_resume_chat_at_same_passage !== "false"}
+                onChange={(enabled) => void saveSetting("ai_resume_chat_at_same_passage", enabled ? "true" : "false")}
+                label={t("settings.ai.resumeSamePassage")}
+              />
+            </div>
+          </div>
+        </details>
       </div>
       <div className="mb-4 border-b border-border py-3">
         <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.summaryProfile")}</h4>

@@ -3186,6 +3186,7 @@ export default function Reader() {
             <div className="relative flex-1 min-h-0">
               <div className="h-full">
                 <AiPanel
+                  active={sidePanel === "ai"}
                   bookId={bookId}
                   bookTitle={book.title}
                   bookAuthor={book.author}
