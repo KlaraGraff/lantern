@@ -372,7 +372,10 @@ export default function CardPreview({
         cardConfig: JSON.stringify(config),
         requestId,
       });
-      if (previewRequestRef.current === requestId) setRealResult(response);
+      if (previewRequestRef.current === requestId) {
+        setRealResult(response);
+        if (response.complete === false) setRealError(t("learningCard.modelOffFormat"));
+      }
     } catch (error) {
       if (previewRequestRef.current === requestId) {
         const message = error instanceof Error ? error.message : String(error);

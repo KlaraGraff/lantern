@@ -8,71 +8,62 @@ import type {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isOptionalString = (value: unknown) => value === undefined || typeof value === "string";
+const text = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() ? value.trim() : undefined;
 
-const isOptionalStringArray = (value: unknown) => (
-  value === undefined
-  || (Array.isArray(value) && value.every((item) => typeof item === "string"))
-);
+const textList = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : [value]).flatMap((entry) => {
+    const parsed = text(entry);
+    return parsed ? [parsed] : [];
+  });
 
 function parseExample(value: unknown): LearningExample | null {
-  if (!isObject(value) || typeof value.source !== "string" || !isOptionalString(value.target)) {
-    return null;
-  }
-  return {
-    source: value.source,
-    ...(typeof value.target === "string" ? { target: value.target } : {}),
-  };
+  const source = text(isObject(value) ? value.source : value);
+  if (!source) return null;
+  return { source, target: isObject(value) ? text(value.target) : undefined };
 }
 
 function parseItem(value: unknown): LearningContentItem | null {
-  if (
-    !isObject(value)
-    || typeof value.title !== "string"
-    || !isOptionalString(value.text)
-    || !isOptionalStringArray(value.meta)
-    || (value.examples !== undefined && !Array.isArray(value.examples))
-  ) {
-    return null;
-  }
-  const rawExamples = Array.isArray(value.examples) ? value.examples : undefined;
-  const examples = rawExamples?.map(parseExample) ?? [];
-  if (examples.some((example) => example === null)) return null;
+  if (typeof value === "string") return text(value) ? { title: text(value)! } : null;
+  if (!isObject(value)) return null;
+  const title = text(value.title) ?? text(value.text);
+  if (!title) return null;
   return {
-    title: value.title,
-    ...(typeof value.text === "string" ? { text: value.text } : {}),
-    ...(Array.isArray(value.meta) ? { meta: value.meta } : {}),
-    ...(rawExamples ? { examples: examples as LearningExample[] } : {}),
+    title,
+    text: text(value.text),
+    meta: textList(value.meta),
+    examples: Array.isArray(value.examples)
+      ? value.examples.flatMap((entry) => {
+        const example = parseExample(entry);
+        return example ? [example] : [];
+      })
+      : [],
   };
 }
 
+// Match the backend's salvage rules so one malformed module cannot block the
+// valid modules after it in either the reader or the settings preview.
 function parseModuleContent(value: unknown): LearningModuleContent | null {
-  if (
-    !isObject(value)
-    || !isOptionalString(value.heading)
-    || !isOptionalString(value.summary)
-    || !isOptionalString(value.quote)
-    || !isOptionalStringArray(value.meta)
-    || !isOptionalStringArray(value.details)
-    || (value.items !== undefined && !Array.isArray(value.items))
-  ) {
-    return null;
-  }
-  const rawItems = Array.isArray(value.items) ? value.items : undefined;
-  const items = rawItems?.map(parseItem) ?? [];
-  if (items.some((item) => item === null)) return null;
+  if (typeof value === "string") return text(value) ? { summary: text(value)! } : null;
+  if (Array.isArray(value)) return { details: textList(value) };
+  if (!isObject(value)) return null;
   return {
-    ...(typeof value.heading === "string" ? { heading: value.heading } : {}),
-    ...(typeof value.summary === "string" ? { summary: value.summary } : {}),
-    ...(Array.isArray(value.meta) ? { meta: value.meta } : {}),
-    ...(Array.isArray(value.details) ? { details: value.details } : {}),
-    ...(rawItems ? { items: items as LearningContentItem[] } : {}),
-    ...(typeof value.quote === "string" ? { quote: value.quote } : {}),
+    heading: text(value.heading),
+    summary: text(value.summary),
+    quote: text(value.quote),
+    meta: textList(value.meta),
+    details: textList(value.details),
+    items: Array.isArray(value.items)
+      ? value.items.flatMap((entry) => {
+        const item = parseItem(entry);
+        return item ? [item] : [];
+      })
+      : [],
   };
 }
 
 /**
- * Extracts only complete module objects from the streamed card JSON. The
+ * Extracts readable modules from the streamed card JSON. The
  * backend's fully parsed response remains authoritative; this parser exists
  * solely to reveal validated modules while that response is still arriving.
  */
@@ -88,7 +79,11 @@ export class LearningCardStreamParser {
   private escaped = false;
   private done = false;
 
-  constructor(private readonly allowedIds: ReadonlySet<LearningModuleId>) {}
+  private readonly allowedIds: ReadonlySet<LearningModuleId>;
+
+  constructor(allowedIds: ReadonlySet<LearningModuleId>) {
+    this.allowedIds = allowedIds;
+  }
 
   push(delta: string): Partial<Record<LearningModuleId, LearningModuleContent>> {
     const completed: Partial<Record<LearningModuleId, LearningModuleContent>> = {};
@@ -121,17 +116,12 @@ export class LearningCardStreamParser {
       }
       next = this.skipWhitespaceFrom(next + 1);
       if (next >= this.buffer.length) break;
-      if (this.buffer[next] !== "{") {
-        this.done = true;
-        break;
-      }
-
       this.pendingKey = this.allowedIds.has(key.value as LearningModuleId)
         ? key.value as LearningModuleId
         : null;
       this.valueStart = next;
-      this.cursor = next + 1;
-      this.depth = 1;
+      this.cursor = next;
+      this.depth = 0;
       this.inString = false;
       this.escaped = false;
     }
@@ -173,35 +163,46 @@ export class LearningCardStreamParser {
   private scanValue(completed: Partial<Record<LearningModuleId, LearningModuleContent>>) {
     while (this.cursor < this.buffer.length) {
       const char = this.buffer[this.cursor];
+      // A delimiter at depth zero belongs to the enclosing modules object.
+      // Waiting for it also handles primitive values split across chunks.
+      if (!this.inString && this.depth === 0 && (char === "," || char === "}")) {
+        const raw = this.buffer.slice(this.valueStart, this.cursor);
+        this.finishValue(raw, completed);
+        return;
+      }
       this.cursor += 1;
-
       if (this.inString) {
         if (this.escaped) this.escaped = false;
         else if (char === "\\") this.escaped = true;
         else if (char === '"') this.inString = false;
         continue;
       }
-      if (char === '"') {
-        this.inString = true;
-        continue;
-      }
-      if (char === "{" || char === "[") this.depth += 1;
-      else if (char === "}" || char === "]") this.depth -= 1;
-
-      if (this.depth !== 0) continue;
-      const raw = this.buffer.slice(this.valueStart, this.cursor);
-      if (this.pendingKey) {
-        try {
-          const content = parseModuleContent(JSON.parse(raw));
-          if (content) completed[this.pendingKey] = content;
-        } catch {
-          // The final backend parse will surface protocol errors.
+      if (char === '"') this.inString = true;
+      else if (char === "{" || char === "[") this.depth += 1;
+      else if (char === "}" || char === "]") {
+        this.depth -= 1;
+        if (this.depth === 0) {
+          this.finishValue(this.buffer.slice(this.valueStart, this.cursor), completed);
+          return;
         }
       }
-      this.pendingKey = null;
-      this.valueStart = -1;
-      return;
     }
+  }
+
+  private finishValue(raw: string, completed: Partial<Record<LearningModuleId, LearningModuleContent>>) {
+    if (this.pendingKey) {
+      try {
+        const content = parseModuleContent(JSON.parse(raw));
+        if (content && (
+          content.heading || content.summary || content.quote
+          || content.meta?.length || content.details?.length || content.items?.length
+        )) completed[this.pendingKey] = content;
+      } catch {
+        // The final backend parse reports damaged content.
+      }
+    }
+    this.pendingKey = null;
+    this.valueStart = -1;
   }
 
   private readString(start: number): { value: string; end: number } | null {

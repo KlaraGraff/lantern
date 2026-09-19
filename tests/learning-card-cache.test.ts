@@ -71,3 +71,9 @@ test("rejects stored cards of another kind, empty cards, and junk", () => {
     null,
   );
 });
+
+test("never reuses a salvaged card even when its design signature matches", () => {
+  const signature = learningCardCacheSignature(wordCard());
+  const stored = learningCardCacheEnvelope({ ...result, complete: false }, signature);
+  assert.equal(cachedLearningCardResult(stored, "word", signature), null);
+});

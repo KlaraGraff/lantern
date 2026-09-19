@@ -6,7 +6,7 @@ interface CachedLearningCard extends LearningCardResult {
 
 // Bump when the learning-card prompt changes, so cards written by the old
 // prompt stop being reused.
-const CACHE_REVISION = 2;
+const CACHE_REVISION = 3;
 
 /**
  * Everything that changes what the model is asked for. A stored card is only
@@ -44,7 +44,7 @@ export function cachedLearningCardResult(
   } catch {
     return null;
   }
-  if (parsed?.cacheSignature !== signature || parsed.kind !== kind) return null;
+  if (parsed?.cacheSignature !== signature || parsed.kind !== kind || parsed.complete === false) return null;
   return parsed.modules && Object.keys(parsed.modules).length > 0 ? parsed : null;
 }
 

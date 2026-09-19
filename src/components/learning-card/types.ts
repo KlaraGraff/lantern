@@ -137,10 +137,8 @@ export interface LearningCardResult {
   sourceText: string;
   modules: Partial<Record<LearningModuleId, LearningModuleContent>>;
   /**
-   * `false` when the backend had to close brackets the model never closed. The
-   * card is readable — that is the whole point of salvaging it — but whatever
-   * came after the cut is missing, so it is shown once and not cached.
-   * Absent on cards read back from the cache, which were whole when written.
+   * `false` when JSON needed repair or a module did not match the card schema.
+   * Recovered cards remain readable but must not be reused from the cache.
    */
   complete?: boolean;
 }

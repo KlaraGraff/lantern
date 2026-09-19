@@ -319,19 +319,7 @@ export default function LearningCardView({
               highlightedModuleId={highlightedModuleId}
               animateChanges={animateModuleChanges}
             />
-            {/*
-              The answer came apart partway. Everything above finished streaming
-              and is as good as any other card, so the failure is reported where
-              it happened — at the bottom, under the last module that made it —
-              rather than replacing the card with an error page. Nothing on this
-              path is written to the lookup cache.
-
-              Keyed on `partial`, not on `error`: the answer can come apart two
-              ways. The stream can die, which leaves an error and the modules
-              that arrived; or it can finish with brackets the backend has to
-              close by hand, which leaves no error at all and a card missing
-              whatever came after the cut. Both are the same thing to read.
-            */}
+            {/* Preserve readable modules while reporting the specific failure below them. */}
             {partial && (
               <div
                 role="alert"
@@ -339,7 +327,7 @@ export default function LearningCardView({
               >
                 <AlertCircle size={13} className="shrink-0 text-danger-text" aria-hidden="true" />
                 <p className="min-w-0 flex-1 break-words text-[11px] leading-4 text-text-muted">
-                  {t("learningCard.partialAnswer")}
+                  {error || t("learningCard.partialAnswer")}
                 </p>
                 {onRetry && (
                   <button
