@@ -825,7 +825,7 @@ GitHub 仓库              KlaraGraff/lantern
 
 ```text
 Original Quill © 2026 wyc studios
-Personal edition maintained by KlaraGraff
+Personal edition maintained by OA
 MIT License
 ```
 

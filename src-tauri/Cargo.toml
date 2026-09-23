@@ -2,7 +2,7 @@
 name = "lantern"
 version = "2.18.6"
 description = "A personalized English learning ebook reader"
-authors = ["KlaraGraff"]
+authors = ["OA"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
