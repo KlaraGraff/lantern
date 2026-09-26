@@ -45,6 +45,7 @@ export function SortableBookItem({ id, enabled, list, children }: {
   return (
     <div
       ref={setNodeRef}
+      onDragStart={(event) => event.preventDefault()}
       className={`relative min-w-0 ${isDragging ? "z-10 opacity-70" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >

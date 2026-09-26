@@ -479,9 +479,9 @@ export default function Home() {
   useEffect(() => {
     if (!platform.hasDragDrop) return;
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
-      if (event.payload.type === "over" || event.payload.type === "enter") {
-        setIsDragging(true);
-      } else {
+      if (event.payload.type === "enter") {
+        setIsDragging(event.payload.paths.length > 0);
+      } else if (event.payload.type !== "over") {
         setIsDragging(false);
       }
     });

@@ -163,7 +163,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
             onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
-            className={`text-left cursor-pointer group ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
+            className={`block w-full min-w-0 text-left cursor-pointer group ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
             style={staggerEntrance ? ({ "--motion-stagger-index": Math.min(index, STAGGER_CAP) } as React.CSSProperties) : undefined}
           >
             <div className="relative bg-border rounded-lg overflow-hidden shadow-card aspect-[3/4]">
