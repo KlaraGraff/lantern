@@ -113,7 +113,6 @@ import type {
 } from "./reader/foliate-types";
 import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
-import { chapterReadout, type BodyMatterRange } from "./reader/chapter-count";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
 import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-panel";
@@ -354,10 +353,6 @@ export default function Reader() {
   }, [isNarrow, tocOpen, searchOpen]);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
-  // Which spine sections are the book's body, so front/back matter does not
-  // inflate the top bar's chapter count. Null until probed, or when the book
-  // says nothing about it.
-  const [bodyMatter, setBodyMatter] = useState<BodyMatterRange | null>(null);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
@@ -1180,10 +1175,6 @@ export default function Reader() {
     }
   }, [supportsScrubber, bookReady, chapters]);
 
-  const chapterCounter = useMemo(
-    () => chapterReadout(chapters, currentChapterIndex, bodyMatter),
-    [chapters, currentChapterIndex, bodyMatter],
-  );
 
   const currentScope = useMemo(() => {
     const anchorIndex = currentChapterIndex >= 0
@@ -1419,7 +1410,6 @@ export default function Reader() {
     currentCfiRef.current = null;
     chaptersRef.current = [];
     setChapters([]);
-    setBodyMatter(null);
     setTocSavedState(undefined);
     setCurrentChapterIndex(-1);
     setCurrentSectionIndex(-1);
@@ -1686,7 +1676,6 @@ export default function Reader() {
     getCurrentLabel,
     notifyLocationChanged,
     setChapters,
-    setBodyMatter,
     setCurrentChapterIndex,
     setCurrentSectionIndex,
     setProgress,
@@ -2287,16 +2276,13 @@ export default function Reader() {
   /**
    * The one line the phone's top strip carries: where the reader is.
    *
-   * The chapter name is the honest answer and the first choice. A book whose
-   * TOC has not resolved yet, or a PDF (which has page numbers and often no
-   * outline at all), falls back to the counter the desktop header's subtitle
-   * shows — the strip is 40pt of screen either way, and an empty one reads as
-   * a bar that failed to load.
+   * Prefer the current TOC title. A PDF without an outline can still show its
+   * page number; other formats leave the subtitle empty until a title resolves.
    */
   const narrowLocationLabel = currentChapterTitle
-    ?? (book.format === "pdf"
-      ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
-      : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : "");
+    ?? (book.format === "pdf" && pageInfo
+      ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })
+      : "");
 
   /**
    * The read-aloud bar covers the bottom of the page on a phone, and it carries
@@ -2637,9 +2623,7 @@ export default function Reader() {
                   {book.title}
                 </h1>
                 <span className="truncate text-[13px] text-text-muted leading-4 md:overflow-visible md:whitespace-normal">
-                  {book.format === "pdf"
-                    ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
-                    : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : ""}
+                  {narrowLocationLabel}
                 </span>
               </div>
             </>
@@ -2656,9 +2640,7 @@ export default function Reader() {
               {book.title}
             </h1>
             <span className="max-w-full truncate text-[12px] leading-4 opacity-60 md:overflow-visible md:whitespace-normal">
-              {book.format === "pdf"
-                ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
-                : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : ""}
+              {narrowLocationLabel}
             </span>
           </div>
         )}

@@ -4,10 +4,11 @@
  * `progressReadoutSettingKey` below and its use with `getBookSettings`/
  * `set_book_settings_bulk` in `Reader.tsx`.
  */
-export type ProgressReadoutMode = "page" | "chapterTime" | "bookTime" | "hidden";
+export type ProgressReadoutMode = "page" | "chapterTime" | "bookTime" | "hidden" | "bookProgress";
 
-/** Click order: page number → chapter time left → book time left → hidden → (loops). */
+/** Click order: book progress → local pages → local time left → book time left → hidden. */
 export const PROGRESS_READOUT_MODES: readonly ProgressReadoutMode[] = [
+  "bookProgress",
   "page",
   "chapterTime",
   "bookTime",
@@ -16,8 +17,8 @@ export const PROGRESS_READOUT_MODES: readonly ProgressReadoutMode[] = [
 
 export const progressReadoutSettingKey = "progress_readout_mode";
 
-/** Falls back to the default ("page") for anything unrecognized, including
- * `undefined` from a book with no saved preference yet. */
+/** Falls back to "page" for an unrecognized saved value. Books without a
+ * saved mode use `defaultProgressReadoutMode` until the user clicks. */
 export function parseProgressReadoutMode(value: string | undefined): ProgressReadoutMode {
   return (PROGRESS_READOUT_MODES as readonly string[]).includes(value ?? "")
     ? (value as ProgressReadoutMode)
@@ -37,7 +38,7 @@ export function defaultProgressReadoutMode(metrics: {
   showPageNumbers: boolean;
 }): ProgressReadoutMode {
   return metrics.showChapterProgress || metrics.showBookProgress || metrics.showPageNumbers
-    ? "page"
+    ? "bookProgress"
     : "hidden";
 }
 

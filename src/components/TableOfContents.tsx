@@ -67,10 +67,6 @@ function TableOfContents({
     }
     return result;
   }, [chapters]);
-  const readingUnitCount = useMemo(
-    () => rows.filter((row) => !row.hasChildren).length,
-    [rows],
-  );
 
   const rowsByPage = useMemo(() => new Map(rows.map((row) => [row.page, row])), [rows]);
 
@@ -218,9 +214,6 @@ function TableOfContents({
         <h2 className="hidden md:block text-[15px] font-semibold text-text-primary leading-5">
           {t("reader.tocTitle")}
         </h2>
-        <p className="text-[12px] text-text-muted leading-4 mt-0.5">
-          {t("reader.tocCount", { count: readingUnitCount })}
-        </p>
       </div>
       <div
         ref={scrollContainerRef}

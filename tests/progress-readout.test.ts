@@ -25,14 +25,15 @@ test("parseProgressReadoutMode round-trips every known mode", () => {
 test("defaultProgressReadoutMode starts hidden only when every progress toggle is off", () => {
   const off = { showChapterProgress: false, showBookProgress: false, showPageNumbers: false };
   assert.equal(defaultProgressReadoutMode(off), "hidden");
-  assert.equal(defaultProgressReadoutMode({ ...off, showChapterProgress: true }), "page");
-  assert.equal(defaultProgressReadoutMode({ ...off, showBookProgress: true }), "page");
-  assert.equal(defaultProgressReadoutMode({ ...off, showPageNumbers: true }), "page");
+  assert.equal(defaultProgressReadoutMode({ ...off, showChapterProgress: true }), "bookProgress");
+  assert.equal(defaultProgressReadoutMode({ ...off, showBookProgress: true }), "bookProgress");
+  assert.equal(defaultProgressReadoutMode({ ...off, showPageNumbers: true }), "bookProgress");
 });
 
-test("nextProgressReadoutMode cycles page -> chapterTime -> bookTime -> hidden -> page", () => {
+test("nextProgressReadoutMode cycles book progress, local pages, time, and hidden", () => {
+  assert.equal(nextProgressReadoutMode("bookProgress"), "page");
   assert.equal(nextProgressReadoutMode("page"), "chapterTime");
   assert.equal(nextProgressReadoutMode("chapterTime"), "bookTime");
   assert.equal(nextProgressReadoutMode("bookTime"), "hidden");
-  assert.equal(nextProgressReadoutMode("hidden"), "page");
+  assert.equal(nextProgressReadoutMode("hidden"), "bookProgress");
 });

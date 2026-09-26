@@ -57,7 +57,7 @@ export function useProgressReadout({
   readerSettings,
 }: ProgressReadoutOptions) {
   const { t } = useTranslation();
-  const [progressReadoutMode, setProgressReadoutMode] = useState<ProgressReadoutMode>("page");
+  const [progressReadoutMode, setProgressReadoutMode] = useState<ProgressReadoutMode>("bookProgress");
   // Whether this book has a readout mode of its own yet. Until it does, the
   // global "progress display" toggles decide the starting mode — see
   // `defaultProgressReadoutMode`.
@@ -67,7 +67,8 @@ export function useProgressReadout({
 
   /** Called when the reader switches books, before the new one's rows arrive. */
   const resetProgressReadout = useCallback(() => {
-    setProgressReadoutMode("page");
+    setProgressReadoutMode("bookProgress");
+    setProgressReadoutSaved(false);
     paceSnapshotRef.current = null;
     setPaceWindow([]);
   }, []);
@@ -126,10 +127,11 @@ export function useProgressReadout({
   // whole-object dependency a hand-written deps array would declare.
   const progressReadoutText = (() => {
     if (effectiveProgressReadoutMode === "hidden") return null;
+    if (effectiveProgressReadoutMode === "bookProgress") return t("reader.bookProgress", { progress });
     if (effectiveProgressReadoutMode === "page") {
       if (!pageInfo) return t("reader.bookProgress", { progress });
-      // `pageInfo` counts pages within the current chapter, so the label says
-      // so — `reader.pageOf` (whole-document pages) stays with the PDF footer.
+      // `pageInfo` counts pages within a Foliate section, which need not match
+      // the book's chapter boundaries.
       return pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
         ? t("reader.chapterPageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
         : t("reader.chapterPageOf", { current: pageInfo.current, total: pageInfo.total });
