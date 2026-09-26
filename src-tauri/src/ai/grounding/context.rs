@@ -66,7 +66,7 @@ const CONTEXT_LINE_BLANK_RETRIES: usize = 2;
 /// passage carries too little text to identify a language from, and the next
 /// trial run answered exactly such a passage — in an English book — in
 /// Spanish.
-const CONTEXT_LINE_SYSTEM_PROMPT: &str = "You are given one chapter of a book and a single passage from within it. Write a short locator for that passage: where it sits in the book, and which people, places, and events it concerns. Name them explicitly — especially anyone the passage itself refers to only as \"he\", \"she\", or \"it\".
+const CONTEXT_LINE_SYSTEM_PROMPT: &str = "You are given one section of a book and a single passage from within it. Write a short locator for that passage: where it sits in the book, and which people, places, and events it concerns. Name them explicitly — especially anyone the passage itself refers to only as \"he\", \"she\", or \"it\".
 
 Rules:
 - Write a bare phrase, not a sentence about the passage. Never begin with \"This passage\", \"The passage\", \"This section\", or the equivalent in another language.
@@ -155,17 +155,13 @@ fn pending_rows(rows: &[ChunkRow]) -> Vec<&ChunkRow> {
         .collect()
 }
 
-fn chapter_header(book_title: &str, section_index: i64, section_title: Option<&str>) -> String {
+fn section_header(book_title: &str, section_title: Option<&str>) -> String {
     let title = section_title
         .map(str::trim)
         .filter(|title| !title.is_empty());
     match title {
-        // Chapters are numbered for the model's benefit only (never shown to
-        // the reader), so an off-by-one against however the book itself
-        // labels chapters is harmless — it only has to be a locator, not a
-        // citation.
-        Some(title) => format!("{book_title} · Chapter {} — {title}", section_index + 1),
-        None => format!("{book_title} · Chapter {}", section_index + 1),
+        Some(title) => format!("{book_title} · Section — {title}"),
+        None => format!("{book_title} · Section"),
     }
 }
 
@@ -704,8 +700,7 @@ pub async fn ensure_context_lines<R: Runtime>(
         .into_iter()
         .map(|row| {
             let section_rows = sections.get(&row.section_index).expect("row's own section");
-            let header =
-                chapter_header(&book_title, row.section_index, row.section_title.as_deref());
+            let header = section_header(&book_title, row.section_title.as_deref());
             let messages = context_line_messages(
                 &header,
                 prefixes.get(&row.section_index).expect("row's own section"),
@@ -1542,8 +1537,7 @@ mod live_tests {
             let written = &written;
             async move {
                 let section_rows = sections.get(&row.section_index).expect("row's own section");
-                let header =
-                    chapter_header(book_title, row.section_index, row.section_title.as_deref());
+                let header = section_header(book_title, row.section_title.as_deref());
                 let messages = context_line_messages(
                     &header,
                     prefixes.get(&row.section_index).expect("row's own section"),
@@ -1937,13 +1931,17 @@ mod tests {
     }
 
     #[test]
-    fn chapter_header_includes_the_section_title_when_present() {
+    fn section_header_uses_title_without_inventing_chapter_number() {
         assert_eq!(
-            chapter_header("Emma", 0, Some("The Ball")),
-            "Emma · Chapter 1 — The Ball"
+            section_header("Emma", Some("The Ball")),
+            "Emma · Section — The Ball"
         );
-        assert_eq!(chapter_header("Emma", 0, None), "Emma · Chapter 1");
-        assert_eq!(chapter_header("Emma", 0, Some("   ")), "Emma · Chapter 1");
+        assert_eq!(section_header("Emma", None), "Emma · Section");
+        assert_eq!(section_header("Emma", Some("   ")), "Emma · Section");
+        assert_eq!(
+            section_header("被讨厌的勇气", Some("为什么讨厌自己？")),
+            "被讨厌的勇气 · Section — 为什么讨厌自己？"
+        );
     }
 
     #[test]
