@@ -45,6 +45,9 @@ export function SortableBookItem({ id, enabled, list, children }: {
   return (
     <div
       ref={setNodeRef}
+      onPointerDown={(event) => {
+        if (enabled && event.pointerType !== "touch") listeners?.onPointerDown?.(event);
+      }}
       onDragStart={(event) => event.preventDefault()}
       className={`relative min-w-0 ${isDragging ? "z-10 opacity-70" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
@@ -59,6 +62,10 @@ export function SortableBookItem({ id, enabled, list, children }: {
           style={{ touchAction: "none" }}
           {...attributes}
           {...listeners}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            listeners?.onPointerDown?.(event);
+          }}
         >
           <GripVertical size={17} />
         </button>

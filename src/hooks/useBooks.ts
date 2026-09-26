@@ -114,8 +114,8 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
   return { books, total, loading, loadingMore, hasMore, loadMore, refresh, reorderVisible };
 }
 
-export async function moveBook(bookId: string, targetId: string, after: boolean): Promise<void> {
-  await invoke("move_book", { bookId, targetId, after });
+export async function moveBook(bookId: string, targetId: string, after: boolean, fromRecent: boolean): Promise<void> {
+  await invoke("move_book", { bookId, targetId, after, fromRecent });
 }
 
 /** One file's failure inside a dialog import batch — kept alongside

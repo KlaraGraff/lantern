@@ -474,17 +474,21 @@ pub(crate) fn move_book_in_manual_order(
     book_id: &str,
     target_id: &str,
     after: bool,
+    from_recent: bool,
 ) -> AppResult<()> {
     if book_id == target_id {
         return Ok(());
     }
     let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     let tx = conn.transaction()?;
+    let select_order = if from_recent {
+        "SELECT id FROM books ORDER BY updated_at DESC, id ASC"
+    } else {
+        "SELECT books.id FROM books LEFT JOIN book_manual_order mo ON mo.book_id = books.id
+         ORDER BY mo.position IS NULL, mo.position ASC, books.updated_at DESC, books.id ASC"
+    };
     let mut ids: Vec<String> = tx
-        .prepare(
-            "SELECT books.id FROM books LEFT JOIN book_manual_order mo ON mo.book_id = books.id
-         ORDER BY mo.position IS NULL, mo.position ASC, books.updated_at DESC, books.id ASC",
-        )?
+        .prepare(select_order)?
         .query_map([], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
     let from = ids
@@ -513,11 +517,12 @@ pub fn move_book(
     book_id: String,
     target_id: String,
     after: bool,
+    from_recent: bool,
     db: State<'_, Db>,
 ) -> AppResult<()> {
     crate::sync::validation::validate_entity_id(&book_id)?;
     crate::sync::validation::validate_entity_id(&target_id)?;
-    move_book_in_manual_order(&db, &book_id, &target_id, after)
+    move_book_in_manual_order(&db, &book_id, &target_id, after, from_recent)
 }
 
 #[tauri::command]

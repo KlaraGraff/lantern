@@ -1324,7 +1324,7 @@ fn manual_order_persists_across_pages_and_leaves_recent_order_untouched() {
     for i in 0..5 {
         insert_book_with_ts(&db, &format!("b{i}"), "reading", 1000 + i);
     }
-    super::query::move_book_in_manual_order(&db, "b0", "b3", false).unwrap();
+    super::query::move_book_in_manual_order(&db, "b0", "b3", false, false).unwrap();
     let page1 = super::query::query_books_sorted(&db, None, None, None, None, 3, true).unwrap();
     let page2 = super::query::query_books_sorted(
         &db,
@@ -1359,11 +1359,40 @@ fn manual_order_persists_across_pages_and_leaves_recent_order_untouched() {
 }
 
 #[test]
+fn moving_from_recent_uses_the_visible_order_even_when_manual_order_exists() {
+    let (_dir, db) = setup();
+    for i in 0..5 {
+        insert_book_with_ts(&db, &format!("b{i}"), "reading", 1000 + i);
+    }
+    super::query::move_book_in_manual_order(&db, "b0", "b3", false, false).unwrap();
+    super::query::move_book_in_manual_order(&db, "b1", "b4", false, true).unwrap();
+
+    let manual = super::query::query_books_sorted(&db, None, None, None, None, 10, true).unwrap();
+    assert_eq!(
+        manual
+            .books
+            .iter()
+            .map(|book| book.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b1", "b4", "b3", "b2", "b0"]
+    );
+    let recent = query_books(&db, None, None, None, None, 10).unwrap();
+    assert_eq!(
+        recent
+            .books
+            .iter()
+            .map(|book| book.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b4", "b3", "b2", "b1", "b0"]
+    );
+}
+
+#[test]
 fn manual_move_rejects_missing_target_without_changing_order() {
     let (_dir, db) = setup();
     insert_book_with_ts(&db, "b1", "reading", 1000);
     insert_book_with_ts(&db, "b2", "reading", 1001);
-    assert!(super::query::move_book_in_manual_order(&db, "b1", "missing", true).is_err());
+    assert!(super::query::move_book_in_manual_order(&db, "b1", "missing", true, false).is_err());
     let count: i64 = db
         .reader()
         .query_row("SELECT COUNT(*) FROM book_manual_order", [], |row| {

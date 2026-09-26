@@ -91,7 +91,7 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
             onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
-            className={`flex items-start gap-4 p-4 border border-border rounded-lg text-left cursor-pointer hover:bg-bg-muted transition-colors ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
+            className={`flex items-start gap-4 p-4 border border-border rounded-lg text-left hover:bg-bg-muted transition-colors ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
           >
             {/* Cover */}
             <div className="relative w-[96px] h-[144px] shrink-0 rounded-lg overflow-hidden bg-border shadow-card">

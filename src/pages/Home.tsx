@@ -505,7 +505,7 @@ export default function Home() {
   }, []);
 
   const displayBooks = books;
-  const canMoveBooks = sortMode === "manual" && activeFilter === "all" && !searchQuery && !debouncedSearchQuery && !loading && !sortSaving;
+  const canMoveBooks = activeFilter === "all" && !searchQuery && !debouncedSearchQuery && !loading && !sortSaving;
   const handleMoveBook = async (from: number, to: number) => {
     if (!canMoveBooks) return;
     const book = displayBooks[from];
@@ -515,12 +515,19 @@ export default function Home() {
     setSortError(false);
     reorderVisible(from, to);
     try {
-      await moveBook(book.id, target.id, from < to);
+      const fromRecent = sortMode === "recent";
+      await moveBook(book.id, target.id, from < to, fromRecent);
+      if (fromRecent) {
+        localStorage.setItem(SORT_MODE_STORAGE_KEY, "manual");
+        setSortMode("manual");
+      } else {
+        await refresh();
+      }
     } catch (error) {
       console.error("Failed to reorder books:", error);
       setSortError(true);
-    } finally {
       await refresh();
+    } finally {
       setSortSaving(false);
     }
   };
@@ -704,7 +711,7 @@ export default function Home() {
                 <option value="manual">{t("home.sortManual")}</option>
               </select>
             </div>
-            {sortMode === "manual" && <p className="mt-2 text-[12px] text-text-muted">{t(canMoveBooks ? "home.sortHint" : "home.sortFilteredHint")}</p>}
+            {(sortMode === "manual" || canMoveBooks) && <p className="mt-2 text-[12px] text-text-muted">{t(canMoveBooks ? sortMode === "recent" ? "home.sortRecentHint" : "home.sortHint" : "home.sortFilteredHint")}</p>}
             {sortError && <p role="alert" className="mt-2 text-[12px] text-danger-text">{t("home.sortError")}</p>}
           </div>
 
