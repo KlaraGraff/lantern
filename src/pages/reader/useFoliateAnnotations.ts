@@ -883,6 +883,7 @@ export function useFoliateAnnotations({
         css,
       );
     }
+    view.refreshSearchHighlights();
   }, [markerStyleRef, readerSettingsRef, supportsReflowSettings, viewRef]);
 
   const refreshAnnotations = useCallback(async (reapplyVisible = false) => {

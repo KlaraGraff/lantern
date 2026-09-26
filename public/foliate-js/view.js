@@ -4,6 +4,17 @@ import { Overlayer } from './overlayer.js'
 import { textWalker } from './text-walker.js'
 
 const SEARCH_PREFIX = 'foliate-search:'
+const INLINE_MARK = 'lantern-mark[data-lantern-mark]'
+
+const intersectsInlineMark = range => {
+    const start = range.startContainer?.nodeType === 1
+        ? range.startContainer : range.startContainer?.parentElement
+    const end = range.endContainer?.nodeType === 1
+        ? range.endContainer : range.endContainer?.parentElement
+    return Boolean(start?.closest?.(INLINE_MARK)
+        || end?.closest?.(INLINE_MARK)
+        || range.cloneContents().querySelector?.(INLINE_MARK))
+}
 
 const isZip = async file => {
     const arr = new Uint8Array(await file.slice(0, 4).arrayBuffer())
@@ -216,6 +227,9 @@ export class View extends HTMLElement {
     #tocProgress
     #pageProgress
     #searchResults = new Map()
+    #searchVersion = 0
+    #activeSearch = null
+    #searchAccent = '#8b5cf6'
     #cursorAutohider = new CursorAutohider(this, () =>
         this.hasAttribute('autohide-cursor'))
     isFixedLayout = false
@@ -302,6 +316,7 @@ export class View extends HTMLElement {
         }
     }
     close() {
+        this.clearSearch()
         this.renderer?.destroy()
         this.renderer?.remove()
         // Release book-owned resources (PDF.js Worker, etc.). Fire-and-forget:
@@ -313,7 +328,6 @@ export class View extends HTMLElement {
         this.#sectionProgress = null
         this.#tocProgress = null
         this.#pageProgress = null
-        this.#searchResults = new Map()
         this.lastLocation = null
         this.history.clear()
         this.tts = null
@@ -381,8 +395,11 @@ export class View extends HTMLElement {
     async addAnnotation(annotation, remove) {
         const { value } = annotation
         if (value.startsWith(SEARCH_PREFIX)) {
+            const version = this.#searchVersion
             const cfi = value.replace(SEARCH_PREFIX, '')
             const { index, anchor } = await this.resolveNavigation(cfi)
+            if (version !== this.#searchVersion
+            || !this.#searchResults.get(index)?.includes(annotation)) return
             const obj = this.#getOverlayer(index)
             if (obj) {
                 const { overlayer, doc } = obj
@@ -391,7 +408,13 @@ export class View extends HTMLElement {
                     return
                 }
                 const range = doc ? anchor(doc) : anchor
-                overlayer.add(value, range, Overlayer.outline)
+                overlayer.add(value, range, rects => Overlayer.search(rects, {
+                    color: this.#searchAccent,
+                    active: cfi === this.#activeSearch,
+                    range,
+                    overlap: intersectsInlineMark(range) || overlayer.overlaps(rects,
+                        key => !key.startsWith(SEARCH_PREFIX)),
+                }), { search: true })
             }
             return
         }
@@ -425,8 +448,9 @@ export class View extends HTMLElement {
             doc.addEventListener('click', e => {
                 const obj = this.#getOverlayer(index)
                 if (obj) {
-                    const [value, range] = obj.overlayer.hitTest(e)
-                    if (value && !value.startsWith(SEARCH_PREFIX)) {
+                    const [value, range] = obj.overlayer.hitTest(e,
+                        key => !key.startsWith(SEARCH_PREFIX))
+                    if (value) {
                         this.#emit('show-annotation', { value, index, range })
                     }
                 }
@@ -562,7 +586,9 @@ export class View extends HTMLElement {
     }
     async * search(opts) {
         this.clearSearch()
+        const version = this.#searchVersion
         const { searchMatcher } = await import('./search.js')
+        if (version !== this.#searchVersion) return
         const { query, index } = opts
         const matcher = searchMatcher(textWalker,
             { defaultLocale: this.language, ...opts })
@@ -574,6 +600,7 @@ export class View extends HTMLElement {
         this.#searchResults.set(index, list)
 
         for await (const result of iter) {
+            if (version !== this.#searchVersion) return
             if (result.subitems){
                 const list = result.subitems
                     .map(({ cfi }) => ({ value: SEARCH_PREFIX + cfi }))
@@ -596,9 +623,30 @@ export class View extends HTMLElement {
         yield 'done'
     }
     clearSearch() {
-        for (const list of this.#searchResults.values())
-            for (const item of list) this.deleteAnnotation(item)
+        this.#searchVersion++
+        this.#activeSearch = null
+        for (const { overlayer } of this.renderer?.getContents() ?? [])
+            for (const list of this.#searchResults.values())
+                for (const item of list)
+                    overlayer?.remove(item.value)
         this.#searchResults.clear()
+    }
+    setActiveSearch(cfi) {
+        if (this.#activeSearch === cfi) return
+        this.#activeSearch = cfi
+        for (const { overlayer } of this.renderer?.getContents() ?? [])
+            overlayer?.redrawSearch()
+    }
+    setSearchAccent(color) {
+        if (this.#searchAccent === color) return
+        this.#searchAccent = color
+        for (const { overlayer } of this.renderer?.getContents() ?? [])
+            overlayer?.redrawSearch()
+    }
+    refreshSearchHighlights() {
+        for (const { index } of this.renderer?.getContents() ?? [])
+            for (const item of this.#searchResults.get(index) ?? [])
+                this.addAnnotation(item).catch(() => {})
     }
     async initTTS(granularity = 'word', highlight) {
         const doc = this.renderer.getContents()[0].doc

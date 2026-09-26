@@ -72,6 +72,9 @@ export interface FoliateView extends HTMLElement {
     matchWholeWords?: boolean;
   }): AsyncGenerator<FoliateSearchYield>;
   clearSearch(): void;
+  setActiveSearch(cfi: string | null): void;
+  setSearchAccent(color: string): void;
+  refreshSearchHighlights(): void;
   getSectionFractions(): number[];
   addAnnotation(annotation: {
     value: string;

@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lantern · 搜索命中样章（五种方案）</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #edf1eb;
+      --surface: #ffffff;
+      --surface-muted: #f5f7f3;
+      --page: #e8f0e6;
+      --ink: #262923;
+      --muted: #68716a;
+      --rule: #dce3d9;
+      --accent: #7946c8;
+      --accent-rgb: 121, 70, 200;
+      --saved: #e5bc52;
+      --saved-rgb: 229, 188, 82;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --canvas: #18191d;
+      --surface: #25262c;
+      --surface-muted: #2d2e35;
+      --page: #34343b;
+      --ink: #eeedf0;
+      --muted: #b2b0ba;
+      --rule: #464750;
+      --accent: #c1a5ff;
+      --accent-rgb: 193, 165, 255;
+      --saved: #f1c866;
+      --saved-rgb: 241, 200, 102;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); }
+    button { font: inherit; }
+    .topbar {
+      position: sticky; top: 0; z-index: 10; display: flex; align-items: center;
+      justify-content: space-between; gap: 18px; padding: 12px max(24px, calc((100vw - 1280px)/2));
+      border-bottom: 1px solid var(--rule); background: var(--surface);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand-icon { display: grid; place-items: center; width: 33px; height: 33px; border-radius: 10px;
+      background: #7c3aed; color: white; font-weight: 750; font-size: 21px; }
+    .brand-name { font-size: 13px; font-weight: 700; letter-spacing: .01em; }
+    .brand-sub { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 400; }
+    .theme-switch { display: flex; gap: 3px; flex-shrink: 0; padding: 3px; border-radius: 10px; background: var(--surface-muted); }
+    .theme-switch button { padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+    .theme-switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px #0002; }
+    main { max-width: 1280px; padding: 32px 24px 64px; margin: auto; }
+    .intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 25px; }
+    .eyebrow { margin: 0 0 8px; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .16em; }
+    h1 { margin: 0; font-size: clamp(26px, 3vw, 38px); letter-spacing: -.035em; line-height: 1.16; }
+    .intro p:last-child { margin: 11px 0 0; max-width: 760px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+    .intro-note { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 25px; }
+    .legend span { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 12px; }
+    .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; background: rgba(var(--accent-rgb), .18); }
+    .legend .selected i { background: rgba(var(--accent-rgb), .35); outline: 1px solid var(--accent); }
+    .legend .existing i { background: rgba(var(--saved-rgb), .54); }
+    .options { display: grid; gap: 21px; }
+    .option { overflow: hidden; border: 1px solid var(--rule); border-radius: 18px; background: var(--surface); box-shadow: 0 5px 25px #1f2e1c09; }
+    .option-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 21px; }
+    .option-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+    .option-number { color: var(--accent); font-size: 12px; font-weight: 760; letter-spacing: .1em; }
+    .option-title h2 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
+    .option-title p { margin: 0; color: var(--muted); font-size: 12px; }
+    .recommend { display: inline-block; margin-left: 2px; padding: 3px 7px; border-radius: 5px;
+      background: rgba(var(--accent-rgb), .12); color: var(--accent); font-size: 10px; font-weight: 700; }
+    .variant-note { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+    .reader { display: grid; grid-template-columns: 213px minmax(0, 1fr); min-height: 326px; border-top: 1px solid var(--rule); background: var(--page); }
+    .search-panel { min-width: 0; padding: 17px 13px; border-right: 1px solid rgba(72, 80, 72, .16); background: rgba(255, 255, 255, .12); }
+    .panel-title { margin: 0 0 13px; font-size: 12px; font-weight: 730; }
+    .query { display: flex; align-items: center; gap: 7px; height: 29px; padding: 0 10px; border: 1px solid rgba(98, 106, 98, .24); border-radius: 8px;
+      background: rgba(106, 112, 100, .075); font-size: 11px; }
+    .query svg { flex: 0 0 auto; width: 13px; height: 13px; color: var(--muted); }
+    .scopes { display: flex; justify-content: space-around; gap: 2px; margin: 11px 0 8px; color: var(--muted); font-size: 10px; }
+    .scopes b { padding: 4px 11px; border-radius: 99px; color: var(--accent); background: rgba(92, 96, 90, .11); font-weight: 650; }
+    .count { margin: 0 0 11px; color: var(--muted); font-size: 10px; }
+    .search-row { margin: 2px 0; padding: 8px 8px; border-radius: 7px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .search-row.active { color: var(--ink); background: rgba(var(--accent-rgb), .12); }
+    .search-row strong { color: var(--accent); font-weight: 720; }
+    .chapter { padding: 16px clamp(23px, 3vw, 44px) 23px; min-width: 0; }
+    .chapter-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 30px; border-bottom: 1px solid rgba(85, 92, 84, .15); }
+    .chapter-top .book { font-size: 11px; font-weight: 700; }
+    .chapter-top .page { color: var(--muted); font-size: 10px; }
+    .chapter-body { max-width: 790px; margin: 20px auto 0; font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif; }
+    .chapter-body h3 { margin: 0 0 18px; text-align: center; font-size: 20px; font-weight: 650; }
+    .chapter-body p { margin: 0 0 14px; font-size: 18px; line-height: 2.15; letter-spacing: .015em; }
+    .hit, .saved { box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    .saved { background: rgba(var(--saved-rgb), .43); border-radius: 2px; }
+    .option-footer { display: flex; justify-content: space-between; gap: 20px; padding: 12px 21px 14px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .option-footer strong { color: var(--ink); font-weight: 650; }
+    .option-footer .rule { max-width: 70%; }
+    .option-footer .distinction { text-align: right; }
+
+    /* 01 — a text-sized, quiet contour. Existing marks keep their own fill. */
+    .style-1 .hit.other { background: rgba(var(--accent-rgb), .12); border-radius: 3px; }
+    .style-1 .hit.current { background: rgba(var(--accent-rgb), .23); border-radius: 4px; outline: 1px solid rgba(var(--accent-rgb), .76); outline-offset: 1px; }
+    .style-1 .hit.overlap { background: transparent; border-radius: 4px; outline: 1px solid rgba(var(--accent-rgb), .82); outline-offset: 2px; }
+
+    /* 02 — a fluorescent wash with a precise lower edge. */
+    .style-2 .hit.other { background: rgba(var(--accent-rgb), .13); border-radius: 2px; }
+    .style-2 .hit.current { background: rgba(var(--accent-rgb), .29); border-radius: 2px; box-shadow: inset 0 -2px 0 var(--accent); }
+    .style-2 .hit.overlap { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
+
+    /* 03 — the selected word appears slightly lifted from the page. */
+    .style-3 .hit.other { border-bottom: 2px solid rgba(var(--accent-rgb), .48); }
+    .style-3 .hit.current { background: rgba(var(--accent-rgb), .19); border-radius: 5px; box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .12), 0 3px 12px rgba(var(--accent-rgb), .2); }
+    .style-3 .hit.overlap { background: transparent; border-radius: 4px; box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .50); }
+
+    /* 04 — a light wash plus a small navigation tick, never a box. */
+    .style-4 .hit.other { background: rgba(var(--accent-rgb), .12); border-radius: 3px; }
+    .style-4 .hit.current, .style-4 .hit.overlap { position: relative; border-radius: 3px; }
+    .style-4 .hit.current { background: rgba(var(--accent-rgb), .23); }
+    .style-4 .hit.overlap { background: transparent; border-bottom: 1.5px solid var(--accent); }
+    .style-4 .hit.current::before, .style-4 .hit.overlap::before { content: ""; position: absolute; left: -5px; top: 4px; bottom: 3px; width: 2px; border-radius: 2px; background: var(--accent); }
+
+    /* 05 — a quiet lower-half ink wash with a clear selected baseline. */
+    .style-5 .hit.other { background: linear-gradient(transparent 58%, rgba(var(--accent-rgb), .19) 58%); }
+    .style-5 .hit.current { background: linear-gradient(transparent 45%, rgba(var(--accent-rgb), .35) 45%); border-bottom: 2px solid var(--accent); }
+    .style-5 .hit.overlap { background: transparent; border-bottom: 2px solid var(--accent); }
+
+    @media (max-width: 760px) {
+      .topbar { padding-left: 16px; padding-right: 16px; }
+      main { padding: 24px 14px 46px; }
+      .intro { align-items: start; flex-direction: column; }
+      .intro-note, .variant-note { display: none; }
+      .option-header { padding: 14px; }
+      .option-title { gap: 6px; }
+      .option-title p { flex-basis: 100%; }
+      .reader { grid-template-columns: 1fr; }
+      .search-panel { border-right: 0; border-bottom: 1px solid var(--rule); padding: 12px 15px; }
+      .panel-title, .scopes, .search-row:not(.active) { display: none; }
+      .query { max-width: 180px; }
+      .count { margin: 7px 0 0; }
+      .search-row.active { margin-top: 6px; }
+      .chapter { padding: 12px 18px 22px; }
+      .chapter-body p { font-size: 17px; }
+      .option-footer { padding: 12px 14px; flex-direction: column; gap: 4px; }
+      .option-footer .rule { max-width: none; }
+      .option-footer .distinction { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="brand-icon" aria-hidden="true">◫</div><div class="brand-name">Lantern<span class="brand-sub">阅读器搜索 · 视觉样章</span></div></div>
+    <div class="theme-switch" role="group" aria-label="预览主题">
+      <button type="button" data-theme-option="light" aria-pressed="true">浅色</button>
+      <button type="button" data-theme-option="dark" aria-pressed="false">深色</button>
+    </div>
+  </header>
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">SEARCH HIGHLIGHT · FIVE DIRECTIONS</p>
+        <h1>搜索命中，应该怎么落在书页上？</h1>
+        <p>同一段正文、同一组搜索结果。每个方案都展示普通命中、当前命中，以及命中落在已有黄色标记上的效果。这里是视觉样章，尚未改动阅读器。</p>
+      </div>
+      <div class="intro-note">上下滚动比较 01—05</div>
+    </section>
+    <div class="legend" aria-label="样章标识">
+      <span><i></i>普通搜索命中</span><span class="selected"><i></i>当前选中的命中</span><span class="existing"><i></i>用户已有标记</span>
+    </div>
+    <div id="options" class="options"></div>
+  </main>
+  <script>
+    const options = [
+      { number: "01", name: "柔和细框", short: "最接近现有操作习惯，但框只贴合文字。", overlap: "保留黄色底色，只加一圈细紫线。", distinction: "当前命中：柔紫底 + 1px 圆角细框", recommended: true },
+      { number: "02", name: "荧光笔下沿", short: "像刚划过的荧光笔，边缘有明确落点。", overlap: "保留黄色底色，只加紫色下沿。", distinction: "当前命中：柔紫底 + 2px 下沿" },
+      { number: "03", name: "轻浮光晕", short: "当前命中像轻轻浮起，其余结果只留细线。", overlap: "保留黄色底色，外侧用微光圈定位。", distinction: "当前命中：柔紫底 + 外侧微光" },
+      { number: "04", name: "书签短针", short: "让短线承担定位，字面保持安静。", overlap: "保留黄色底色，短针与细下沿定位。", distinction: "当前命中：柔紫底 + 左侧短针" },
+      { number: "05", name: "页内墨迹", short: "颜色只落在字的下半部，像纸上轻刷过。", overlap: "保留黄色底色，只加紫色基线。", distinction: "当前命中：下半部色带 + 基线" },
+    ];
+    const searchIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.6"/><path d="m16 16 5 5"/></svg>';
+    document.querySelector('#options').innerHTML = options.map((option, i) => `
+      <section class="option style-${i + 1}" aria-labelledby="option-${option.number}">
+        <div class="option-header">
+          <div class="option-title"><span class="option-number">方案 ${option.number}</span><h2 id="option-${option.number}">${option.name}</h2>${option.recommended ? '<span class="recommend">推荐先看</span>' : ''}<p>${option.short}</p></div>
+          <span class="variant-note">同一段文字 · 同一组命中</span>
+        </div>
+        <div class="reader">
+          <aside class="search-panel" aria-label="搜索结果示意">
+            <div class="panel-title">搜索</div>
+            <div class="query">${searchIcon}<span>线索</span></div>
+            <div class="scopes"><b>全部</b><span>我的高亮</span><span>生词</span></div>
+            <p class="count">3 个结果</p>
+            <div class="search-row">第一章　有些<strong>线索</strong>藏在句子的转折里</div>
+            <div class="search-row active">第一章　终于看清了这条<strong>线索</strong></div>
+            <div class="search-row">第一章　另一条<strong>线索</strong>标成黄色</div>
+          </aside>
+          <div class="chapter">
+            <div class="chapter-top"><span class="book">灯下读书 · 第一章</span><span class="page">第 12 页 / 共 48 页</span></div>
+            <div class="chapter-body">
+              <h3>重读这一页</h3>
+              <p>有些<span class="hit other">线索</span>藏在句子的转折里。第一次读时，我只顾着往下翻；重读时，才发现作者早已留下一条通往下文的路。</p>
+              <p>读到这一页，我终于看清了这条<span class="hit current">线索</span>。它没有把答案直接交给我，却让我愿意再停一会儿。</p>
+              <p>后来，我把另一条<span class="saved"><span class="hit overlap">线索</span></span>标成了黄色，准备下次细读。搜索再次经过这里时，原来的标记仍然属于我。</p>
+            </div>
+          </div>
+        </div>
+        <div class="option-footer"><span class="rule"><strong>重叠时：</strong>${option.overlap}</span><span class="distinction">${option.distinction}</span></div>
+      </section>`).join('');
+    document.querySelectorAll('[data-theme-option]').forEach(button => button.addEventListener('click', () => {
+      const theme = button.dataset.themeOption;
+      document.documentElement.dataset.theme = theme;
+      document.querySelectorAll('[data-theme-option]').forEach(candidate => candidate.setAttribute('aria-pressed', String(candidate === button)));
+    }));
+  </script>
+</body>
+</html>

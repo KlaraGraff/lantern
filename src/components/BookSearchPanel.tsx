@@ -112,6 +112,7 @@ export default function BookSearchPanel({
     const view = viewRef.current;
     const generation = ++searchGenerationRef.current;
     setRawGroups([]);
+    setLastClickedCfi(null);
     setSearchProgress(null);
     setIsSearching(false);
     if (!open || !view) return;
@@ -178,6 +179,7 @@ export default function BookSearchPanel({
 
   const handleResultClick = (cfi: string) => {
     setLastClickedCfi(cfi);
+    viewRef.current?.setActiveSearch(cfi);
     onNavigateToCfi(cfi);
   };
 

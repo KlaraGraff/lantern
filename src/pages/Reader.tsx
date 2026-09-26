@@ -495,6 +495,24 @@ export default function Reader() {
     setReaderViewportEl(node);
   }, []);
   const viewRef = useRef<FoliateView | null>(null);
+  const searchNavigationClosingRef = useRef(false);
+  useEffect(() => {
+    if (!supportsSearch || !bookReady) return;
+    const accent = getReaderThemeVars(readerSettings.theme, readerSettings.customTheme)?.["--color-accent"] ?? "#7c3aed";
+    viewRef.current?.setSearchAccent(accent);
+  }, [bookReady, readerSettings.theme, readerSettings.customTheme, supportsSearch]);
+  useEffect(() => {
+    if (searchOpen) return;
+    if (searchNavigationClosingRef.current) {
+      searchNavigationClosingRef.current = false;
+      const view = viewRef.current;
+      const timer = window.setTimeout(() => {
+        if (viewRef.current === view) view?.clearSearch();
+      }, 3000);
+      return () => window.clearTimeout(timer);
+    }
+    viewRef.current?.clearSearch();
+  }, [bookId, searchOpen]);
   // Raw dwell/exposure collection for the future mastery/review engine
   // (docs/impls/reading-driven-mastery-and-review.md) — collection and
   // persistence only, no scoring happens here. See
@@ -2832,7 +2850,8 @@ export default function Reader() {
                 viewRef={viewRef}
                 focusToken={searchFocusToken}
                 onNavigateToCfi={(cfi) => {
-                  flashNavigationTarget(cfi).catch(() => {});
+                  if (closesOnNavigate(isNarrowNow())) searchNavigationClosingRef.current = true;
+                  navigateToCfi(cfi);
                   closeNarrowPanels();
                 }}
               />
