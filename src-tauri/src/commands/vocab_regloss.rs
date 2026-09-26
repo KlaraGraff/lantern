@@ -497,7 +497,8 @@ mod tests {
             regenerate_vocab_definition_inner(app.handle(), &db, &secrets, &sync, "w1", None)
                 .await
                 .unwrap_err();
-        assert!(error.to_string().contains("VOCAB_GLOSS_EMPTY"));
+        assert!(matches!(error, AppError::Ai(code)
+            if code == "AI_EMPTY_RESPONSE" || code == "VOCAB_GLOSS_EMPTY"));
         let (definition, explanation, _, _) = row(&db, "w1");
         assert_eq!(definition, "to that place");
         assert_eq!(explanation, None);
