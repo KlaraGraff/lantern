@@ -89,6 +89,8 @@ pub struct BookIndexDetails {
     error: Option<String>,
     chunk_count: i64,
     embedded_count: i64,
+    context_line_count: i64,
+    alias_count: i64,
     embedding_model: Option<String>,
     indexed_at: Option<i64>,
     overview: Option<IndexSummaryView>,
@@ -118,6 +120,16 @@ pub fn ai_index_details(book_id: String, db: State<'_, Db>) -> AppResult<BookInd
     let embedded_count = conn.query_row(
         "SELECT COUNT(*) FROM book_chunk_embeddings WHERE book_id = ?1 AND (?2 IS NULL OR model = ?2)",
         rusqlite::params![book_id, configured_model],
+        |row| row.get(0),
+    )?;
+    let context_line_count = conn.query_row(
+        "SELECT COUNT(*) FROM book_chunks WHERE book_id = ?1 AND context_line IS NOT NULL AND context_line != ''",
+        rusqlite::params![book_id],
+        |row| row.get(0),
+    )?;
+    let alias_count = conn.query_row(
+        "SELECT COUNT(*) FROM book_person_aliases WHERE book_id = ?1",
+        rusqlite::params![book_id],
         |row| row.get(0),
     )?;
     let embedding_model = configured_model;
@@ -157,6 +169,8 @@ pub fn ai_index_details(book_id: String, db: State<'_, Db>) -> AppResult<BookInd
         error,
         chunk_count,
         embedded_count,
+        context_line_count,
+        alias_count,
         embedding_model,
         indexed_at: (indexed_at > 0).then_some(indexed_at),
         overview: summaries

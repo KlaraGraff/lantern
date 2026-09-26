@@ -786,6 +786,7 @@ pub fn run() {
             // Books
             commands::books::import_book_from_dialog,
             commands::books::list_books,
+            commands::books::move_book,
             commands::books::get_book,
             commands::books::get_book_counts,
             commands::books::delete_book,

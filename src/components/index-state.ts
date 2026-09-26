@@ -78,6 +78,8 @@ export interface IndexDetails {
   error?: string | null;
   chunkCount: number;
   embeddedCount: number;
+  contextLineCount: number;
+  aliasCount: number;
   embeddingModel?: string | null;
   indexedAt?: number | null;
   overview?: IndexSummary | null;

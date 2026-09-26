@@ -47,7 +47,7 @@ interface BookPage {
   total: number;
 }
 
-export function useBooks(filter?: string, search?: string, collectionId?: string) {
+export function useBooks(filter?: string, search?: string, collectionId?: string, sort?: "recent" | "manual") {
   const [books, setBooks] = useState<Book[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -64,6 +64,7 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
         collectionId: collectionId || null,
         cursor: null,
         limit: null,
+        sort: sort || "recent",
       });
       setBooks(page.books);
       setTotal(page.total);
@@ -74,7 +75,7 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
     } finally {
       setLoading(false);
     }
-  }, [filter, search, collectionId]);
+  }, [filter, search, collectionId, sort]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || loadingMore) return;
@@ -86,6 +87,7 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
         collectionId: collectionId || null,
         cursor,
         limit: null,
+        sort: sort || "recent",
       });
       setBooks((prev) => [...prev, ...page.books]);
       setCursor(page.next_cursor);
@@ -95,13 +97,25 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, filter, search, collectionId, loadingMore]);
+  }, [cursor, filter, search, collectionId, sort, loadingMore]);
+
+  const reorderVisible = useCallback((from: number, to: number) => {
+    setBooks((current) => {
+      const next = [...current];
+      next.splice(to, 0, next.splice(from, 1)[0]);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { books, total, loading, loadingMore, hasMore, loadMore, refresh };
+  return { books, total, loading, loadingMore, hasMore, loadMore, refresh, reorderVisible };
+}
+
+export async function moveBook(bookId: string, targetId: string, after: boolean): Promise<void> {
+  await invoke("move_book", { bookId, targetId, after });
 }
 
 /** One file's failure inside a dialog import batch — kept alongside

@@ -8,6 +8,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Sidebar from "../components/Sidebar";
 import BookGrid from "../components/BookGrid";
 import BookList from "../components/BookList";
+import { BookSortContext } from "../components/BookSort";
 import DictionaryContent from "../components/DictionaryContent";
 import QaContent from "../components/qa/QaContent";
 import AnnotationsContent from "../components/AnnotationsContent";
@@ -17,7 +18,7 @@ import { listenForSettingsChanged } from "../components/settings-events";
 import LibraryHintBanner from "../components/onboarding/LibraryHintBanner";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
-import { useBooks, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
+import { useBooks, moveBook, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
 import { summarizeImportFailures } from "../hooks/import-batch";
 import { useCollections } from "../hooks/useCollections";
 import { useIsNarrow } from "../hooks/useIsNarrow";
@@ -86,6 +87,7 @@ const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
  * the reader) goes narrow again.
  */
 const VIEW_MODE_STORAGE_KEY = "library-view-mode";
+const SORT_MODE_STORAGE_KEY = "library-sort-mode";
 
 type ViewMode = "grid2" | "grid3" | "grid4" | "list";
 
@@ -128,6 +130,9 @@ export default function Home() {
   // the collapsed/review-focused start state never lingers past one visit.
   const [vocabInitialView, setVocabInitialView] = useState<"all" | "review">("all");
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredViewMode);
+  const [sortMode, setSortMode] = useState<"recent" | "manual">(() => localStorage.getItem(SORT_MODE_STORAGE_KEY) === "manual" ? "manual" : "recent");
+  const [sortSaving, setSortSaving] = useState(false);
+  const [sortError, setSortError] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -333,7 +338,7 @@ export default function Home() {
 
   const searchParam = debouncedSearchQuery || undefined;
 
-  const { books, loading, hasMore, loadMore, loadingMore, refresh } = useBooks(statusFilter, searchParam, collectionId);
+  const { books, loading, hasMore, loadMore, loadingMore, refresh, reorderVisible } = useBooks(statusFilter, searchParam, collectionId, sortMode);
 
   // Book counts for sidebar badges — lightweight, no book data loaded.
   const [bookCounts, setBookCounts] = useState({ all: 0, reading: 0, finished: 0 });
@@ -500,6 +505,25 @@ export default function Home() {
   }, []);
 
   const displayBooks = books;
+  const canMoveBooks = sortMode === "manual" && activeFilter === "all" && !searchQuery && !debouncedSearchQuery && !loading && !sortSaving;
+  const handleMoveBook = async (from: number, to: number) => {
+    if (!canMoveBooks) return;
+    const book = displayBooks[from];
+    const target = displayBooks[to];
+    if (!book || !target || book.id === target.id) return;
+    setSortSaving(true);
+    setSortError(false);
+    reorderVisible(from, to);
+    try {
+      await moveBook(book.id, target.id, from < to);
+    } catch (error) {
+      console.error("Failed to reorder books:", error);
+      setSortError(true);
+    } finally {
+      await refresh();
+      setSortSaving(false);
+    }
+  };
 
   const handleImport = async () => {
     try {
@@ -657,13 +681,31 @@ export default function Home() {
               </div>
             </div>
 
-            <Input
-              icon={<Search size={16} />}
-              placeholder={t("home.search")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full md:w-[448px]"
-            />
+            <div className="flex items-center gap-3">
+              <Input
+                icon={<Search size={16} />}
+                placeholder={t("home.search")}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="min-w-0 flex-1 md:flex-none md:w-[448px]"
+              />
+              <select
+                aria-label={t("home.sortLabel")}
+                value={sortMode}
+                onChange={(e) => {
+                  const next = e.target.value === "manual" ? "manual" : "recent";
+                  setSortMode(next);
+                  localStorage.setItem(SORT_MODE_STORAGE_KEY, next);
+                  setSortError(false);
+                }}
+                className="ml-auto h-10 shrink-0 cursor-pointer rounded-md border border-border bg-bg-surface px-3 text-[13px] text-text-primary"
+              >
+                <option value="recent">{t("home.sortRecent")}</option>
+                <option value="manual">{t("home.sortManual")}</option>
+              </select>
+            </div>
+            {sortMode === "manual" && <p className="mt-2 text-[12px] text-text-muted">{t(canMoveBooks ? "home.sortHint" : "home.sortFilteredHint")}</p>}
+            {sortError && <p role="alert" className="mt-2 text-[12px] text-danger-text">{t("home.sortError")}</p>}
           </div>
 
           <LibraryHintBanner />
@@ -689,14 +731,18 @@ export default function Home() {
                   </Button>
                 )}
               </div>
-            ) : viewMode === "list" ? (
-              <BookList books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} />
             ) : (
+              <BookSortContext ids={displayBooks.map((book) => book.id)} enabled={canMoveBooks} list={viewMode === "list"} onMove={(from, to) => { void handleMoveBook(from, to); }}>
+              {viewMode === "list" ? (
+              <BookList books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} sortable={canMoveBooks} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} />
+              ) : (
               // The column count only ever narrows the grid on a narrow screen —
               // a wide window always gets the auto-fill grid, whichever of
               // grid2/grid3 happens to be stored, because the segmented control
               // that sets it isn't even on screen there.
-              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : viewMode === "grid4" ? 4 : 3) : undefined} />
+              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} sortable={canMoveBooks} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : viewMode === "grid4" ? 4 : 3) : undefined} />
+              )}
+              </BookSortContext>
             )}
           </div>
 

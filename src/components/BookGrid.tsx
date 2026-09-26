@@ -12,6 +12,7 @@ import DeleteBookDialog, { type DeleteBookNotePolicy } from "./DeleteBookDialog"
 import IndexManagerModal from "./IndexManagerModal";
 import { useShelfCoverage } from "../hooks/useShelfCoverage";
 import { useLongPress } from "../hooks/useLongPress";
+import { SortableBookItem } from "./BookSort";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -70,9 +71,10 @@ interface BookGridProps {
    * the auto-fill grid uses.
    */
   columns?: 2 | 3 | 4;
+  sortable?: boolean;
 }
 
-export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged, columns }: BookGridProps) {
+export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged, columns, sortable = false }: BookGridProps) {
   const { t } = useTranslation();
   const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
@@ -155,8 +157,8 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
     <>
       <div className={gridClass}>
         {books.map((book, index) => (
+          <SortableBookItem key={book.id} id={book.id} enabled={sortable} list={false}>
           <button
-            key={book.id}
             onClick={() => { openBook(book).catch(() => {}); }}
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
@@ -212,6 +214,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
             </h3>
             <p className={authorClass}>{book.author}</p>
           </button>
+          </SortableBookItem>
         ))}
       </div>
 

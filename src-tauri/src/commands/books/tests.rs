@@ -1319,6 +1319,61 @@ fn pagination_cursor_returns_next_page() {
 }
 
 #[test]
+fn manual_order_persists_across_pages_and_leaves_recent_order_untouched() {
+    let (_dir, db) = setup();
+    for i in 0..5 {
+        insert_book_with_ts(&db, &format!("b{i}"), "reading", 1000 + i);
+    }
+    super::query::move_book_in_manual_order(&db, "b0", "b3", false).unwrap();
+    let page1 = super::query::query_books_sorted(&db, None, None, None, None, 3, true).unwrap();
+    let page2 = super::query::query_books_sorted(
+        &db,
+        None,
+        None,
+        None,
+        page1.next_cursor.as_deref(),
+        3,
+        true,
+    )
+    .unwrap();
+    let ids: Vec<&str> = page1
+        .books
+        .iter()
+        .chain(&page2.books)
+        .map(|book| book.id.as_str())
+        .collect();
+    assert_eq!(ids, ["b4", "b0", "b3", "b2", "b1"]);
+    assert_eq!(page1.next_cursor.as_deref(), Some("manual:3"));
+    let recent = query_books(&db, None, None, None, None, 5).unwrap();
+    assert_eq!(
+        recent
+            .books
+            .iter()
+            .map(|book| book.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b4", "b3", "b2", "b1", "b0"]
+    );
+    insert_book_with_ts(&db, "new", "reading", 2000);
+    let ordered = super::query::query_books_sorted(&db, None, None, None, None, 10, true).unwrap();
+    assert_eq!(ordered.books.last().unwrap().id, "new");
+}
+
+#[test]
+fn manual_move_rejects_missing_target_without_changing_order() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    insert_book_with_ts(&db, "b2", "reading", 1001);
+    assert!(super::query::move_book_in_manual_order(&db, "b1", "missing", true).is_err());
+    let count: i64 = db
+        .reader()
+        .query_row("SELECT COUNT(*) FROM book_manual_order", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
 fn pagination_no_more_pages() {
     let (_dir, db) = setup();
     for i in 0..3 {

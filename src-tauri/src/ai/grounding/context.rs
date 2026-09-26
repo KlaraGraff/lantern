@@ -9,6 +9,7 @@
 //! full-text index so keyword search can find a passage by who it is about.
 //! See docs/impls/contextual-retrieval.md.
 
+use futures::StreamExt;
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{AppHandle, Runtime};
 
@@ -256,10 +257,8 @@ fn user_messages(header: &str, prefix: &str, window: &str, passage: &str) -> Vec
 
 /// The whole request for one chunk, assembled in one place.
 ///
-/// Extracted from the run loop so that a measurement can drive these calls
-/// itself — the shipped loop is strictly sequential, which is right for a
-/// background job on a metered provider but turns a thousand-chunk book into a
-/// multi-hour A/B — without rebuilding the prompt beside it. Two copies of this
+/// Extracted from the run loop so a measurement can drive these calls
+/// without rebuilding the prompt beside it. Two copies of this
 /// assembly would mean the A/B measured a feature slightly different from the
 /// shipped one, and the difference would be invisible in the report.
 ///
@@ -670,9 +669,8 @@ pub async fn ensure_context_lines<R: Runtime>(
     if !context_lines_enabled(db) {
         return Ok(());
     }
-    // Held for the whole run. A second caller for any book while one is in
-    // flight backs off entirely rather than interleaving: these are
-    // sequential provider calls, and two loops would double the spend.
+    // Held for the whole run. A second caller for this book backs off
+    // entirely rather than starting the same requests again.
     let Some(_guard) = RunGuard::claim(book_id) else {
         return Ok(());
     };
@@ -682,13 +680,11 @@ pub async fn ensure_context_lines<R: Runtime>(
     for row in &rows {
         sections.entry(row.section_index).or_default().push(row);
     }
-    // The prefix depends only on the section, and `pending_rows` comes back
-    // in `chunk_index` order — which groups each section's chunks together —
-    // so rebuilding it per chunk would re-join the same chapter text once for
-    // every chunk in it. Held across iterations and recomputed on section
-    // change instead.
-    let mut cached_prefix: Option<(i64, String)> = None;
-    // A few hundred sequential network calls will hit a hiccup. Losing the
+    let prefixes: std::collections::BTreeMap<i64, String> = sections
+        .iter()
+        .map(|(index, section_rows)| (*index, chapter_prefix(section_rows)))
+        .collect();
+    // A few hundred network calls will hit a hiccup. Losing the
     // whole book to one of them is the wrong trade: each line is written the
     // moment it comes back, and `pending_rows` skips what is already written,
     // so a skipped chunk costs nothing but a retry on the next pass. What must
@@ -703,45 +699,62 @@ pub async fn ensure_context_lines<R: Runtime>(
     if let Some(progress) = progress.filter(|_| !pending.is_empty()) {
         progress(done, total);
     }
-    for row in pending {
-        // Re-read the switch every iteration, not just on entry. This runs in
-        // the background while the reader reads, so the switch is their only
-        // brake — a book of a few hundred chunks is a few hundred sequential
-        // calls, and on a metered provider "off" has to mean "stop now", not
-        // "stop before the next book".
-        if !context_lines_enabled(db) {
-            return Ok(());
-        }
-        let section_rows = sections
-            .get(&row.section_index)
-            .expect("row's own section is present in the map built from the same rows");
-        let header = chapter_header(&book_title, row.section_index, row.section_title.as_deref());
-        let prefix = match &cached_prefix {
-            Some((section_index, prefix)) if *section_index == row.section_index => prefix.clone(),
-            _ => {
-                let prefix = chapter_prefix(section_rows);
-                cached_prefix = Some((row.section_index, prefix.clone()));
-                prefix
+    let concurrency = router::index_context_concurrency(db);
+    let tasks: Vec<(String, Vec<ChatMessage>)> = pending
+        .into_iter()
+        .map(|row| {
+            let section_rows = sections.get(&row.section_index).expect("row's own section");
+            let header =
+                chapter_header(&book_title, row.section_index, row.section_title.as_deref());
+            let messages = context_line_messages(
+                &header,
+                prefixes.get(&row.section_index).expect("row's own section"),
+                section_rows,
+                row,
+            );
+            (row.id.clone(), messages)
+        })
+        .collect();
+    let mut requests =
+        futures::stream::iter(tasks.into_iter().map(|(chunk_id, messages)| async move {
+            if !context_lines_enabled(db) {
+                return (chunk_id, Ok(ContextLineOutcome::Skipped), 0);
             }
+            let mut failures = 0;
+            let outcome =
+                resolve_context_line(app, db, secrets, &messages, &chunk_id, &mut failures).await;
+            (chunk_id, outcome, failures)
+        }))
+        .buffer_unordered(concurrency);
+    while let Some((chunk_id, outcome, failures)) = requests.next().await {
+        if !context_lines_enabled(db) {
+            break;
+        }
+        match outcome {
+            Ok(ContextLineOutcome::Written { cleaned, model }) => {
+                write_context_line(db, &chunk_id, &cleaned, &model)?;
+                done += 1;
+                if let Some(progress) = progress {
+                    progress(done, total);
+                }
+            }
+            Ok(ContextLineOutcome::Skipped) => {}
+            Err(error) => {
+                if failures == 0 {
+                    return Err(error);
+                }
+                log::warn!("context line for chunk {chunk_id} failed: {error}");
+            }
+        }
+        consecutive_failures = if failures > 0 {
+            consecutive_failures + 1
+        } else {
+            0
         };
-        let messages = context_line_messages(&header, &prefix, section_rows, row);
-        let outcome = resolve_context_line(
-            app,
-            db,
-            secrets,
-            &messages,
-            &row.id,
-            &mut consecutive_failures,
-        )
-        .await?;
-        let (cleaned, model) = match outcome {
-            ContextLineOutcome::Written { cleaned, model } => (cleaned, model),
-            ContextLineOutcome::Skipped => continue,
-        };
-        write_context_line(db, &row.id, &cleaned, &model)?;
-        done += 1;
-        if let Some(progress) = progress {
-            progress(done, total);
+        if consecutive_failures >= CONTEXT_LINE_FAILURE_BUDGET {
+            return Err(AppError::Other(
+                "context line provider failed repeatedly".to_string(),
+            ));
         }
     }
     Ok(())
@@ -1480,18 +1493,12 @@ mod live_tests {
 
     /// How many chunks the measurement asks about at once.
     ///
-    /// The shipped loop asks about one at a time on purpose — it runs in the
-    /// background against a metered provider, and the reader's only brake is a
-    /// switch it re-reads every iteration. That is the right trade for a
-    /// background job and the wrong one for a measurement: a 928-chunk book at
-    /// several seconds a call is most of a working day, and the A/B needs every
-    /// chunk done, distractors included. Sampling is not an option — measuring
+    /// The A/B needs every chunk done, distractors included. Sampling is not an option — measuring
     /// only the gold chunks is the caliber that overstated this feature's gains
     /// by 2–4× and must not be repeated.
     ///
-    /// Whether the shipped loop should also run concurrently is a separate
-    /// question, and not this file's to answer: it changes how long a reader
-    /// waits for an index and how concentrated the spend is.
+    /// The production loop now uses a configurable limit; this measurement
+    /// keeps its own fixed limit so historical A/B timings remain comparable.
     const GENERATE_CONCURRENCY: usize = 8;
 
     /// The same calls `ensure_context_lines` makes, in flight several at a time.

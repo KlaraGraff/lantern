@@ -25,6 +25,7 @@ pub(crate) struct EmbeddingSource {
     pub(crate) model: String,
     pub(crate) api_key: Option<String>,
     pub(crate) dimensions: usize,
+    pub(crate) cloud_concurrency: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -330,7 +331,7 @@ pub async fn ensure_alias_embeddings(
     };
     for batch in pending.chunks(EMBEDDING_BATCH_SIZE) {
         let input = batch.iter().map(|(_, alias)| alias.clone()).collect();
-        let vectors = embeddings(source, input).await?;
+        let vectors = embeddings(source, input, true).await?;
         let mut conn = db
             .conn
             .lock()
@@ -432,15 +433,22 @@ fn validate_embedding(embedding: &[f32], dimensions: usize) -> AppResult<()> {
     Ok(())
 }
 
-async fn embeddings(source: &EmbeddingSource, input: Vec<String>) -> AppResult<Vec<Vec<f32>>> {
-    embeddings_internal(source, input, true).await
+async fn embeddings(
+    source: &EmbeddingSource,
+    input: Vec<String>,
+    index: bool,
+) -> AppResult<Vec<Vec<f32>>> {
+    embeddings_internal(source, input, true, index).await
 }
 
 async fn embeddings_internal(
     source: &EmbeddingSource,
     input: Vec<String>,
     enforce_dimensions: bool,
+    index: bool,
 ) -> AppResult<Vec<Vec<f32>>> {
+    let _cloud_slot =
+        router::acquire_embedding_slot(&source.endpoint, source.cloud_concurrency, index).await?;
     let mut request = crate::ai::http_client()
         .post(&source.endpoint)
         .json(&serde_json::json!({ "model": source.model, "input": input }));
@@ -554,6 +562,7 @@ pub async fn enable(db: &Db, secrets: &Secrets) -> AppResult<()> {
     let probe = embeddings(
         &source,
         vec!["Lantern embedding capability probe".to_string()],
+        false,
     )
     .await;
     match probe {
@@ -702,7 +711,7 @@ pub async fn ensure_embeddings(
     let mut done = 0usize;
     for batch in chunks.chunks(EMBEDDING_BATCH_SIZE) {
         let input = batch.iter().map(|(_, text, _)| text.clone()).collect();
-        let vectors = embeddings(source, input).await?;
+        let vectors = embeddings(source, input, true).await?;
         let mut conn = db
             .conn
             .lock()
@@ -756,7 +765,7 @@ pub async fn ensure_embeddings(
 }
 
 pub async fn query_embedding(source: &EmbeddingSource, query: String) -> AppResult<Vec<f32>> {
-    embeddings(source, vec![query])
+    embeddings(source, vec![query], false)
         .await?
         .into_iter()
         .next()
@@ -816,9 +825,15 @@ pub async fn probe_and_save(
         model: model.clone(),
         api_key: effective_key,
         dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
+        cloud_concurrency: router::cloud_concurrency_limit(db),
     };
-    let response =
-        embeddings_internal(&source, vec!["Lantern embedding probe".to_string()], false).await;
+    let response = embeddings_internal(
+        &source,
+        vec!["Lantern embedding probe".to_string()],
+        false,
+        false,
+    )
+    .await;
     let latency_ms = started.elapsed().as_millis() as u64;
     let vector = match response {
         Ok(mut values) => values.pop().unwrap_or_default(),
@@ -1132,6 +1147,7 @@ mod tests {
             model: model.to_string(),
             api_key: None,
             dimensions: 3,
+            cloud_concurrency: 8,
         }
     }
 

@@ -12,6 +12,7 @@ import IndexManagerModal from "./IndexManagerModal";
 import { useShelfCoverage } from "../hooks/useShelfCoverage";
 import { useLongPress } from "../hooks/useLongPress";
 import { toPlainText } from "../utils/plain-text";
+import { SortableBookItem } from "./BookSort";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -39,9 +40,10 @@ interface BookListProps {
   loadingMore?: boolean;
   activeCollectionId?: string;
   onBooksChanged?: () => void;
+  sortable?: boolean;
 }
 
-export default function BookList({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookListProps) {
+export default function BookList({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged, sortable = false }: BookListProps) {
   const { t } = useTranslation();
   const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
@@ -83,8 +85,8 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
     <>
       <div className="flex flex-col gap-4 p-page">
         {books.map((book) => (
+          <SortableBookItem key={book.id} id={book.id} enabled={sortable} list>
           <button
-            key={book.id}
             onClick={() => { openBook(book).catch(() => {}); }}
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
@@ -177,6 +179,7 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
               </div>
             </div>
           </button>
+          </SortableBookItem>
         ))}
       </div>
 

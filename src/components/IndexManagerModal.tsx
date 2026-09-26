@@ -173,6 +173,9 @@ export default function IndexManagerModal({
   };
 
   const state = details ? deriveBookIndexState(details) : null;
+  const enhancementsPending = Boolean(details && state === "ready" && (
+    details.contextLineCount < details.chunkCount || (!details.overview && details.sections.length === 0)
+  ));
   const outcome = runOutcome(running, progress);
   // Stop here is the library-wide switch, not a per-book one, whenever the
   // batch happens to be on this book — see IndexManagerModal's stop button
@@ -280,10 +283,16 @@ export default function IndexManagerModal({
       );
     }
     return (
-      <div className="mt-3 rounded-md bg-success/10 px-3 py-2.5 text-[12.5px] leading-[1.65] text-success-text">
-        {indexedAtLabel
+      <div className={`mt-3 rounded-md px-3 py-2.5 text-[12.5px] leading-[1.65] ${enhancementsPending ? "bg-warning/10 text-warning" : "bg-success/10 text-success-text"}`}>
+        <p>{enhancementsPending ? t("indexManager.verdict.enhancementsPending") : indexedAtLabel
           ? t("indexManager.verdict.ready", { date: indexedAtLabel })
-          : t("indexManager.verdict.readyNoDate")}
+          : t("indexManager.verdict.readyNoDate")}</p>
+        <p className="mt-1 text-[11.5px]">{t("indexManager.verdict.enhancementCounts", {
+          lines: details!.contextLineCount,
+          total: details!.chunkCount,
+          summaries: details!.sections.length + (details!.overview ? 1 : 0),
+          aliases: details!.aliasCount,
+        })}</p>
       </div>
     );
   };
@@ -325,8 +334,8 @@ export default function IndexManagerModal({
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Stat
                   label={t("indexManager.status")}
-                  value={t(`indexManager.stateLabel.${running ? "building" : state}`)}
-                  tone={running ? "busy" : state === "ready" ? "good" : undefined}
+                  value={enhancementsPending && !running ? t("indexManager.stateLabel.enhancementsPending") : t(`indexManager.stateLabel.${running ? "building" : state}`)}
+                  tone={running ? "busy" : enhancementsPending ? "flag" : state === "ready" ? "good" : undefined}
                 />
                 <Stat
                   label={t("indexManager.card.chunks")}

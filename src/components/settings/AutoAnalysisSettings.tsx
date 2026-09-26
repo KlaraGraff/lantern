@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExternalLink } from "lucide-react";
 import Toggle from "../ui/Toggle";
+import { useSettings } from "../../hooks/useSettings";
 import { presetFor } from "./aiPresets";
 import {
   compactTokens,
@@ -38,6 +39,12 @@ export default function AutoAnalysisSettings() {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<AutoAnalysisConsoleData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const { settings, save } = useSettings();
+  const [limitError, setLimitError] = useState(false);
+  const [draftLimit, setDraftLimit] = useState("20");
+  useEffect(() => {
+    setDraftLimit(settings.ai_cloud_concurrency || "20");
+  }, [settings.ai_cloud_concurrency]);
   const scale = tokenScaleFor(i18n.language);
 
   const load = useCallback(async () => {
@@ -100,6 +107,32 @@ export default function AutoAnalysisSettings() {
 
   return (
     <div className="flex flex-col">
+      <div className="mb-5 rounded-md border border-border p-3">
+        <label htmlFor="ai-cloud-concurrency" className="text-[13px] font-medium text-text-primary">{t("settings.autoAnalysis.cloudConcurrency.title")}</label>
+        <p className="mt-1 text-[12px] leading-[1.6] text-text-muted">{t("settings.autoAnalysis.cloudConcurrency.description", {
+          index: Math.min(Math.floor((Number(settings.ai_cloud_concurrency || 20) * 95) / 100), Number(settings.ai_cloud_concurrency || 20) - 3),
+        })}</p>
+        <input
+          id="ai-cloud-concurrency"
+          type="number"
+          min={5}
+          max={100}
+          step={1}
+          value={draftLimit}
+          onChange={(event) => setDraftLimit(event.target.value)}
+          onBlur={() => {
+            const parsed = Number(draftLimit);
+            const next = String(Number.isFinite(parsed) ? Math.max(5, Math.min(100, Math.trunc(parsed))) : 20);
+            setDraftLimit(next);
+            setLimitError(false);
+            if (next !== (settings.ai_cloud_concurrency || "20")) {
+              void save("ai_cloud_concurrency", next).catch(() => setLimitError(true));
+            }
+          }}
+          className="mt-2 h-9 w-20 rounded-md border border-border bg-bg-surface px-2 text-[13px] text-text-primary"
+        />
+        {limitError && <p role="alert" className="mt-2 text-[12px] text-danger-text">{t("settings.autoAnalysis.cloudConcurrency.error")}</p>}
+      </div>
       <p className="pb-4 text-[12.5px] leading-[1.65] text-text-muted">
         {t("settings.autoAnalysis.lede")}
       </p>

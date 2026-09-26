@@ -181,6 +181,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (73, include_str!("../migrations/073_quiz_draft_answers.sql")),
     (74, include_str!("../migrations/074_vocab_source.sql")),
     (75, include_str!("../migrations/075_ai_api_mode.sql")),
+    (76, include_str!("../migrations/076_book_manual_order.sql")),
 ];
 
 fn register_sqlite_vec() {

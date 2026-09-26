@@ -16,7 +16,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, Emitter, Listener, Runtime};
-use tokio::sync::{watch, Mutex as AsyncMutex};
+use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 
 use crate::commands::ai::ChatMessage;
 use crate::db::Db;
@@ -115,6 +115,165 @@ struct AiProfile {
 struct AiCredential {
     view: AiCredentialView,
     secret_ref: String,
+}
+
+const DEFAULT_CLOUD_CONCURRENCY: usize = 20;
+const CLOUD_CHAT_RESERVE: usize = 3;
+
+pub(crate) fn cloud_concurrency_limit(db: &Db) -> usize {
+    db.reader()
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'ai_cloud_concurrency'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_CLOUD_CONCURRENCY)
+        .clamp(5, 100)
+}
+
+fn cloud_index_limit(total: usize) -> usize {
+    ((total * 95) / 100).min(total.saturating_sub(CLOUD_CHAT_RESERVE))
+}
+
+pub fn index_context_concurrency(db: &Db) -> usize {
+    if profiles(db, true)
+        .is_ok_and(|items| items.iter().any(|profile| uses_local_model(&profile.view)))
+    {
+        1
+    } else {
+        cloud_index_limit(cloud_concurrency_limit(db))
+    }
+}
+
+fn uses_local_model(profile: &AiProfileView) -> bool {
+    if is_keyless_local_provider(&profile.provider) {
+        return true;
+    }
+    let Some(address) = profile.base_url.as_deref() else {
+        return false;
+    };
+    is_local_endpoint(address)
+}
+
+fn is_local_endpoint(address: &str) -> bool {
+    let authority = address
+        .split_once("://")
+        .map(|(_, rest)| rest.split('/').next().unwrap_or_default())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    ["localhost", "127.0.0.1", "[::1]"]
+        .iter()
+        .any(|host| authority == *host || authority.starts_with(&format!("{host}:")))
+}
+
+fn is_index_request(feature: &str) -> bool {
+    matches!(
+        feature,
+        "grounding_context" | "book_summary" | "person_aliases"
+    )
+}
+
+#[derive(Default)]
+struct CloudSlots {
+    total: usize,
+    index: usize,
+}
+
+fn cloud_slot_available(slots: &CloudSlots, limit: usize, background: bool) -> bool {
+    slots.total < limit && (!background || slots.index < cloud_index_limit(limit))
+}
+
+struct CloudLimiter {
+    slots: Mutex<CloudSlots>,
+    changed: Notify,
+}
+
+fn cloud_limiter() -> &'static CloudLimiter {
+    static LIMITER: OnceLock<CloudLimiter> = OnceLock::new();
+    LIMITER.get_or_init(|| CloudLimiter {
+        slots: Mutex::new(CloudSlots::default()),
+        changed: Notify::new(),
+    })
+}
+
+pub(crate) struct CloudPermit {
+    limiter: &'static CloudLimiter,
+    index: bool,
+}
+
+impl Drop for CloudPermit {
+    fn drop(&mut self) {
+        if let Ok(mut slots) = self.limiter.slots.lock() {
+            slots.total -= 1;
+            if self.index {
+                slots.index -= 1;
+            }
+        }
+        self.limiter.changed.notify_waiters();
+    }
+}
+
+async fn acquire_cloud_slot(
+    db: &Db,
+    profile: &AiProfileView,
+    background: bool,
+    cancel: &mut watch::Receiver<bool>,
+) -> AppResult<Option<CloudPermit>> {
+    acquire_cloud_slot_with_limit(
+        cloud_concurrency_limit(db),
+        uses_local_model(profile),
+        background,
+        cancel,
+    )
+    .await
+}
+
+pub(crate) async fn acquire_embedding_slot(
+    endpoint: &str,
+    limit: usize,
+    index: bool,
+) -> AppResult<Option<CloudPermit>> {
+    let (_sender, mut cancel) = watch::channel(false);
+    acquire_cloud_slot_with_limit(limit, is_local_endpoint(endpoint), index, &mut cancel).await
+}
+
+async fn acquire_cloud_slot_with_limit(
+    limit: usize,
+    local: bool,
+    index: bool,
+    cancel: &mut watch::Receiver<bool>,
+) -> AppResult<Option<CloudPermit>> {
+    if local {
+        return Ok(None);
+    }
+    let limiter = cloud_limiter();
+    loop {
+        if *cancel.borrow() {
+            return Err(AppError::Other("AI_REQUEST_CANCELLED".to_string()));
+        }
+        let notified = limiter.changed.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        {
+            let mut slots = limiter
+                .slots
+                .lock()
+                .map_err(|error| AppError::Other(error.to_string()))?;
+            if cloud_slot_available(&slots, limit, index) {
+                slots.total += 1;
+                if index {
+                    slots.index += 1;
+                }
+                return Ok(Some(CloudPermit { limiter, index }));
+            }
+        }
+        tokio::select! {
+            _ = &mut notified => {},
+            _ = wait_cancelled(cancel) => return Err(AppError::Other("AI_REQUEST_CANCELLED".to_string())),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1673,7 +1832,9 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
     emitted: Arc<AtomicBool>,
     usage: Arc<Mutex<Option<serde_json::Value>>>,
     cancel: &mut watch::Receiver<bool>,
+    background: bool,
 ) -> AppResult<()> {
+    let _cloud_slot = acquire_cloud_slot(db, &profile.view, background, cancel).await?;
     tokio::time::timeout(
         crate::ai::TOTAL_REQUEST_TIMEOUT,
         stream_once_with_effort_fallback_inner(
@@ -2186,6 +2347,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             Arc::new(AtomicBool::new(false)),
             Arc::clone(&usage),
             cancel,
+            origin == "auto" || is_index_request(feature),
         )
         .await;
         record_profile_attempt(db, &profile, &result, started.elapsed().as_millis() as u64);
@@ -2220,6 +2382,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             Arc::new(AtomicBool::new(false)),
             Arc::clone(&usage),
             cancel,
+            origin == "auto" || is_index_request(feature),
         )
         .await;
         record_profile_attempt(db, &profile, &result, started.elapsed().as_millis() as u64);
@@ -2263,6 +2426,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             Arc::clone(&emitted),
             Arc::clone(&usage),
             cancel,
+            origin == "auto" || is_index_request(feature),
         )
         .await
         {
@@ -2598,6 +2762,7 @@ async fn stream_with_failover_inner<R: Runtime>(
                 Arc::clone(&emitted),
                 Arc::clone(&usage),
                 cancel,
+                origin == "auto" || is_index_request(feature),
             )
             .await;
             // Measured from the profile's first attempt, not this one: the
@@ -2725,6 +2890,7 @@ pub(crate) fn embedding_source(
             model,
             api_key: secrets.get(crate::ai::grounding::vector::EMBEDDING_SECRET_REF)?,
             dimensions,
+            cloud_concurrency: cloud_concurrency_limit(db),
         }));
     }
     let profile = match active_profile(db) {
@@ -2756,6 +2922,7 @@ pub(crate) fn embedding_source(
         model: crate::ai::grounding::vector::DEFAULT_EMBEDDING_MODEL.to_string(),
         api_key: Some(api_key),
         dimensions: crate::ai::grounding::vector::DEFAULT_EMBEDDING_DIMENSIONS,
+        cloud_concurrency: cloud_concurrency_limit(db),
     }))
 }
 
@@ -3331,6 +3498,7 @@ async fn timed_stream_once<R: Runtime>(
         Arc::clone(&emitted),
         usage,
         &mut cancel,
+        false,
     ));
     let mut ticker = tokio::time::interval(Duration::from_millis(2));
     let mut first_response_ms = None;
@@ -3869,6 +4037,32 @@ pub async fn test_credential<R: Runtime>(
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn cloud_background_limit_reserves_three_immediate_slots() {
+        assert_eq!(cloud_index_limit(5), 2);
+        assert_eq!(cloud_index_limit(20), 17);
+        assert_eq!(cloud_index_limit(100), 95);
+        let slots = CloudSlots {
+            total: 17,
+            index: 17,
+        };
+        assert!(!cloud_slot_available(&slots, 20, true));
+        assert!(cloud_slot_available(&slots, 20, false));
+        let slots = CloudSlots {
+            total: 20,
+            index: 17,
+        };
+        assert!(!cloud_slot_available(&slots, 20, false));
+    }
+
+    #[test]
+    fn local_endpoints_do_not_use_cloud_slots() {
+        assert!(is_local_endpoint("http://localhost:1234/v1"));
+        assert!(is_local_endpoint("http://127.0.0.1:11434/api"));
+        assert!(is_local_endpoint("http://[::1]:1234/v1"));
+        assert!(!is_local_endpoint("https://localhost.example.com/v1"));
+    }
 
     #[tokio::test]
     async fn dropped_cancel_sender_does_not_cancel_request() {

@@ -144,6 +144,7 @@ pub(super) fn resolve_book_paths(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn query_books(
     db: &Db,
     filter: Option<&str>,
@@ -152,13 +153,26 @@ pub(crate) fn query_books(
     cursor: Option<&str>,
     limit: usize,
 ) -> AppResult<BookPage> {
+    query_books_sorted(db, filter, search, collection_id, cursor, limit, false)
+}
+
+pub(crate) fn query_books_sorted(
+    db: &Db,
+    filter: Option<&str>,
+    search: Option<&str>,
+    collection_id: Option<&str>,
+    cursor: Option<&str>,
+    limit: usize,
+    manual: bool,
+) -> AppResult<BookPage> {
     let conn = db.reader();
 
     let use_collection = collection_id.is_some();
-    let from_clause = if use_collection {
-        "books INNER JOIN collection_books cb ON cb.book_id = books.id"
-    } else {
-        "books"
+    let from_clause = match (use_collection, manual) {
+        (true, true) => "books INNER JOIN collection_books cb ON cb.book_id = books.id LEFT JOIN book_manual_order mo ON mo.book_id = books.id",
+        (false, true) => "books LEFT JOIN book_manual_order mo ON mo.book_id = books.id",
+        (true, false) => "books INNER JOIN collection_books cb ON cb.book_id = books.id",
+        (false, false) => "books",
     };
 
     let mut conditions: Vec<String> = Vec::new();
@@ -196,7 +210,7 @@ pub(crate) fn query_books(
     }
 
     // Cursor: "updated_at:id" — books older than cursor position.
-    if let Some(c) = cursor {
+    if let Some(c) = cursor.filter(|_| !manual) {
         if let Some((ts_str, cid)) = c.split_once(':') {
             if let Ok(ts) = ts_str.parse::<i64>() {
                 conditions.push(
@@ -270,10 +284,27 @@ pub(crate) fn query_books(
     let total: usize = conn.query_row(&count_sql, count_refs.as_slice(), |r| r.get(0))?;
 
     // Main query with cursor + limit.
+    let order = if manual {
+        "mo.position IS NULL, mo.position ASC, books.updated_at DESC, books.id ASC"
+    } else {
+        "books.updated_at DESC, books.id ASC"
+    };
     let sql = format!(
-        "SELECT {BOOK_COLUMNS}, books.cover_data FROM {from_clause}{where_clause} ORDER BY books.updated_at DESC, books.id ASC LIMIT ?",
+        "SELECT {BOOK_COLUMNS}, books.cover_data FROM {from_clause}{where_clause} ORDER BY {order} LIMIT ?{}",
+        if manual { " OFFSET ?" } else { "" },
     );
     param_values.push(Box::new((limit + 1) as i64));
+    let offset = if manual {
+        cursor
+            .and_then(|c| c.strip_prefix("manual:"))
+            .and_then(|n| n.parse::<usize>().ok())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    if manual {
+        param_values.push(Box::new(offset as i64));
+    }
 
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
@@ -294,7 +325,11 @@ pub(crate) fn query_books(
     let next_cursor = if books.len() > limit {
         books.truncate(limit);
         let last = &books[limit - 1];
-        Some(format!("{}:{}", last.updated_at, last.id))
+        Some(if manual {
+            format!("manual:{}", offset + limit)
+        } else {
+            format!("{}:{}", last.updated_at, last.id)
+        })
     } else {
         None
     };
@@ -414,22 +449,75 @@ pub fn list_books(
     collection_id: Option<String>,
     cursor: Option<String>,
     limit: Option<usize>,
+    sort: Option<String>,
     db: State<'_, Db>,
     app: AppHandle,
 ) -> AppResult<BookPage> {
     let page_size = limit.unwrap_or(DEFAULT_PAGE_SIZE);
-    let mut page = query_books(
+    let mut page = query_books_sorted(
         &db,
         filter.as_deref(),
         search.as_deref(),
         collection_id.as_deref(),
         cursor.as_deref(),
         page_size,
+        sort.as_deref() == Some("manual"),
     )?;
     for book in &mut page.books {
         resolve_book_paths(book, &db, Some(&app))?;
     }
     Ok(page)
+}
+
+pub(crate) fn move_book_in_manual_order(
+    db: &Db,
+    book_id: &str,
+    target_id: &str,
+    after: bool,
+) -> AppResult<()> {
+    if book_id == target_id {
+        return Ok(());
+    }
+    let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    let tx = conn.transaction()?;
+    let mut ids: Vec<String> = tx
+        .prepare(
+            "SELECT books.id FROM books LEFT JOIN book_manual_order mo ON mo.book_id = books.id
+         ORDER BY mo.position IS NULL, mo.position ASC, books.updated_at DESC, books.id ASC",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    let from = ids
+        .iter()
+        .position(|id| id == book_id)
+        .ok_or_else(|| AppError::Other("Book to move was not found".into()))?;
+    let moved = ids.remove(from);
+    let target = ids
+        .iter()
+        .position(|id| id == target_id)
+        .ok_or_else(|| AppError::Other("Target book was not found".into()))?;
+    ids.insert(target + usize::from(after), moved);
+    for (position, id) in ids.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO book_manual_order (book_id, position) VALUES (?1, ?2)
+             ON CONFLICT(book_id) DO UPDATE SET position = excluded.position",
+            params![id, position as i64],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn move_book(
+    book_id: String,
+    target_id: String,
+    after: bool,
+    db: State<'_, Db>,
+) -> AppResult<()> {
+    crate::sync::validation::validate_entity_id(&book_id)?;
+    crate::sync::validation::validate_entity_id(&target_id)?;
+    move_book_in_manual_order(&db, &book_id, &target_id, after)
 }
 
 #[tauri::command]
