@@ -54,7 +54,7 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
   const [undoVisible, setUndoVisible] = useState(false);
   const undoTimerRef = useRef<number | undefined>(undefined);
 
-  const enabled = settings[BOOK_OPEN_CARD_ENABLED_KEY] !== "false";
+  const enabled = settings[BOOK_OPEN_CARD_ENABLED_KEY] === "true";
 
   // Deliberately synchronous, with no `await` anywhere on this path: opening a
   // book is the app's most-pressed button, and every millisecond between the

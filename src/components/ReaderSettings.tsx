@@ -541,6 +541,7 @@ function ReaderSettings({
     paper: t("readerSettings.themeSepia"),
     quiet: t("readerSettings.themeGray"),
     dark: t("readerSettings.themeDark"),
+    "eye-care-green": t("readerSettings.themeEyeCareGreen"),
     custom: t("readerSettings.themeCustom"),
   };
 
@@ -852,7 +853,7 @@ function ReaderSettings({
       </div>)}
 
       {/* Theme selector */}
-      <div className={`flex items-center justify-center gap-5 h-[78px] ${capabilities.supportsReflowSettings ? "border-b border-border-light" : ""}`}>
+      <div className={`grid grid-cols-6 items-center justify-items-center gap-x-1 h-[78px] ${capabilities.supportsReflowSettings ? "border-b border-border-light" : ""}`}>
         {getReaderThemes().map((theme) => (
           <button
             key={theme.id}

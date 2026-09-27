@@ -93,9 +93,8 @@ export function buildReadingDefaultSettings(
     // has always simply been on; that is what the reset restores them to.
     auto_save: "true",
     skip_front_matter: "true",
-    // A third app-level behavior toggle that rode in on the same pane, for
-    // the same reason as the two above — "restore defaults" should turn the
-    // open card back on, since it lives on this screen next to the other two.
-    book_open_card_enabled: "true",
+    // A third app-level behavior toggle that rode in on the same pane. The
+    // current reader setup keeps the first-open card off by default.
+    book_open_card_enabled: "false",
   };
 }

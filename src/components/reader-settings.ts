@@ -115,6 +115,7 @@ export const fonts: ReaderFontOption[] = [
 const themes = [
   { id: "original", label: "Original", color: "bg-reader-original-bg border border-reader-original-border", pdf: true },
   { id: "paper", label: "Reading Paper", color: "bg-reader-paper-bg border border-reader-original-border", pdf: true },
+  { id: "eye-care-green", label: "Eye-care green", color: "bg-reader-eye-care-bg border border-reader-original-border", pdf: true },
   { id: "quiet", label: "Gray", color: "bg-reader-quiet-bg", pdf: true },
   { id: "dark", label: "Dark", color: "bg-reader-dark-bg border border-reader-dark-border", pdf: true },
   { id: "custom", label: "Custom", color: "border border-reader-original-border", pdf: true },
@@ -429,7 +430,7 @@ export function getCustomThemeStyles(customTheme: ReaderCustomTheme) {
 
 export function getThemeStyles(themeId: ReaderTheme, customTheme = DEFAULT_READER_CUSTOM_THEME) {
   switch (themeId) {
-    // The four stock themes follow the lineup most readers converge on
+    // The stock themes follow the lineup most readers converge on
     // (Apple Books, Kindle, WeChat Reading): plain white, a true sepia paper,
     // a dim gray for low light, and a near-black night theme.
     case "paper":
@@ -443,6 +444,8 @@ export function getThemeStyles(themeId: ReaderTheme, customTheme = DEFAULT_READE
       return { body: "#45454C", text: "#D9D9DE" };
     case "dark":
       return { body: "#121216", text: "#C9C9D1" };
+    case "eye-care-green":
+      return getCustomThemeStyles(DEFAULT_READER_CUSTOM_THEME);
     case "custom":
       return getCustomThemeStyles(customTheme);
     default:
@@ -451,12 +454,9 @@ export function getThemeStyles(themeId: ReaderTheme, customTheme = DEFAULT_READE
 }
 
 /**
- * The reader's out-of-the-box theme: 「阅读纸」(sepia paper), regardless of the
- * system's light/dark mode. It used to follow dark mode into the "dark" theme
- * and light mode into "paper", but a fresh two-page layout landing on either
- * "dark" or the stark white "original" theme read as harsh — 「阅读纸」 is the
- * one default that looks right either way.
+ * The reader's out-of-the-box theme: the soft eye-care green paper, regardless
+ * of the system's light/dark mode.
  */
 export function getDefaultReaderTheme(): ReaderTheme {
-  return "paper";
+  return "eye-care-green";
 }

@@ -639,6 +639,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       // 显示失效项（出题模型是硬指定，悬空意味着词卷 AI 整个不可用）
       if (settingsRef.current.quiz_ai_profile_id === id) void saveSetting("quiz_ai_profile_id", "");
       if (settingsRef.current.ai_summary_profile_id === id) void saveSetting("ai_summary_profile_id", "");
+      if (settingsRef.current.ai_reading_profile_id === id) void saveSetting("ai_reading_profile_id", "");
+      if (settingsRef.current.ai_background_profile_id === id) void saveSetting("ai_background_profile_id", "");
       showSavedToast(t("settings.ai.serviceDeleted"));
     } catch (nextError) {
       setError(errorText(nextError));
@@ -905,6 +907,44 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           <AutoAnalysisIntro onDone={dismissAutoIntro} />
         </div>
       ) : null}
+      <div className="mb-4 space-y-4 border-y border-border py-4">
+        <div>
+          <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.readingProfile")}</h4>
+          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.readingProfileHint")}</p>
+          <Select
+            className="mt-2"
+            value={settings.ai_reading_profile_id || ""}
+            onChange={(value) => void saveSetting("ai_reading_profile_id", value)}
+            options={withDanglingOption(
+              [
+                { value: "", label: t("settings.ai.readingProfileFollow") },
+                ...profiles.filter((profile) => profile.enabled && isProfileConfigComplete(profile))
+                  .map((profile) => ({ value: profile.id, label: profile.label })),
+              ],
+              settings.ai_reading_profile_id,
+              t("settings.ai.profileGone"),
+            )}
+          />
+        </div>
+        <div>
+          <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.backgroundProfile")}</h4>
+          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.backgroundProfileHint")}</p>
+          <Select
+            className="mt-2"
+            value={settings.ai_background_profile_id || ""}
+            onChange={(value) => void saveSetting("ai_background_profile_id", value)}
+            options={withDanglingOption(
+              [
+                { value: "", label: t("settings.ai.backgroundProfileChoose") },
+                ...profiles.filter((profile) => profile.enabled && isProfileConfigComplete(profile))
+                  .map((profile) => ({ value: profile.id, label: profile.label })),
+              ],
+              settings.ai_background_profile_id,
+              t("settings.ai.profileGone"),
+            )}
+          />
+        </div>
+      </div>
       <div className="mb-3">
         <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.chatModels")}</h4>
         <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.chatModelsHint")}</p>

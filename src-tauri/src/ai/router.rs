@@ -701,11 +701,9 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
     })
 }
 
-/// What the routed request is for. There are two tiers here, not three: a
-/// request either needs the reader's reasoning level or it does not. A
-/// vocabulary card or an inline translation should not pay for deep thinking
-/// unless the profile explicitly opts every feature in; the chat sidebar and
-/// the few Lantern-written prompts whose work *is* the thinking always get it.
+/// What the routed request is for. The background variants select the
+/// separately configured background model; the other variants select the
+/// reading model. Each role keeps its own reasoning behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiRequestPurpose {
     /// Words the reader wrote themselves — the chat sidebar, a custom action
@@ -723,6 +721,8 @@ pub enum AiRequestPurpose {
     /// before it returned anything usable. Same tier as `Chat` — the reader's
     /// level, whatever it is.
     Analysis,
+    BackgroundUtility,
+    BackgroundAnalysis,
 }
 
 /// The level that asks a model not to think. OpenAI-compatible endpoints spell
@@ -777,11 +777,44 @@ fn cooldown_cutoff(retry: AiRetryMode) -> i64 {
 /// reader's own words, and the Lantern-written prompts whose job is inference
 /// rather than formatting — carries whatever level the profile holds.
 fn effort_for(profile: &AiProfileView, purpose: AiRequestPurpose) -> Option<&str> {
-    if purpose != AiRequestPurpose::Utility || profile.reasoning_effort_all_features {
+    if !matches!(
+        purpose,
+        AiRequestPurpose::Utility | AiRequestPurpose::BackgroundUtility
+    ) || profile.reasoning_effort_all_features
+    {
         profile.reasoning_effort.as_deref()
     } else {
         Some(NO_REASONING)
     }
+}
+
+fn role_profile_id(db: &Db, purpose: AiRequestPurpose) -> AppResult<Option<String>> {
+    let key = if matches!(
+        purpose,
+        AiRequestPurpose::BackgroundUtility | AiRequestPurpose::BackgroundAnalysis
+    ) {
+        "ai_background_profile_id"
+    } else {
+        "ai_reading_profile_id"
+    };
+    let selected = db
+        .reader()
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .filter(|value| !value.trim().is_empty());
+    if key == "ai_background_profile_id" && selected.is_none() {
+        return Err(AppError::Other("AI_BACKGROUND_NOT_CONFIGURED".to_string()));
+    }
+    Ok(selected)
+}
+
+pub(crate) fn ensure_background_profile_configured(db: &Db) -> AppResult<()> {
+    let selected = role_profile_id(db, AiRequestPurpose::BackgroundUtility)?;
+    pin_profile(profiles(db, true)?, selected.as_deref()).map(|_| ())
 }
 
 /// Whether an effort is the reader's own setting rather than Lantern's `none`.
@@ -2113,6 +2146,7 @@ pub async fn stream_with_failover<R: Runtime>(
     origin: &str,
     feature: &str,
 ) -> AppResult<()> {
+    let selected_profile_id = role_profile_id(db, purpose)?;
     let mut cancel = request_id
         .and_then(|id| {
             cancellation_registry()
@@ -2139,7 +2173,7 @@ pub async fn stream_with_failover<R: Runtime>(
             origin,
             feature,
             false,
-            None,
+            selected_profile_id.as_deref(),
             &mut cancel,
         ),
     )
@@ -2218,6 +2252,12 @@ pub async fn complete_with_failover_cached<R: Runtime>(
     // routing every caller had before this parameter existed.
     pinned_profile_id: Option<&str>,
 ) -> AppResult<AiCompletion> {
+    let role_profile_id = if pinned_profile_id.is_some() {
+        None
+    } else {
+        role_profile_id(db, purpose)?
+    };
+    let pinned_profile_id = pinned_profile_id.or(role_profile_id.as_deref());
     let event_name = format!("ai-internal-completion-{}", uuid::Uuid::new_v4());
     let output = Arc::new(Mutex::new(String::new()));
     let first_token_ms = Arc::new(Mutex::new(None));
@@ -4122,6 +4162,14 @@ mod tests {
         // is inference across sixty summaries rather than filling in a shape,
         // so it sits in the same tier as chat and keeps the reader's level.
         assert_eq!(effort_for(&view, AiRequestPurpose::Analysis), Some("high"));
+        assert_eq!(
+            effort_for(&view, AiRequestPurpose::BackgroundAnalysis),
+            Some("high")
+        );
+        assert_eq!(
+            effort_for(&view, AiRequestPurpose::BackgroundUtility),
+            Some(NO_REASONING)
+        );
 
         view.reasoning_effort_all_features = true;
         assert_eq!(effort_for(&view, AiRequestPurpose::Utility), Some("high"));
@@ -5006,6 +5054,38 @@ mod tests {
         let mut view = profile("custom", None);
         view.id = id.to_string();
         AiProfile { view }
+    }
+
+    #[test]
+    fn model_roles_are_explicit_and_background_never_falls_back_to_reading() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        assert_eq!(role_profile_id(&db, AiRequestPurpose::Chat).unwrap(), None);
+        assert!(role_profile_id(&db, AiRequestPurpose::BackgroundUtility)
+            .unwrap_err()
+            .to_string()
+            .contains("AI_BACKGROUND_NOT_CONFIGURED"));
+
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('ai_reading_profile_id', 'quality'), ('ai_background_profile_id', 'economy')",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            role_profile_id(&db, AiRequestPurpose::Utility).unwrap(),
+            Some("quality".into())
+        );
+        assert_eq!(
+            role_profile_id(&db, AiRequestPurpose::BackgroundAnalysis).unwrap(),
+            Some("economy".into())
+        );
+        let enabled = vec![profile_with_id("quality"), profile_with_id("economy")];
+        let background = pin_profile(enabled, Some("economy")).unwrap();
+        assert_eq!(background.len(), 1);
+        assert_eq!(background[0].view.id, "economy");
     }
 
     /// A pinned request never sees the other enabled profiles at all — quiz's

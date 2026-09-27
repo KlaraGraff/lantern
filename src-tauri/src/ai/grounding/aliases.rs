@@ -975,7 +975,7 @@ async fn attempt_build<R: Runtime>(
         secrets,
         messages,
         Some(2_000),
-        AiRequestPurpose::Analysis,
+        AiRequestPurpose::BackgroundAnalysis,
         AiRetryMode::Automatic,
         None,
         None,

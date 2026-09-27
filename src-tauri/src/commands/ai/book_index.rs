@@ -371,6 +371,11 @@ fn enter_phase(app: &AppHandle, book_id: &str, phase: IndexPhase) {
     emit_index_progress(app, book_id, IndexProgress::running(phase, 0, 0));
 }
 
+fn background_setup_failed(error: &AppError) -> bool {
+    let message = error.to_string();
+    message.contains("AI_BACKGROUND_NOT_CONFIGURED") || message.contains("AI_PROFILE_NOT_AVAILABLE")
+}
+
 /// A phase that stopped the run, paired with why. Carried instead of a bare
 /// `AppError` so the terminal event can say which of the five steps died.
 struct IndexRunFailure {
@@ -635,6 +640,7 @@ async fn run_index_update(
     .and_then(|status| status)
     .map_err(IndexRunFailure::at(IndexPhase::Chunk))?;
     let mut embeddings_updated = false;
+    let mut background_setup_failure = None;
     if status == grounding::index::IndexStatus::Ready {
         // One reporter per phase, built from the phase it belongs to, so the
         // two long loops below cannot end up publishing under each other's
@@ -677,10 +683,14 @@ async fn run_index_update(
             if failure.is_cancellation() {
                 return Err(failure);
             }
-            log::warn!(
-                "grounding context line generation failed for {book_id}: {}",
-                failure.error
-            );
+            if background_setup_failed(&failure.error) {
+                background_setup_failure = Some(failure);
+            } else {
+                log::warn!(
+                    "grounding context line generation failed for {book_id}: {}",
+                    failure.error
+                );
+            }
         }
         enter_phase(app, book_id, IndexPhase::Embed);
         let report = reporter(IndexPhase::Embed);
@@ -750,6 +760,9 @@ async fn run_index_update(
     } else {
         false
     };
+    if let Some(failure) = background_setup_failure {
+        return Err(failure);
+    }
     if status == grounding::index::IndexStatus::Ready {
         // Runs after the summaries block above, not alongside the context-line
         // call earlier in this function: the build pass reads `book_summaries`
@@ -767,6 +780,9 @@ async fn run_index_update(
         };
         if let Err(failure) = race_stop(stop, IndexPhase::Aliases, aliases).await {
             if failure.is_cancellation() {
+                return Err(failure);
+            }
+            if background_setup_failed(&failure.error) {
                 return Err(failure);
             }
             log::warn!("person alias build failed for {book_id}: {}", failure.error);

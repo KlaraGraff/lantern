@@ -22,7 +22,7 @@
 //!
 //! ## Two AI calls, one feature tag
 //!
-//! [`run_summarize`] makes exactly two `AiRequestPurpose::Utility` calls,
+//! [`run_summarize`] makes exactly two `AiRequestPurpose::BackgroundUtility` calls,
 //! both billed under [`JOB_ID`]: one to draft new cards from pre-aggregated
 //! evidence, one to review them (R1–R5, see [`REVIEW_INSTRUCTIONS`]). The
 //! review pass is a safety net — any way it can fail (unparseable response,
@@ -1065,7 +1065,7 @@ async fn call_utility<R: Runtime>(
         secrets,
         messages,
         Some(max_tokens),
-        crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRequestPurpose::BackgroundUtility,
         crate::ai::router::AiRetryMode::Automatic,
         None,
         None,
@@ -1300,6 +1300,9 @@ pub fn maybe_spawn_summarize<R: Runtime>(app: AppHandle<R>, db: Db, secrets: Sec
         }
     };
     if new_count < BATCH_MIN_NEW_CLASSIFIED {
+        return;
+    }
+    if crate::ai::router::ensure_background_profile_configured(&db).is_err() {
         return;
     }
     let Some(guard) = SummarizeGuard::acquire() else {

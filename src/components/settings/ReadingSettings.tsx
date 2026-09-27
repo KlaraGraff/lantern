@@ -12,7 +12,7 @@ import {
   FONT_SIZE_MAX,
   getDefaultReaderTheme,
   parseReaderCustomTheme,
-  getCustomThemeStyles,
+  getThemeStyles,
   type ReaderCustomTheme,
   type ReaderTheme,
 } from "../reader-settings";
@@ -77,6 +77,12 @@ const READER_THEME_OPTIONS: {
     value: "paper",
     labelKey: "readerSettings.themeSepia",
     swatchClass: "bg-reader-paper-bg",
+    checkClass: "text-accent",
+  },
+  {
+    value: "eye-care-green",
+    labelKey: "readerSettings.themeEyeCareGreen",
+    swatchClass: "border border-reader-original-border",
     checkClass: "text-accent",
   },
   {
@@ -206,7 +212,7 @@ export default function ReadingSettings({
   // group id or an outside-write echo to track.
   const [autoSave, setAutoSave] = useState(true);
   const [skipFrontMatter, setSkipFrontMatter] = useState(true);
-  const [bookOpenCardEnabled, setBookOpenCardEnabled] = useState(true);
+  const [bookOpenCardEnabled, setBookOpenCardEnabled] = useState(false);
   // What the rows on screen were built from, and which keys this pane is
   // writing right now. Together they tell an outside change apart from the
   // pane's own — only the first may replace a control the user can see.
@@ -312,7 +318,7 @@ export default function ReadingSettings({
           setSkipFrontMatter(values.skip_front_matter !== "false");
           break;
         case "bookOpenCard":
-          setBookOpenCardEnabled(values.book_open_card_enabled !== "false");
+          setBookOpenCardEnabled(values.book_open_card_enabled === "true");
           break;
         case "bindings":
           if (values.previous_page_binding) setPreviousPageBinding(values.previous_page_binding);
@@ -491,7 +497,7 @@ export default function ReadingSettings({
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.theme")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.themeHint")}</p>
         </div>
-        <div className="grid grid-cols-5 gap-2 shrink-0">
+        <div className="grid grid-cols-6 gap-1 shrink-0">
           {READER_THEME_OPTIONS.map((theme) => (
             <button
               key={theme.value}
@@ -501,13 +507,15 @@ export default function ReadingSettings({
                 void persist({ reader_theme: theme.value });
                 showSavedToast();
               }}
-              className="w-[48px] flex flex-col items-center gap-1.5 cursor-pointer"
+              className="w-[44px] flex flex-col items-center gap-1.5 cursor-pointer"
             >
               <span
                 className={`size-8 rounded-full ${theme.swatchClass} flex items-center justify-center ${
                   readerTheme === theme.value ? "ring-2 ring-accent ring-offset-2 ring-offset-bg-surface" : ""
                 }`}
-                style={theme.value === "custom" ? { backgroundColor: getCustomThemeStyles(customTheme).body } : undefined}
+                style={theme.value === "custom" || theme.value === "eye-care-green"
+                  ? { backgroundColor: getThemeStyles(theme.value, customTheme).body }
+                  : undefined}
               >
                 {readerTheme === theme.value && <Check size={14} className={theme.checkClass} />}
               </span>

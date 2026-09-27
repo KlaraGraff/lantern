@@ -125,6 +125,9 @@ pub fn spawn_classification<R: Runtime>(
     if candidates.is_empty() {
         return;
     }
+    if crate::ai::router::ensure_background_profile_configured(&db).is_err() {
+        return;
+    }
     if BATCH_RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -281,7 +284,7 @@ async fn classify_chunk<R: Runtime>(
         secrets,
         &messages,
         Some(2_000),
-        crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRequestPurpose::BackgroundUtility,
         crate::ai::router::AiRetryMode::Automatic,
         None,
         None,

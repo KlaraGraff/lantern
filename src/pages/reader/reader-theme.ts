@@ -68,6 +68,10 @@ export function getPdfOverlays(theme: string, customTheme?: ReaderCustomTheme): 
       { backgroundColor: "#ffffff", mixBlendMode: "difference" },
       { backgroundColor: getThemeStyles("dark").body, mixBlendMode: "screen" },
     ] };
+    case "eye-care-green": return { layers: [{
+      backgroundColor: getThemeStyles("eye-care-green").body,
+      mixBlendMode: "multiply",
+    }] };
     case "custom": return { layers: [{
       backgroundColor: getThemeStyles("custom", customTheme).body,
       mixBlendMode: "multiply",
@@ -142,8 +146,9 @@ export function getReaderThemeVars(theme: string, customTheme?: ReaderCustomThem
       "--color-accent-text": "#A78BFA",
       "--color-accent-bg": "#2B2342",
     };
+    case "eye-care-green":
     case "custom": {
-      const colors = getThemeStyles("custom", customTheme);
+      const colors = getThemeStyles(theme === "eye-care-green" ? "eye-care-green" : "custom", customTheme);
       return {
         "--color-bg-page": colors.body,
         "--color-bg-surface": colors.body,

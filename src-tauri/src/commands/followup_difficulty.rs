@@ -183,6 +183,9 @@ pub fn maybe_spawn_batch<R: Runtime>(app: AppHandle<R>, db: Db, secrets: Secrets
     if pending < BATCH_MIN {
         return;
     }
+    if crate::ai::router::ensure_background_profile_configured(&db).is_err() {
+        return;
+    }
     if BATCH_RUNNING.swap(true, Ordering::SeqCst) {
         // Another call already crossed the threshold moments ago and is
         // still running its batch. Let it finish; whatever is left over
@@ -327,7 +330,7 @@ pub async fn run_batch<R: Runtime>(
         secrets,
         &messages,
         Some(2_000),
-        crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRequestPurpose::BackgroundUtility,
         crate::ai::router::AiRetryMode::Automatic,
         None,
         None,

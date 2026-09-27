@@ -17,6 +17,7 @@ import {
   type SummaryCounters,
 } from "./index-state";
 import { runningBook, type BatchIndexProgress } from "./settings/library-index";
+import { aiErrorMessageKey, getAiErrorCode } from "../utils/aiError";
 
 /** One of the four counters across the top. */
 const STAT_VALUE_TONE = {
@@ -244,10 +245,14 @@ export default function IndexManagerModal({
       );
     }
     if (outcome === "failed" && progress) {
+      const code = getAiErrorCode(progress.message);
+      const detail = code === "AI_BACKGROUND_NOT_CONFIGURED" || code === "AI_PROFILE_NOT_AVAILABLE"
+        ? t(aiErrorMessageKey(code))
+        : progress.message;
       return (
         <div className="mt-3 rounded-md bg-danger-bg px-3 py-2.5 text-[12.5px] leading-[1.65] text-danger-text">
           <p>{t("indexManager.progress.failed", { phase: t(`indexManager.phase.${progress.phase}`) })}</p>
-          {progress.message && <p className="mt-1 break-words text-[11px] text-text-muted">{progress.message}</p>}
+          {detail && <p className="mt-1 break-words text-[11px] text-text-muted">{detail}</p>}
         </div>
       );
     }

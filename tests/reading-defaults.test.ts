@@ -59,6 +59,7 @@ test("the values come from the reader's own defaults, not a second table", () =>
   assert.equal(rows.cjk_font_family, "system-sans");
   assert.equal(rows.narrow_font_shrink, "true");
   assert.equal(rows.show_book_progress, "false");
+  assert.equal(rows.book_open_card_enabled, "false");
   assert.equal(rows.page_columns, "2");
   assert.equal(rows.reader_custom_theme, JSON.stringify(defaults.customTheme));
 

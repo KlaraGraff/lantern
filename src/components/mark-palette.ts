@@ -379,7 +379,7 @@ export const MARK_LEGIBILITY_THRESHOLD = 24;
  * Custom is absent because its colour is the reader's — there is nothing to
  * check until they pick one.
  */
-export const MARK_BACKDROPS = ["original", "paper", "quiet", "dark"] as const satisfies readonly ReaderTheme[];
+export const MARK_BACKDROPS = ["original", "paper", "eye-care-green", "quiet", "dark"] as const satisfies readonly ReaderTheme[];
 
 const BACKDROPS = MARK_BACKDROPS.map((theme) => getThemeStyles(theme).body);
 

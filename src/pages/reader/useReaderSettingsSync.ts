@@ -153,33 +153,25 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
   return {
     theme: getDefaultReaderTheme(),
     customTheme: parseReaderCustomTheme(null),
-    // Palatino 只有 macOS 装了。Windows / Linux 上这条链会掉进系统中文字族的
-    // 西文字形（细、糊、字距怪）——CSS 字体匹配是逐字符的，排在通用关键字前
-    // 面的中文字族会抢走它能渲染的西文字符。Literata 是随包打进 `public/fonts/`
-    // 的，三平台一致。
-    font: "literata",
+    // Match the active global reading setup. Unsupported fonts still fall back
+    // through `isReaderFontAvailable()` when settings resolve on the platform.
+    font: "times",
     cjkFont: "system",
-    fontSize: 26,
+    fontSize: 22,
     narrowFontShrink: true,
-    readingMode: "scrolling",
+    readingMode: "paginated",
     pageColumns: 2,
     pageTurnAnimation: "slide",
     showChapterProgress: true,
-    showBookProgress: false,
+    showBookProgress: true,
     showPageNumbers: false,
     previousPageBinding: DEFAULT_PREVIOUS_PAGE_BINDING,
     nextPageBinding: DEFAULT_NEXT_PAGE_BINDING,
     lineSpacing: "auto",
     charSpacing: 0,
     wordSpacing: 0,
-    // On by default, matching every mainstream reading app. A ragged right
-    // edge is the honest default for a *wide* column, but the measure this app
-    // actually gets on a phone — around 45 characters — makes the rag loud:
-    // measured 16% right-edge variance (58px of 366pt) on iOS. Justify trades
-    // that for looser word gaps, and `text-wrap: pretty` plus the corrected
-    // `MEASURE_EM_MIN` (see reader-settings.ts) keep those gaps in range.
-    textJustification: true,
-    paragraphSpacing: "original",
+    textJustification: false,
+    paragraphSpacing: "loose",
     firstLineIndent: false,
     // 0% reads too tight in the two-page layout, the default `pageColumns`
     // above — 4% gives the gutter and outer edges some breathing room without

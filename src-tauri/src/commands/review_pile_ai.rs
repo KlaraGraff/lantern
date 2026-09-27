@@ -492,11 +492,7 @@ async fn generate_curation_inner(
         secrets,
         &messages,
         Some(900),
-        // Utility, not Chat: this is a shape Lantern dictates and forces the
-        // cheapest no-reasoning tier — see AiRequestPurpose's doc comment.
-        // There is no separate "cheap model" concept anywhere in the router;
-        // this is the whole mechanism, same as every other automatic job.
-        crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRequestPurpose::BackgroundUtility,
         crate::ai::router::AiRetryMode::Automatic,
         None,
         None,

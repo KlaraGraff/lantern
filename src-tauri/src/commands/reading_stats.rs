@@ -831,7 +831,7 @@ pub async fn generate_reading_review_inner(
         secrets,
         &messages,
         Some(1_200),
-        crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRequestPurpose::BackgroundUtility,
         crate::ai::router::retry_mode(retry),
         request_id.as_deref(),
         None,

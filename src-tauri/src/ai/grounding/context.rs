@@ -568,7 +568,7 @@ async fn resolve_context_line<R: Runtime>(
             secrets,
             messages,
             Some(120),
-            AiRequestPurpose::Utility,
+            AiRequestPurpose::BackgroundUtility,
             AiRetryMode::Automatic,
             None,
             None,
@@ -690,6 +690,9 @@ pub async fn ensure_context_lines<R: Runtime>(
     // network recovers within a call or two, a broken provider never does.
     let mut consecutive_failures = 0usize;
     let pending = pending_rows(&rows);
+    if !pending.is_empty() {
+        router::ensure_background_profile_configured(db)?;
+    }
     let total = rows.len();
     let mut done = total - pending.len();
     if let Some(progress) = progress.filter(|_| !pending.is_empty()) {

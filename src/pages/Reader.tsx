@@ -2336,9 +2336,8 @@ export default function Reader() {
   const progressReadout = (compact: boolean) => (
     supportsScrubber ? (
       // P1.5's click-cycle readout. The button stays in the DOM even in
-      // "hidden" mode (no visible text) so the same click target can cycle
-      // back to "page" — a deliberate trade-off over letting the affordance
-      // vanish entirely.
+      // "hidden" mode has no visible text, but keeps a usable click target
+      // where the readout was so it can cycle back without opening settings.
       <button
         type="button"
         onClick={() => cycleProgressReadoutMode(effectiveProgressReadoutMode)}
@@ -2346,7 +2345,7 @@ export default function Reader() {
         aria-label={progressReadoutText ? undefined : t("reader.progressReadout.toggleLabel")}
         className={compact
           ? `inline-flex h-6 cursor-pointer items-center justify-center px-4 ${progressReadoutText ? "" : "min-w-11"}`
-          : `cursor-pointer text-left hover:opacity-100 touch:inline-flex touch:min-h-11 touch:items-center ${progressReadoutText ? "" : "min-w-[12px] touch:min-w-11"}`}
+          : `inline-flex h-8 cursor-pointer items-center text-left hover:opacity-100 touch:h-11 ${progressReadoutText ? "" : "min-w-16"}`}
       >
         {progressReadoutText}
       </button>

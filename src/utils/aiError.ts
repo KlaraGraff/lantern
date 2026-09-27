@@ -1,12 +1,12 @@
 export const AI_ERROR_CODES = [
   "AI_NOT_CONFIGURED",
+  "AI_BACKGROUND_NOT_CONFIGURED",
   "AI_KEYS_DISABLED",
   "AI_ALL_KEYS_INVALID",
   "AI_KEYS_COOLING_DOWN",
   "AI_NO_USABLE_KEYS",
   "AI_STREAM_FAILED",
-  // 词卷「出题模型」硬指定的 profile 被停用/删除（router.rs pin_profile）。
-  // 只有带 profileId 的调用（quiz/transport.ts）可能收到，其余功能不会。
+  // A selected reading/background model or a quiz override was removed or disabled.
   "AI_PROFILE_NOT_AVAILABLE",
 ] as const;
 
@@ -14,6 +14,7 @@ export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
 
 const AI_SETTINGS_ERROR_CODES = new Set<AiErrorCode>([
   "AI_NOT_CONFIGURED",
+  "AI_BACKGROUND_NOT_CONFIGURED",
   "AI_KEYS_DISABLED",
   "AI_ALL_KEYS_INVALID",
   "AI_KEYS_COOLING_DOWN",
@@ -52,6 +53,8 @@ export function aiErrorMessageKey(code: AiErrorCode): string {
   switch (code) {
     case "AI_NOT_CONFIGURED":
       return "ai.notConfigured";
+    case "AI_BACKGROUND_NOT_CONFIGURED":
+      return "ai.backgroundNotConfigured";
     case "AI_KEYS_DISABLED":
       return "ai.keysDisabled";
     case "AI_ALL_KEYS_INVALID":
@@ -63,6 +66,6 @@ export function aiErrorMessageKey(code: AiErrorCode): string {
     case "AI_STREAM_FAILED":
       return "ai.requestFailed";
     case "AI_PROFILE_NOT_AVAILABLE":
-      return "quiz.error.profileUnavailable";
+      return "ai.profileUnavailable";
   }
 }

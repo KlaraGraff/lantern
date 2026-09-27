@@ -186,7 +186,7 @@ async fn complete_summary(
             secrets,
             messages,
             None,
-            crate::ai::router::AiRequestPurpose::Utility,
+            crate::ai::router::AiRequestPurpose::BackgroundUtility,
             crate::ai::router::AiRetryMode::Automatic,
             Some(request_id),
             None,

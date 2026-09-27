@@ -24,8 +24,10 @@ pub struct AiStreamChunk {
 }
 
 fn public_stream_error_code(error: &AppError) -> &'static str {
-    const CONFIGURATION_ERRORS: [&str; 5] = [
+    const CONFIGURATION_ERRORS: [&str; 7] = [
         "AI_NOT_CONFIGURED",
+        "AI_BACKGROUND_NOT_CONFIGURED",
+        "AI_PROFILE_NOT_AVAILABLE",
         "AI_KEYS_DISABLED",
         "AI_ALL_KEYS_INVALID",
         "AI_KEYS_COOLING_DOWN",
@@ -110,6 +112,8 @@ mod tests {
     fn stream_failures_preserve_public_key_pool_states() {
         for code in [
             "AI_NOT_CONFIGURED",
+            "AI_BACKGROUND_NOT_CONFIGURED",
+            "AI_PROFILE_NOT_AVAILABLE",
             "AI_KEYS_DISABLED",
             "AI_ALL_KEYS_INVALID",
             "AI_KEYS_COOLING_DOWN",

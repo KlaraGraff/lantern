@@ -5,6 +5,7 @@ import type { ReaderSettingsState } from "../src/components/ReaderSettings";
 import {
   getReaderCapabilities,
   getReaderFontOptions,
+  getThemeStyles,
   setCustomReaderFonts,
 } from "../src/components/reader-settings.ts";
 import {
@@ -294,10 +295,10 @@ const leakedStateValues: Record<keyof typeof perBookRows, unknown> = {
   line_spacing: 2.4,
   word_spacing: 9,
   char_spacing: 7,
-  text_justification: false,
+  text_justification: true,
   paragraph_spacing: "comfortable",
   first_line_indent: true,
-  reading_mode: "paginated",
+  reading_mode: "scrolling",
   page_columns: 1,
   margins: 24,
   show_lookup_markers: false,
@@ -306,6 +307,57 @@ const leakedStateValues: Record<keyof typeof perBookRows, unknown> = {
 };
 
 const shippedDefaults = createDefaultReaderSettings();
+
+test("new-reader defaults match the active global reading preferences", () => {
+  assert.deepEqual(
+    {
+      theme: shippedDefaults.theme,
+      customTheme: shippedDefaults.customTheme,
+      font: shippedDefaults.font,
+      cjkFont: shippedDefaults.cjkFont,
+      fontSize: shippedDefaults.fontSize,
+      readingMode: shippedDefaults.readingMode,
+      pageColumns: shippedDefaults.pageColumns,
+      showChapterProgress: shippedDefaults.showChapterProgress,
+      showBookProgress: shippedDefaults.showBookProgress,
+      showPageNumbers: shippedDefaults.showPageNumbers,
+      lineSpacing: shippedDefaults.lineSpacing,
+      charSpacing: shippedDefaults.charSpacing,
+      wordSpacing: shippedDefaults.wordSpacing,
+      textJustification: shippedDefaults.textJustification,
+      paragraphSpacing: shippedDefaults.paragraphSpacing,
+      firstLineIndent: shippedDefaults.firstLineIndent,
+      margins: shippedDefaults.margins,
+    },
+    {
+      theme: "eye-care-green",
+      customTheme: { color: "#DDE8D8", opacity: 70 },
+      font: "times",
+      cjkFont: "system",
+      fontSize: 22,
+      readingMode: "paginated",
+      pageColumns: 2,
+      showChapterProgress: true,
+      showBookProgress: true,
+      showPageNumbers: false,
+      lineSpacing: "auto",
+      charSpacing: 0,
+      wordSpacing: 0,
+      textJustification: false,
+      paragraphSpacing: "loose",
+      firstLineIndent: false,
+      margins: 4,
+    },
+  );
+});
+
+test("eye-care green is a fixed named theme using the active pale green", () => {
+  assert.equal(getThemeStyles("eye-care-green").body, "#E7EFE4");
+  assert.deepEqual(
+    getThemeStyles("eye-care-green", { color: "#FFFFFF", opacity: 100 }),
+    getThemeStyles("eye-care-green"),
+  );
+});
 
 // The per-book guarantee, one key at a time: book A's row must not reach book B,
 // and with no row at either layer the key resolves to the shipped default — not
@@ -338,7 +390,7 @@ test("deleting the font override with no global row underneath returns to the sh
   // Georgia-carrying state as `previous` and must come back to the default
   // face, immediately — not after a restart.
   const afterRestore = resolveReaderSettings({ ...previous, font: "georgia" }, {}, {});
-  assert.equal(afterRestore.font, "literata");
+  assert.equal(afterRestore.font, "times");
 });
 
 test("deleting the font override with a global row underneath lands on the global font", () => {

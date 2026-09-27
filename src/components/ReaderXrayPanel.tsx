@@ -498,7 +498,7 @@ export default function ReaderXrayPanel({
         ) : view === "relations" && result ? (
           <div className="px-4 pb-4 pt-3.5">
             <button type="button" className="mb-3 flex items-center gap-1 text-[12px] text-accent-text" onClick={() => setView("summary")}>
-              <ArrowLeft size={13} /> {t("readerXray.backToSummary")}
+              <ArrowLeft size={13} /> {t(result.kind === "term" ? "readerXray.backToDefinition" : "readerXray.backToSummary")}
             </button>
             <h3 className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-text-muted">{t("readerXray.relationPaths")}</h3>
             <div className="grid gap-2">
@@ -539,7 +539,11 @@ export default function ReaderXrayPanel({
             ) : null}
             <section className="py-3.5">
               <h3 className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-text-muted">
-                {wholeBook ? t("readerXray.scopeWholeBook") : t("readerXray.occurrences")}
+                {wholeBook
+                  ? t("readerXray.scopeWholeBook")
+                  : result.kind === "person"
+                    ? t("readerXray.occurrencesPerson")
+                    : t("readerXray.occurrencesTerm")}
               </h3>
               <div className="grid gap-1.5">
                 {interaction.location ? (
@@ -563,7 +567,11 @@ export default function ReaderXrayPanel({
                     onClick={() => void navigate(source.chunkId, () => onNavigate(source))}
                   >
                     <strong className="mr-2 text-text-muted">
-                      {source.sectionTitle || (wholeBook ? t("readerXray.scopeWholeBook") : t("readerXray.earlier"))}
+                      {source.sectionTitle || (wholeBook
+                        ? t("readerXray.scopeWholeBook")
+                        : result.kind === "person"
+                          ? t("readerXray.earlierPerson")
+                          : t("readerXray.earlierTerm"))}
                     </strong>{source.snippet}
                   </button>
                 ))}

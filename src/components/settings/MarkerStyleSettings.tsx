@@ -131,6 +131,7 @@ const VISIBILITY_ROW: Record<MarkerVisibilityKey, {
 const BACKDROP_LABEL_KEY: Partial<Record<ReaderTheme, string>> = {
   original: "readerSettings.themeOriginal",
   paper: "readerSettings.themeSepia",
+  "eye-care-green": "readerSettings.themeEyeCareGreen",
   quiet: "readerSettings.themeGray",
   dark: "readerSettings.themeDark",
 };
