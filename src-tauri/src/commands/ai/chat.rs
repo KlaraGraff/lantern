@@ -317,11 +317,14 @@ fn append_chat_route_instructions(
     selection: SelectionState,
     has_history: bool,
 ) {
+    // Route-specific instructions change every turn (different scope, different
+    // section stats, presence/absence of history) and must stay out of `stable`
+    // so the stable cache key stays byte-identical across turns for the same book.
     if has_history {
-        system_content.stable.push_str(HISTORY_IS_NOT_EVIDENCE);
+        system_content.variable.push_str(HISTORY_IS_NOT_EVIDENCE);
     }
     if quoted_reply {
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe user has quoted something you said earlier. That quote is your own wording, not book text and not evidence: never cite it as a source, and never treat it as a claim you now have to defend. Answer what they are asking about it — and if the quoted wording was wrong or overstated, say so.",
         );
     }
@@ -329,17 +332,17 @@ fn append_chat_route_instructions(
         route,
         ChatRoute::CurrentSection | ChatRoute::CurrentSectionVocabulary
     ) {
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe user is asking about the current reading section. The supplied section excerpts are the indexed original book text, not a summary. Use only these excerpts for section-specific claims. Scan the excerpts in reading order before answering. If the excerpts are empty or incomplete because of reading protection or the context budget, say so instead of filling the gaps from memory.",
         );
         if route == ChatRoute::CurrentSectionVocabulary {
-            system_content.stable.push_str(
+            system_content.variable.push_str(
                 "\n\nThis is a vocabulary request. Extract vocabulary from the primary language of the supplied original section text unless the user explicitly asks for a different source language. The language used for the user's question or the configured response language does not change which source-language words to extract. List only words or phrases that literally appear in the original section text; do not turn themes, historical concepts, places, or explanations into vocabulary items. For every item give the exact form as it appears, lemma when applicable, part of speech when applicable, pronunciation when applicable, meaning in the configured response language, an exact short source sentence or quote, its meaning in context, and a supporting source marker such as [S2]. Cover the useful difficult words across the whole supplied section, not just the first passage. Never invent a word, sentence, or definition that is unsupported by the supplied text.",
             );
         }
         if let Some(context) = section_context {
             if context.spoiler_limited {
-                system_content.stable.push_str(&format!(
+                system_content.variable.push_str(&format!(
                     "\n\nReading protection limits this section: only {} of {} indexed chunks ({} of {} estimated tokens) are visible. Protected unread material was omitted; do not describe this as the complete section.",
                     context.visible_chunks,
                     context.total_chunks,
@@ -348,7 +351,7 @@ fn append_chat_route_instructions(
                 ));
             }
             if context.truncated {
-                system_content.stable.push_str(&format!(
+                system_content.variable.push_str(&format!(
                     "\n\nThe section context budget supplied only {} of {} visible chunks ({} of {} estimated tokens). The returned text is a reading-order prefix; say that the supplied section context is partial rather than claiming complete chapter coverage.",
                     context.selected_chunks,
                     context.visible_chunks,
@@ -357,7 +360,7 @@ fn append_chat_route_instructions(
                 ));
             }
             if context.total_chunks == 0 {
-                system_content.stable.push_str(
+                system_content.variable.push_str(
                     "\n\nNo indexed source chunks were available for this section. Do not infer section-specific content from memory or earlier assistant messages.",
                 );
             }
@@ -367,19 +370,19 @@ fn append_chat_route_instructions(
         ChatRoute::SelectedContext | ChatRoute::SelectedContextVocabulary
     ) {
         match selection {
-            SelectionState::Attached => system_content.stable.push_str(
+            SelectionState::Attached => system_content.variable.push_str(
                 "\n\nThe user's selected passage is the primary source for this request. Do not broaden the answer to unrelated book sections unless the user explicitly asks for that.",
             ),
             // Without this the prompt named a selected passage that no message
             // in the request contained, and the model — correctly — answered
             // that it could not see what the user meant.
-            SelectionState::Carried => system_content.stable.push_str(
+            SelectionState::Carried => system_content.variable.push_str(
                 "\n\nThe user asked a follow-up without attaching a new selection, so the passage between [Carried passage] markers in the conversation is still the passage under discussion. Treat it as the selected passage for this request, and do not broaden the answer to unrelated book sections unless the user explicitly asks for that.",
             ),
             // Nothing was ever selected. Fall back to what the reader can see
             // rather than insisting on a source that does not exist.
             SelectionState::Missing => {
-                system_content.stable.push_str(
+                system_content.variable.push_str(
                     "\n\nNo passage is attached to this request. Answer from the visible reading area below when it covers the question, and say plainly when it does not — never claim to be reading a selection.",
                 );
                 if let Some(viewport_text) = viewport_text {
@@ -388,16 +391,16 @@ fn append_chat_route_instructions(
             }
         }
         if route == ChatRoute::SelectedContextVocabulary {
-            system_content.stable.push_str(
+            system_content.variable.push_str(
                 "\n\nThis is a vocabulary request. List only words or phrases that literally appear in the selected passage, using the passage's primary language unless the user explicitly asks for another source language. Do not turn themes, historical concepts, places, or explanations into vocabulary items. For every item give the exact form, lemma when applicable, part of speech when applicable, pronunciation when applicable, meaning in the configured response language, an exact short quote from the passage, and its meaning in context. Never invent a word, quote, or definition that is unsupported by the selected passage.",
             );
         }
     } else if matches!(route, ChatRoute::WholeBook | ChatRoute::WholeBookVocabulary) {
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe user explicitly requested whole-book scope. Use the supplied full book text when it is present. If only retrieved excerpts or generated overviews are supplied, treat them as non-exhaustive evidence and do not claim complete coverage.",
         );
         if route == ChatRoute::WholeBookVocabulary {
-            system_content.stable.push_str(
+            system_content.variable.push_str(
                 "\n\nThis is a whole-book vocabulary request. List only words or phrases that literally appear in the supplied original book text, using the source text's primary language unless the user explicitly names another source language. Do not turn themes, historical concepts, places, or explanations into vocabulary items. If the supplied material is not the complete book, state that the vocabulary list is not exhaustive.",
             );
         }
@@ -405,11 +408,11 @@ fn append_chat_route_instructions(
         route,
         ChatRoute::ViewportContext | ChatRoute::ViewportContextVocabulary
     ) {
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe text currently visible in the user's reader (supplied below as the visible reading area) is the primary source for this request. When the user says \"this passage\" or similar, they mean that visible text. Do not broaden the answer to unrelated book sections unless the user explicitly asks for that.",
         );
         if route == ChatRoute::ViewportContextVocabulary {
-            system_content.stable.push_str(
+            system_content.variable.push_str(
                 "\n\nThis is a vocabulary request. List only words or phrases that literally appear in the visible reading area, using its primary language unless the user explicitly asks for another source language. Do not turn themes, historical concepts, places, or explanations into vocabulary items. For every item give the exact form, lemma when applicable, part of speech when applicable, pronunciation when applicable, meaning in the configured response language, an exact short quote from the visible text, and its meaning in context. Never invent a word, quote, or definition that is unsupported by the visible text.",
             );
         }
@@ -420,17 +423,17 @@ fn append_chat_route_instructions(
         // Ungrounded-answer policy: reliable source text is missing, but the
         // user still deserves an answer. Mandatory disclosure instead of a
         // refusal; supplied partial evidence stays preferred.
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe user asked about their current reading position, but the application could not supply reliable section source text (the index may still be building, or this book's format does not support it). Do not claim to have loaded the section. Still answer as helpfully as you can: prefer any evidence supplied in this conversation (a visible reading area, a quoted selection), and beyond that draw on your own knowledge of this book if you are confident you know it. You MUST open your answer with one brief sentence disclosing that it is not based on the book's actual text. If you do not know this book well enough, say so plainly and suggest selecting a passage — never invent plot details, quotes, or page contents.",
         );
         if live_scope_ambiguous {
-            system_content.stable.push_str(
+            system_content.variable.push_str(
                 " In this case the table of contents maps several entries to one source file, so the chapter boundaries are ambiguous; avoid claims about where this chapter starts or ends.",
             );
         }
         if let Some(context) = section_context {
             if context.total_chunks > 0 && context.visible_chunks == 0 {
-                system_content.stable.push_str(
+                system_content.variable.push_str(
                     " The indexed section exists, but its source text is outside the currently readable range.",
                 );
             }
@@ -439,22 +442,26 @@ fn append_chat_route_instructions(
             append_viewport_evidence(system_content, viewport_text);
         }
     } else if route == ChatRoute::WholeBookUnavailable {
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe user asked about the whole book, but no reliable original-text source bundle is available. Do not pretend to quote or scan the text. Still answer as helpfully as you can from your own knowledge of this book if you are confident you know it, and from any evidence supplied in this conversation. You MUST open your answer with one brief sentence disclosing that it is not based on the book's actual text. If you do not know this book well enough, say so plainly — never invent plot details or quotes.",
         );
         if let Some(viewport_text) = viewport_text {
             append_viewport_evidence(system_content, viewport_text);
         }
     } else if route == ChatRoute::WholeBookVocabularyUnavailable {
-        system_content.stable.push_str(
+        system_content.variable.push_str(
             "\n\nThe user requested a whole-book vocabulary scan, but a complete original-text source bundle is unavailable, so an actual scan is impossible. Do not fabricate a scan or claim coverage. If you know this book, you may offer a short list of words such a book is likely to make difficult, clearly presented as recalled examples from general knowledge rather than as a scan of the text, with a brief opening disclosure. Otherwise explain that a scan needs the book's index and suggest scanning the current chapter or a selection instead.",
         );
         if let Some(viewport_text) = viewport_text {
             append_viewport_evidence(system_content, viewport_text);
         }
     }
-    system_content.stable.push_str(ANSWER_DISCIPLINE);
-    system_content.stable.push_str(MARKUP_GUIDE);
+    // ANSWER_DISCIPLINE and MARKUP_GUIDE must follow the route scope rules so
+    // the model sees them last. Route rules live in `variable`, so these go
+    // into `variable` too. They are constant, but at ~450 tokens they are a
+    // small fraction of the stable block, and ordering correctness matters more.
+    system_content.variable.push_str(ANSWER_DISCIPLINE);
+    system_content.variable.push_str(MARKUP_GUIDE);
 }
 
 fn should_inject_full_text(total_tokens: usize, threshold: usize) -> bool {
@@ -1740,10 +1747,10 @@ mod tests {
             SelectionState::Carried,
             true,
         );
-        assert!(carried.stable.contains(CARRIED_PASSAGE_OPEN));
+        assert!(carried.variable.contains(CARRIED_PASSAGE_OPEN));
         // Sending history obliges us to say what it may be used for.
-        assert!(carried.stable.contains("not source evidence"));
-        assert!(carried.stable.contains(EARLIER_PASSAGE_OPEN));
+        assert!(carried.variable.contains("not source evidence"));
+        assert!(carried.variable.contains(EARLIER_PASSAGE_OPEN));
     }
 
     #[test]
@@ -1760,10 +1767,10 @@ mod tests {
             SelectionState::Missing,
             false,
         );
-        assert!(missing.stable.contains("No passage is attached"));
+        assert!(missing.variable.contains("No passage is attached"));
         assert!(missing.variable.contains("the visible page"));
         // No earlier turns, so no rule about them.
-        assert!(!missing.stable.contains("not source evidence"));
+        assert!(!missing.variable.contains("not source evidence"));
     }
 
     #[test]
@@ -1782,24 +1789,23 @@ mod tests {
         );
 
         assert!(content
-            .stable
+            .variable
             .contains("treat your previous answer as having failed"));
         assert!(content
-            .stable
+            .variable
             .contains("Hold positions on evidence, not on pressure"));
         // The first answer of a conversation ignored these rules while they sat
         // above the scope rules, so their position is the behaviour under test.
         let scope = content
-            .stable
+            .variable
             .find("primary source for this request")
             .expect("selected-context scope rule");
         let discipline = content
-            .stable
+            .variable
             .find("whether their reading is grammatically possible")
             .expect("answer rules");
         assert!(scope < discipline);
-        // The rules are constant, so they must stay in the cacheable half.
-        assert!(content.variable.is_empty());
+        // Both scope rules and answer discipline are in variable to preserve ordering.
     }
 
     #[test]
@@ -1943,14 +1949,14 @@ mod tests {
             SelectionState::Attached,
             false,
         );
-        assert!(content.stable.contains("literally appear"));
-        assert!(content.stable.contains("primary language"));
-        assert!(content.stable.contains("configured response language"));
-        assert!(content.stable.contains("lemma"));
-        assert!(content.stable.contains("exact short source sentence"));
-        assert!(content.stable.contains("source marker"));
-        assert!(content.stable.contains("Never invent a word"));
-        assert!(!content.stable.contains("generated overview"));
+        assert!(content.variable.contains("literally appear"));
+        assert!(content.variable.contains("primary language"));
+        assert!(content.variable.contains("configured response language"));
+        assert!(content.variable.contains("lemma"));
+        assert!(content.variable.contains("exact short source sentence"));
+        assert!(content.variable.contains("source marker"));
+        assert!(content.variable.contains("Never invent a word"));
+        assert!(!content.variable.contains("generated overview"));
 
         let mut selected = SystemContent {
             stable: String::new(),
@@ -1967,9 +1973,9 @@ mod tests {
             false,
         );
         assert!(selected
-            .stable
+            .variable
             .contains("literally appear in the selected passage"));
-        assert!(selected.stable.contains("exact short quote"));
+        assert!(selected.variable.contains("exact short quote"));
 
         let mut unavailable = SystemContent {
             stable: String::new(),
@@ -1986,11 +1992,11 @@ mod tests {
             false,
         );
         assert!(unavailable
-            .stable
+            .variable
             .contains("could not supply reliable section source text"));
-        assert!(unavailable.stable.contains("disclosing"));
+        assert!(unavailable.variable.contains("disclosing"));
         assert!(!unavailable
-            .stable
+            .variable
             .contains("The application will provide a local explanation"));
     }
 
@@ -2021,10 +2027,10 @@ mod tests {
             SelectionState::Attached,
             false,
         );
-        assert!(content.stable.contains("only 4 of 12 indexed chunks"));
-        assert!(content.stable.contains("only 3 of 4 visible chunks"));
+        assert!(content.variable.contains("only 4 of 12 indexed chunks"));
+        assert!(content.variable.contains("only 3 of 4 visible chunks"));
         assert!(content
-            .stable
+            .variable
             .contains("do not describe this as the complete section"));
     }
 

@@ -147,7 +147,8 @@ pub(super) fn is_vocabulary_request(value: &str) -> bool {
     if vocabulary_negated {
         return false;
     }
-    [
+    let vocabulary_target = lower.replace("背单词", "").replace("词汇量", "");
+    let has_vocabulary_topic = [
         "difficult words",
         "difficult english words",
         "hard words",
@@ -178,7 +179,63 @@ pub(super) fn is_vocabulary_request(value: &str) -> bool {
         "术语",
     ]
     .iter()
+    .any(|pattern| vocabulary_target.contains(pattern));
+    if !has_vocabulary_topic {
+        return false;
+    }
+    // A topic mention ("背单词", "词汇量") is not a request to scan the
+    // book. Only enter the extraction route when the reader asks for an
+    // operation on vocabulary, or sends a terse vocabulary-only request.
+    [
+        "哪些",
+        "哪几个",
+        "列出",
+        "列一下",
+        "列举",
+        "找出",
+        "找一下",
+        "挑出",
+        "提取",
+        "整理",
+        "扫描",
+        "标出",
+        "划出",
+        "解释单词",
+        "解释难词",
+        "解释词汇",
+        "讲解单词",
+        "讲解难词",
+        "讲解词汇",
+        "释义",
+        "怎么读",
+        "什么意思",
+        "什么词",
+        "list",
+        "which words",
+        "what words",
+        "what are the difficult",
+        "explain the words",
+        "explain difficult",
+        "explain vocabulary",
+        "extract",
+        "identify",
+        "find",
+        "scan",
+        "define",
+    ]
+    .iter()
     .any(|pattern| lower.contains(pattern))
+        || [
+            "难词",
+            "生词",
+            "重点词汇",
+            "vocabulary",
+            "difficult words",
+            "new words",
+        ]
+        .contains(&lower.trim_matches(|character: char| {
+            character.is_whitespace() || "？?!！。".contains(character)
+        }))
 }
 
 pub(super) fn is_current_section_request(value: &str) -> bool {
@@ -423,7 +480,17 @@ pub(super) fn classify_chat_route(
             ChatRoute::CurrentSectionUnavailable
         };
     }
-    ChatRoute::Generic
+    // No explicit scope, no selection, no inherited route: anchor to the
+    // current section rather than falling back to generic retrieval. A reader
+    // asking "what does this mean?" or "explain this" is always asking about
+    // what they are reading, not about the book in the abstract.
+    if current_section_index.is_some() {
+        ChatRoute::CurrentSection
+    } else if has_viewport {
+        ChatRoute::ViewportContext
+    } else {
+        ChatRoute::CurrentSectionUnavailable
+    }
 }
 
 /// Decide which scope, if any, a vague follow-up inherits from the previous
@@ -459,6 +526,9 @@ pub(super) fn resolve_inherited_route(
                     | ChatRoute::WholeBookUnavailable
                     | ChatRoute::WholeBookVocabulary
                     | ChatRoute::WholeBookVocabularyUnavailable
+                    // Generic carries no scope information worth inheriting; let
+                    // classify_chat_route re-evaluate against the current state.
+                    | ChatRoute::Generic
             )
         });
     let inherited_route = structured_previous_route.or_else(|| {
@@ -1081,14 +1151,14 @@ mod tests {
     }
     #[test]
     fn single_word_lookups_do_not_trigger_vocabulary_scans() {
-        // One specific word: answer the question, don't scan the section.
+        // One specific word: answered from section context, not a vocabulary scan.
         assert_eq!(
             route_name(classify_without_viewport(
                 "resilience 这个单词是什么意思？",
                 Some(3),
                 None
             )),
-            "generic_retrieval"
+            "current_section"
         );
         assert_eq!(
             route_name(classify_without_viewport(
@@ -1096,7 +1166,7 @@ mod tests {
                 Some(3),
                 None
             )),
-            "generic_retrieval"
+            "current_section"
         );
         assert_eq!(
             route_name(classify_without_viewport(
@@ -1104,7 +1174,7 @@ mod tests {
                 Some(3),
                 None
             )),
-            "generic_retrieval"
+            "current_section"
         );
         // A selected passage keeps its scope for a single-word lookup.
         assert_eq!(
@@ -1131,6 +1201,35 @@ mod tests {
                 None
             )),
             "current_section_vocabulary"
+        );
+    }
+    #[test]
+    fn discussing_vocabulary_does_not_start_a_vocabulary_scan() {
+        let reflection = "我在背单词时会焦虑，觉得词汇量很缺乏，学得很慢，我该怎么办？";
+        let correction = "我这是在和你继续对话，不是在问你重难点词汇";
+        for question in [
+            reflection,
+            "我背单词很焦虑，你能解释为什么吗？",
+            "我词汇量很少，有哪些办法？",
+        ] {
+            assert!(!is_vocabulary_request(question), "{question}");
+        }
+        assert_eq!(
+            route_for_override(ScopeOverride::Section, reflection, Some(3), true),
+            Some(ChatRoute::CurrentSection)
+        );
+        assert_eq!(
+            classify_chat_route(
+                correction,
+                Some(3),
+                Some(ChatRoute::CurrentSectionVocabulary),
+                true
+            ),
+            ChatRoute::CurrentSection
+        );
+        assert_eq!(
+            route_for_override(ScopeOverride::Section, "本章有哪些难词？", Some(3), true),
+            Some(ChatRoute::CurrentSectionVocabulary)
         );
     }
     #[test]
@@ -1201,7 +1300,7 @@ mod tests {
         let analysis = "[Existing learning-card analysis]\nSummarize this chapter.\n[/Existing learning-card analysis]\n这是什么意思？";
         assert_eq!(
             route_name(classify_without_viewport(analysis, Some(3), None)),
-            "generic_retrieval"
+            "current_section"
         );
 
         let unclosed = "[Selected passage]\nThe ending of the whole book appears here.\n请解释这段";

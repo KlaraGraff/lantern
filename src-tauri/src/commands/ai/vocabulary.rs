@@ -308,6 +308,13 @@ fn render_vocabulary_candidates(
     total_batches: usize,
 ) -> String {
     let chinese = language.starts_with("zh");
+    if processed_batches == 0 && total_batches > 0 {
+        return if chinese {
+            "本次原文扫描未成功处理任何批次，无法判断是否有重点难词。请重试。".to_string()
+        } else {
+            "No source batches were processed successfully, so the vocabulary result is unknown. Please try again.".to_string()
+        };
+    }
     let mut output = if chinese {
         if partial {
             format!(
@@ -925,6 +932,13 @@ mod tests {
         assert!(vocabulary_json_is_well_formed("[]"));
         assert!(!vocabulary_json_is_well_formed("{\"terms\": []}"));
         assert!(!vocabulary_json_is_well_formed("not json"));
+    }
+
+    #[test]
+    fn failed_vocabulary_batch_is_not_reported_as_no_difficult_words() {
+        let result = render_vocabulary_candidates(&[], &[], "zh", true, 0, 1);
+        assert!(result.contains("未成功处理任何批次"));
+        assert!(!result.contains("没有找到可确认的重点难词"));
     }
 
     #[test]
