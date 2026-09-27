@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import i18n from "../i18n";
 
@@ -54,8 +54,16 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
   const [loadingMore, setLoadingMore] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const generationRef = useRef(0);
+  const loadingCursorRef = useRef<string | null>(null);
+  const cursorQueryRef = useRef<string | null>(null);
+  const queryKey = JSON.stringify([filter || null, search || null, collectionId || null, sort || "recent"]);
 
   const refresh = useCallback(async () => {
+    const generation = ++generationRef.current;
+    loadingCursorRef.current = null;
+    cursorQueryRef.current = null;
+    setLoadingMore(false);
     setLoading(true);
     try {
       const page = await invoke<BookPage>("list_books", {
@@ -66,19 +74,23 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
         limit: null,
         sort: sort || "recent",
       });
+      if (generation !== generationRef.current) return;
+      cursorQueryRef.current = queryKey;
       setBooks(page.books);
       setTotal(page.total);
       setCursor(page.next_cursor);
       setHasMore(page.next_cursor !== null);
     } catch (err) {
-      console.error("Failed to load books:", err);
+      if (generation === generationRef.current) console.error("Failed to load books:", err);
     } finally {
-      setLoading(false);
+      if (generation === generationRef.current) setLoading(false);
     }
-  }, [filter, search, collectionId, sort]);
+  }, [filter, search, collectionId, sort, queryKey]);
 
   const loadMore = useCallback(async () => {
-    if (!cursor || loadingMore) return;
+    if (!cursor || loading || loadingCursorRef.current || cursorQueryRef.current !== queryKey) return;
+    const generation = generationRef.current;
+    loadingCursorRef.current = cursor;
     setLoadingMore(true);
     try {
       const page = await invoke<BookPage>("list_books", {
@@ -89,15 +101,19 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
         limit: null,
         sort: sort || "recent",
       });
+      if (generation !== generationRef.current || loadingCursorRef.current !== cursor) return;
       setBooks((prev) => [...prev, ...page.books]);
       setCursor(page.next_cursor);
       setHasMore(page.next_cursor !== null);
     } catch (err) {
-      console.error("Failed to load more books:", err);
+      if (generation === generationRef.current) console.error("Failed to load more books:", err);
     } finally {
-      setLoadingMore(false);
+      if (generation === generationRef.current && loadingCursorRef.current === cursor) {
+        loadingCursorRef.current = null;
+        setLoadingMore(false);
+      }
     }
-  }, [cursor, filter, search, collectionId, sort, loadingMore]);
+  }, [cursor, filter, search, collectionId, sort, loading, queryKey]);
 
   const reorderVisible = useCallback((from: number, to: number) => {
     setBooks((current) => {
@@ -108,7 +124,12 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
+  }, [refresh]);
+
+  useLayoutEffect(() => () => {
+    generationRef.current += 1;
+    loadingCursorRef.current = null;
   }, [refresh]);
 
   return { books, total, loading, loadingMore, hasMore, loadMore, refresh, reorderVisible };
