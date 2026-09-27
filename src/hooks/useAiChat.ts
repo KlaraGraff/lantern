@@ -616,6 +616,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   // sending on this so a message can't be sent (and lazily create a *new*
   // chat) before the existing session chat has loaded.
   const [initializing, setInitializing] = useState(true);
+  const [loadingChat, setLoadingChat] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatRecord[]>([]);
   const [groundingStatus, setGroundingStatus] = useState<GroundingStatusEvent["status"] | null>(null);
@@ -641,6 +642,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const activeAssistantIdRef = useRef<string | null>(null);
   const activeReplacementRef = useRef<ChatMessage | null>(null);
   const initializingRef = useRef(true);
+  const loadingChatRef = useRef(false);
+  const chatLoadGenerationRef = useRef(0);
   const streamGenerationRef = useRef(0);
   const streamFrameCleanupRef = useRef<(() => void) | null>(null);
   const initializationGenerationRef = useRef(0);
@@ -695,10 +698,19 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   // Reset initialization when bookId changes
   useEffect(() => {
     initializationGenerationRef.current += 1;
+    chatLoadGenerationRef.current += 1;
+    loadingChatRef.current = false;
+    setLoadingChat(false);
     titleGenerationRef.current += 1;
     if (bookId && initializedBookRef.current && initializedBookRef.current !== bookId) {
       stopActiveStream();
+      activeReplacementRef.current = null;
       initializedBookRef.current = null;
+      chatIdRef.current = null;
+      setChatId(null);
+      messagesRef.current = [];
+      setMessages([]);
+      setInitializingSynced(true);
       setTitling(false);
     }
   }, [bookId, stopActiveStream]);
@@ -756,11 +768,10 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
 
   const updateMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     if (!mountedRef.current) return;
-    setMessages((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      messagesRef.current = next;
-      return next;
-    });
+    // Async callers may send again before React renders the new transcript.
+    const next = typeof updater === "function" ? updater(messagesRef.current) : updater;
+    messagesRef.current = next;
+    setMessages(next);
   };
 
   const refreshChats = useCallback(async (bid: string) => {
@@ -789,15 +800,23 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   }, []);
 
   const loadChat = useCallback(async (id: string) => {
+    const generation = ++chatLoadGenerationRef.current;
+    loadingChatRef.current = true;
+    setLoadingChat(true);
+    // A cancelled replacement must not leave the old chat showing half an answer
+    // if loading the next chat fails.
+    const replacement = activeReplacementRef.current;
+    activeReplacementRef.current = null;
+    if (replacement) {
+      updateMessages((previous) => previous.map((message) => (
+        message.id === replacement.id ? replacement : message
+      )));
+    }
     // Stop any active stream
     if (streamingRef.current || activeRequestIdRef.current) stopActiveStream();
     titleGenerationRef.current += 1;
     setTitling(false);
     const targetBookId = bookIdRef.current;
-
-    // Set target immediately so rapid clicks can be detected
-    setChatId(id);
-    chatIdRef.current = id;
 
     try {
       const msgs = await invoke<ChatMsgRecord[]>("list_chat_messages", { chatId: id });
@@ -805,7 +824,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       // Stale check: if user switched to another chat while we were loading, bail
       if (
         !mountedRef.current
-        || chatIdRef.current !== id
+        || chatLoadGenerationRef.current !== generation
         || bookIdRef.current !== targetBookId
       ) return;
 
@@ -835,16 +854,26 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           dbId: m.id,
         };
       });
+      // Publish the identity and its transcript together. Until then the
+      // previous chat remains selected, with sending blocked by loadingChat.
+      setChatId(id);
+      chatIdRef.current = id;
       updateMessages(mapped);
     } catch (err) {
       console.error("Failed to load chat messages:", err);
+    } finally {
+      if (mountedRef.current && chatLoadGenerationRef.current === generation) {
+        loadingChatRef.current = false;
+        setLoadingChat(false);
+      }
     }
   }, [stopActiveStream]);
 
   const createChat = useCallback(async (bid: string) => {
+    const generation = chatLoadGenerationRef.current;
     try {
       const chat = await invoke<ChatRecord>("create_chat", { bookId: bid, title: null, model: null });
-      if (!mountedRef.current || bookIdRef.current !== bid) return chat;
+      if (!mountedRef.current || bookIdRef.current !== bid || chatLoadGenerationRef.current !== generation) return chat;
       setChatId(chat.id);
       chatIdRef.current = chat.id;
       updateMessages([]);
@@ -876,6 +905,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     initializationGenerationRef.current = generation;
     initializedBookRef.current = targetBook;
     setInitializingSynced(true);
+    const chatLoadGeneration = chatLoadGenerationRef.current;
 
     const run = (async () => {
       try {
@@ -883,6 +913,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         if (
           !mountedRef.current
           || initializationGenerationRef.current !== generation
+          || chatLoadGenerationRef.current !== chatLoadGeneration
           || bookIdRef.current !== targetBook
         ) return;
         if (chatList.length > 0) {
@@ -938,7 +969,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       // Refuse while the session chat is still loading — otherwise the lazy
       // chat-creation path below would spawn a *new* chat and miss the
       // existing one. Belt-and-suspenders alongside the UI gate.
-      if (initializingRef.current || streamingRef.current) return;
+      if (initializingRef.current || loadingChatRef.current || streamingRef.current) return;
 
       setGroundingStatus(null);
       if (settings.ai_summaries_auto !== "false") void prepareBookOverview();
@@ -1042,7 +1073,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       activeAssistantIdRef.current = assistantId;
 
       const apiHistory = replacingAssistant
-        ? messagesRef.current.slice(0, replacementIndex)
+        ? messagesRef.current.slice(0, replacementIndex).map((message) => (
+            message.id === previousUser?.id ? { ...message, content } : message
+          ))
         : [...messagesRef.current, userMessage];
       updateMessages((prev) => replacingAssistant
         ? prev.map((message) => message.id === assistantId ? assistantMessage : message)
@@ -1528,17 +1561,15 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     activeReplacementRef.current = null;
     stopActiveStream();
     if (!assistantId || !mountedRef.current) return;
-    setMessages((current) => {
-      const next = replacement
+    updateMessages((current) => (
+      replacement
         ? current.map((message) => message.id === assistantId ? replacement : message)
         : current.filter((message) => (
             message.id !== assistantId
             || Boolean(message.content.trim())
             || Boolean(message.reasoning?.trim())
-          ));
-      messagesRef.current = next;
-      return next;
-    });
+          ))
+    ));
   }, [stopActiveStream]);
 
   const deleteChat = useCallback(async (id: string) => {
@@ -1566,6 +1597,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         await loadChat(updatedChats[0].id);
       } else {
         // No chats left — show empty state, lazy create on next send
+        chatLoadGenerationRef.current += 1;
+        loadingChatRef.current = false;
+        setLoadingChat(false);
         setChatId(null);
         chatIdRef.current = null;
         updateMessages([]);
@@ -1586,6 +1620,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     // Otherwise that request can land a moment later and put the history back
     // underneath a fresh selection.
     initializationGenerationRef.current += 1;
+    chatLoadGenerationRef.current += 1;
+    loadingChatRef.current = false;
+    setLoadingChat(false);
     initializationPromiseRef.current = null;
     initializedBookRef.current = bookId;
     setInitializingSynced(false);
@@ -1612,7 +1649,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     prepareBookOverview,
     cancel,
     titling,
-    initializing,
+    initializing: initializing || loadingChat,
     send,
     retryWithWholeBook,
     retryFailed,
