@@ -32,14 +32,16 @@ export function useBookAvailability(
           return;
         }
         const result = await checkBookAvailable(book.id).catch(() => null);
+        if (cancelled) return;
         if (!result) {
           setAvailabilityState("error");
           return;
         }
         if (result.available) {
           const updated = await getBook(book.id).catch(() => null);
-          if (updated?.available !== false) {
-            setBook(updated);
+          if (cancelled) return;
+          if (updated?.id === book.id && updated.available === true) {
+            setBook((current) => current?.id === book.id ? updated : current);
             setAvailabilityState(null);
           } else {
             setAvailabilityState("error");
