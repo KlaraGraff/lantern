@@ -58,7 +58,7 @@ export function SortableBookItem({ id, enabled, list, children }: {
           ref={setActivatorNodeRef}
           type="button"
           aria-label={t("home.moveBook")}
-          className={`absolute z-20 grid size-9 place-items-center rounded-md bg-bg-surface/95 text-text-secondary shadow-card cursor-grab active:cursor-grabbing ${list ? "right-6 top-6" : "right-2 top-2"}`}
+          className={`absolute z-20 grid size-9 place-items-center rounded-md bg-bg-surface/95 text-text-secondary shadow-card cursor-grab active:cursor-grabbing opacity-0 pointer-events-none focus-visible:opacity-100 focus-visible:pointer-events-auto touch:opacity-100 touch:pointer-events-auto ${list ? "right-6 top-6" : "right-2 top-2"}`}
           style={{ touchAction: "none" }}
           {...attributes}
           {...listeners}
