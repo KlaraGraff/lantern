@@ -74,7 +74,7 @@ pub(super) async fn classify_ambiguous_intent(
     let messages = intent_messages(question);
     let completion = tokio::time::timeout(
         INTENT_TIMEOUT,
-        crate::ai::router::complete_with_failover(
+        crate::ai::router::complete_with_failover_cached(
             app,
             db,
             secrets,
@@ -86,6 +86,11 @@ pub(super) async fn classify_ambiguous_intent(
             None,
             "user",
             "intent",
+            // The classifier system prompt is the same for every turn; force a
+            // cache breakpoint so repeated calls within the same session hit
+            // the prompt cache rather than paying full input cost each time.
+            true,
+            None,
         ),
     )
     .await;

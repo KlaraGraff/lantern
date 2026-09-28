@@ -496,7 +496,7 @@ async fn run_vocabulary_scan(
             return Err(AppError::Ai("AI_REQUEST_CANCELLED".to_string()));
         }
         crate::ai::router::register_request(request_id);
-        let completion = crate::ai::router::complete_with_failover(
+        let completion = crate::ai::router::complete_with_failover_cached(
             app,
             db,
             secrets,
@@ -508,6 +508,11 @@ async fn run_vocabulary_scan(
             None,
             "user",
             "vocabulary_scan",
+            // The extraction-rules system prompt is identical across every batch
+            // in the same scan; forcing a cache breakpoint lets batch 2+ read it
+            // from cache instead of paying full input cost each time.
+            true,
+            None,
         )
         .await?;
         if !vocabulary_json_is_well_formed(&completion.text) {
