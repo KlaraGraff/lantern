@@ -443,6 +443,7 @@ pub(crate) fn query_book_exists(db: &Db, id: &str) -> AppResult<bool> {
 const DEFAULT_PAGE_SIZE: usize = 20;
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri exposes these as separate named command inputs.
 pub fn list_books(
     filter: Option<String>,
     search: Option<String>,

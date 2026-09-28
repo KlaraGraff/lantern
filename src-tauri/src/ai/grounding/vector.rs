@@ -122,8 +122,10 @@ pub fn ensure_vector_table(conn: &Connection, dimensions: usize) -> AppResult<()
                 continue;
             }
             let vector = blob
-                .chunks_exact(4)
-                .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four bytes")))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
                 .collect::<Vec<_>>();
             conn.execute(
                 "INSERT INTO book_chunk_vectors (chunk_id, book_id, embedding) VALUES (?1, ?2, ?3)",
@@ -215,8 +217,10 @@ pub fn ensure_alias_vector_table(conn: &Connection, dimensions: usize) -> AppRes
 /// row to recompute, not a reason to leave the whole index unbuilt.
 fn decode_embedding(blob: &[u8], dimensions: usize) -> Option<Vec<f32>> {
     (blob.len() == dimensions * 4).then(|| {
-        blob.chunks_exact(4)
-            .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four bytes")))
+        blob.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes| f32::from_le_bytes(*bytes))
             .collect()
     })
 }
