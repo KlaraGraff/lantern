@@ -2147,18 +2147,8 @@ pub async fn stream_with_failover<R: Runtime>(
     feature: &str,
 ) -> AppResult<()> {
     stream_with_failover_cached(
-        app,
-        db,
-        secrets,
-        messages,
-        event_name,
-        max_tokens,
-        purpose,
-        retry,
-        request_id,
-        origin,
-        feature,
-        false,
+        app, db, secrets, messages, event_name, max_tokens, purpose, retry, request_id, origin,
+        feature, false,
     )
     .await
 }
