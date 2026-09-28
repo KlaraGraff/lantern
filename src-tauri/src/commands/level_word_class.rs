@@ -460,11 +460,19 @@ mod tests {
         crate::ai::router::add_credential(
             db,
             secrets,
-            profile.id,
+            profile.id.clone(),
             "Key".to_string(),
             "test-key".to_string(),
         )
         .unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO settings (key, value) VALUES ('ai_background_profile_id', ?1)",
+                params![profile.id],
+            )
+            .unwrap();
     }
 
     #[tokio::test]

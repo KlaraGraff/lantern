@@ -2955,6 +2955,12 @@ mod tests {
             "test-key".to_string(),
         )
         .unwrap();
+        write_setting(
+            &db.conn.lock().unwrap(),
+            "ai_background_profile_id",
+            &profile.id,
+        )
+        .unwrap();
     }
 
     async fn configure_fake_provider(db: &Db, secrets: &Secrets, body: String) {
@@ -2979,6 +2985,12 @@ mod tests {
             profile.id.clone(),
             "Key".to_string(),
             "test-key".to_string(),
+        )
+        .unwrap();
+        write_setting(
+            &db.conn.lock().unwrap(),
+            "ai_background_profile_id",
+            &profile.id,
         )
         .unwrap();
     }

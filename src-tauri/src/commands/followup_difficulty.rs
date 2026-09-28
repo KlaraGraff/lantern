@@ -711,6 +711,14 @@ mod tests {
             "test-key".to_string(),
         )
         .unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO settings (key, value) VALUES ('ai_background_profile_id', ?1)",
+                params![profile.id],
+            )
+            .unwrap();
 
         let app = tauri::test::mock_app();
         let classified = run_batch(app.handle(), &db, &secrets, "auto")
@@ -788,6 +796,14 @@ mod tests {
             "test-key".to_string(),
         )
         .unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO settings (key, value) VALUES ('ai_background_profile_id', ?1)",
+                params![profile.id],
+            )
+            .unwrap();
 
         let app = tauri::test::mock_app();
         let classified = run_batch(app.handle(), &db, &secrets, "auto")
