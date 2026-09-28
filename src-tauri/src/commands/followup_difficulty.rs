@@ -324,7 +324,7 @@ pub async fn run_batch<R: Runtime>(
         return Ok(0);
     }
     let messages = classification_prompt(&rows);
-    let completion = crate::ai::router::complete_with_failover(
+    let completion = crate::ai::router::complete_with_failover_cached(
         app,
         db,
         secrets,
@@ -338,6 +338,9 @@ pub async fn run_batch<R: Runtime>(
         // Must stay exactly `JOB_ID` — the auto-analysis console totals this
         // job's spend by matching `ai_usage_records.feature` against it.
         JOB_ID,
+        // Same system prompt across all batches; cache it for calls 2+.
+        true,
+        None,
     )
     .await?;
     let classifications = parse_classifications(&completion.text, rows.len());

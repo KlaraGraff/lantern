@@ -562,7 +562,7 @@ async fn resolve_context_line<R: Runtime>(
 ) -> AppResult<ContextLineOutcome> {
     let mut blank_attempts = 0usize;
     loop {
-        let completion = router::complete_with_failover(
+        let completion = router::complete_with_failover_cached(
             app,
             db,
             secrets,
@@ -574,6 +574,10 @@ async fn resolve_context_line<R: Runtime>(
             None,
             "auto",
             JOB_ID,
+            // Same system prompt for every chunk in the book; cache it after
+            // the first call so the remainder of the run reads from cache.
+            true,
+            None,
         )
         .await;
         let completion = match completion {

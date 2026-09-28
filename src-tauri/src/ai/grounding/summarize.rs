@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use super::index::{index_status, IndexStatus};
-use crate::ai::router::{complete_with_failover, complete_with_profile, register_request};
+use crate::ai::router::{complete_with_failover_cached, complete_with_profile, register_request};
 use crate::commands::ai::ChatMessage;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
@@ -180,7 +180,7 @@ async fn complete_summary(
         )
         .await?
     } else {
-        complete_with_failover(
+        complete_with_failover_cached(
             app,
             db,
             secrets,
@@ -192,6 +192,10 @@ async fn complete_summary(
             None,
             "user",
             "book_summary",
+            // System prompt is the same for every batch in the same language;
+            // cache it so call 2+ within a summarisation run hit the cache.
+            true,
+            None,
         )
         .await?
     };

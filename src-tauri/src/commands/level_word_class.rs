@@ -278,7 +278,7 @@ async fn classify_chunk<R: Runtime>(
         return Ok(0);
     }
     let messages = classification_prompt(rows);
-    let completion = crate::ai::router::complete_with_failover(
+    let completion = crate::ai::router::complete_with_failover_cached(
         app,
         db,
         secrets,
@@ -291,6 +291,9 @@ async fn classify_chunk<R: Runtime>(
         "auto",
         // Must stay exactly `JOB_ID` — usage attribution matches on it.
         JOB_ID,
+        // System prompt is identical for every batch in a classification run.
+        true,
+        None,
     )
     .await?;
     let classifications = parse_classifications(&completion.text, rows.len());

@@ -969,7 +969,7 @@ async fn attempt_build<R: Runtime>(
     origin: &str,
     messages: &[ChatMessage],
 ) -> AppResult<(String, AttemptResult)> {
-    let completion = router::complete_with_failover(
+    let completion = router::complete_with_failover_cached(
         app,
         db,
         secrets,
@@ -981,6 +981,11 @@ async fn attempt_build<R: Runtime>(
         None,
         origin,
         JOB_ID,
+        // The same messages are re-sent on every retry attempt; caching lets
+        // the system prompt and prior user content be read from cache on
+        // attempts 2+.
+        true,
+        None,
     )
     .await?;
     let result = {

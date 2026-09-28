@@ -1059,7 +1059,7 @@ async fn call_utility<R: Runtime>(
     max_tokens: u32,
     origin: &str,
 ) -> AppResult<crate::ai::router::AiCompletion> {
-    crate::ai::router::complete_with_failover(
+    crate::ai::router::complete_with_failover_cached(
         app,
         db,
         secrets,
@@ -1071,6 +1071,9 @@ async fn call_utility<R: Runtime>(
         None,
         origin,
         JOB_ID,
+        // Review batches share the same system prompt; cache it across calls.
+        true,
+        None,
     )
     .await
 }
