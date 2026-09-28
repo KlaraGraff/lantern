@@ -70,12 +70,13 @@ pub(super) fn spawn_routed_stream(
     request_id: String,
     origin: &'static str,
     feature: &'static str,
+    cache_last_message: bool,
 ) {
     // Register before spawning so an immediate Stop click can never race the
     // task's first poll of the cancellation registry.
     crate::ai::router::register_request(&request_id);
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = crate::ai::router::stream_with_failover(
+        if let Err(error) = crate::ai::router::stream_with_failover_cached(
             &app,
             &db,
             &secrets,
@@ -87,6 +88,7 @@ pub(super) fn spawn_routed_stream(
             Some(&request_id),
             origin,
             feature,
+            cache_last_message,
         )
         .await
         {

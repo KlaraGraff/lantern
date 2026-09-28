@@ -101,6 +101,7 @@ pub async fn ai_explain(
         request_id,
         "user",
         "explain",
+        false,
     );
 
     Ok(())

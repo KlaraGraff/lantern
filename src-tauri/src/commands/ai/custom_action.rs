@@ -159,6 +159,7 @@ pub async fn ai_custom_action(
         request_id,
         "user",
         "custom_action",
+        false,
     );
     Ok(())
 }

@@ -66,6 +66,7 @@ pub async fn ai_generate_title(
         request_id,
         "user",
         "title",
+        false,
     );
 
     Ok(())

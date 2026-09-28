@@ -2146,6 +2146,42 @@ pub async fn stream_with_failover<R: Runtime>(
     origin: &str,
     feature: &str,
 ) -> AppResult<()> {
+    stream_with_failover_cached(
+        app,
+        db,
+        secrets,
+        messages,
+        event_name,
+        max_tokens,
+        purpose,
+        retry,
+        request_id,
+        origin,
+        feature,
+        false,
+    )
+    .await
+}
+
+/// Same as `stream_with_failover`, but with an explicit per-call prompt-cache
+/// flag. Pass `cache_last_message: true` on paths where the conversation history
+/// is long and the final assistant turn is stable enough to be a shared prefix —
+/// e.g., the chat path after the first turn.
+#[allow(clippy::too_many_arguments)]
+pub async fn stream_with_failover_cached<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    secrets: &Secrets,
+    messages: &[ChatMessage],
+    event_name: &str,
+    max_tokens: Option<u32>,
+    purpose: AiRequestPurpose,
+    retry: AiRetryMode,
+    request_id: Option<&str>,
+    origin: &str,
+    feature: &str,
+    cache_last_message: bool,
+) -> AppResult<()> {
     let selected_profile_id = role_profile_id(db, purpose)?;
     let mut cancel = request_id
         .and_then(|id| {
@@ -2172,7 +2208,7 @@ pub async fn stream_with_failover<R: Runtime>(
             retry,
             origin,
             feature,
-            false,
+            cache_last_message,
             selected_profile_id.as_deref(),
             &mut cancel,
         ),

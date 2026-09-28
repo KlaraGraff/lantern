@@ -1423,6 +1423,8 @@ pub async fn ai_chat(
         history.len() > 1,
     );
 
+    // Capture before `history` is moved into `api_messages`.
+    let has_chat_history = history.len() > 1;
     let mut api_messages = Vec::new();
     api_messages.push(ChatMessage {
         role: "system".to_string(),
@@ -1466,6 +1468,11 @@ pub async fn ai_chat(
             request_id,
             "user",
             "chat",
+            // Cache the last assistant turn as a shared prefix. On the first
+            // turn there's no history yet, so the flag is a no-op; from turn 2
+            // onwards it lets the model read all previous turns from cache
+            // instead of paying full input cost each time.
+            has_chat_history,
         );
     }
 
