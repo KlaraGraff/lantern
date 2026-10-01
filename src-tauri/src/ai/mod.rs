@@ -31,6 +31,40 @@ pub(crate) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 pub(crate) const TOTAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_PROVIDER_ERROR_BYTES: usize = 64 * 1024;
 
+/// Keep both parts of application instructions at the same priority. Older
+/// DeepSeek templates gather system messages at the head instead of preserving
+/// their position in the conversation.
+pub(crate) fn in_history_instruction_role(model: &str) -> Option<&'static str> {
+    let model = model.to_ascii_lowercase();
+    if matches!(
+        model.as_str(),
+        "deepseek-v4" | "deepseek-flash" | "deepseek-pro"
+    ) || model.starts_with("deepseek-v4-")
+    {
+        return Some("system");
+    }
+    let family = model
+        .strip_prefix("gpt-")
+        .or_else(|| model.strip_prefix("chatgpt-"))
+        .and_then(|suffix| suffix.split('-').next());
+    match family {
+        Some("4" | "4o" | "4.5") => return Some("system"),
+        Some("4.1" | "5" | "5.1" | "5.2" | "5.3" | "5.4" | "5.5" | "5.6" | "6" | "6.1") => {
+            return Some("developer");
+        }
+        _ => {}
+    }
+    ["o1", "o3", "o4"]
+        .iter()
+        .any(|family| {
+            model == *family
+                || model
+                    .strip_prefix(family)
+                    .is_some_and(|suffix| suffix.starts_with('-'))
+        })
+        .then_some("developer")
+}
+
 /// The image formats every wired provider family accepts as base64 input.
 /// Doubles as the allow-list `ai_complete_text` validates `user_image`
 /// messages against, so a typo'd or exotic media type fails at the command
@@ -390,6 +424,53 @@ mod tests {
         assert_eq!(parse_image_data_uri("data:image/tiff;base64,aa"), None);
         // Not base64-marked.
         assert_eq!(parse_image_data_uri("data:image/png,plain"), None);
+    }
+
+    #[test]
+    fn scoped_instruction_roles_are_delimited() {
+        for model in [
+            "gpt-4.1",
+            "GPT-6-luna",
+            "chatgpt-5",
+            "o1",
+            "o3-mini",
+            "o4-preview",
+            "DeepSeek-V4-flash",
+            "deepseek-flash",
+            "deepseek-pro",
+        ] {
+            assert!(
+                super::in_history_instruction_role(model).is_some(),
+                "{model}"
+            );
+        }
+        assert_eq!(
+            super::in_history_instruction_role("gpt-6-luna"),
+            Some("developer")
+        );
+        assert_eq!(super::in_history_instruction_role("gpt-4o"), Some("system"));
+        assert_eq!(
+            super::in_history_instruction_role("deepseek-v4-flash"),
+            Some("system")
+        );
+        for model in [
+            "unknown",
+            "gpt-oss-20b",
+            "gpt-j-6b",
+            "gpt-7-future",
+            "o10",
+            "o3ish",
+            "deepseek-chat",
+            "deepseek-reasoner",
+            "deepseek-v3",
+            "deepseek-r1",
+            "deepseek-r1-distill-qwen-14b",
+        ] {
+            assert!(
+                super::in_history_instruction_role(model).is_none(),
+                "{model}"
+            );
+        }
     }
 
     #[test]

@@ -16,39 +16,75 @@ fn request_body(
     max_tokens_override: Option<u32>,
     effort: Option<&str>,
 ) -> serde_json::Value {
-    // Grounded chat internally separates cacheable and variable system text.
-    // OpenAI-compatible APIs receive the original single combined message.
-    let system = messages
+    let instruction_role = crate::ai::in_history_instruction_role(model);
+    let scoped_cache = instruction_role.is_some()
+        && messages
+            .iter()
+            .any(|message| message.role == "system_cache_variable" && !message.content.is_empty());
+    let stable_system = messages
         .iter()
-        .filter(|message| matches!(message.role.as_str(), "system" | "system_cache_variable"))
+        .filter(|message| message.role == "system")
         .map(|message| message.content.as_str())
         .collect::<String>();
+    let system = if scoped_cache {
+        stable_system
+    } else {
+        messages
+            .iter()
+            .filter(|message| matches!(message.role.as_str(), "system" | "system_cache_variable"))
+            .map(|message| message.content.as_str())
+            .collect()
+    };
     let mut api_messages = Vec::new();
     if !system.is_empty() {
-        api_messages.push(serde_json::json!({ "role": "system", "content": system }));
+        let role = if scoped_cache {
+            instruction_role.unwrap()
+        } else {
+            "system"
+        };
+        api_messages.push(serde_json::json!({ "role": role, "content": system }));
     }
-    api_messages.extend(
+    let turns =
         crate::ai::merge_image_messages(messages.iter().filter(|message| {
             !matches!(message.role.as_str(), "system" | "system_cache_variable")
-        }))
-        .into_iter()
-        .map(|message| {
-            if message.images.is_empty() {
-                // Image-free messages keep plain-string content — the shape
-                // every compatible server, however strict, already accepts.
-                return serde_json::json!({ "role": message.role, "content": message.text });
+        }));
+    api_messages.extend(turns.into_iter().map(|message| {
+        if message.images.is_empty() {
+            // Image-free messages keep plain-string content — the shape
+            // every compatible server, however strict, already accepts.
+            return serde_json::json!({ "role": message.role, "content": message.text });
+        }
+        let mut parts: Vec<serde_json::Value> = message
+            .images
+            .iter()
+            .map(|uri| serde_json::json!({ "type": "image_url", "image_url": { "url": uri } }))
+            .collect();
+        if !message.text.is_empty() {
+            parts.push(serde_json::json!({ "type": "text", "text": message.text }));
+        }
+        serde_json::json!({ "role": "user", "content": parts })
+    }));
+    if scoped_cache {
+        let variable: String = messages
+            .iter()
+            .filter(|message| message.role == "system_cache_variable")
+            .map(|message| message.content.as_str())
+            .collect();
+        if !variable.is_empty() {
+            let variable_message =
+                serde_json::json!({ "role": instruction_role.unwrap(), "content": variable });
+            if api_messages
+                .last()
+                .is_some_and(|message| message["role"] == "user")
+            {
+                let last = api_messages.pop().unwrap();
+                api_messages.push(variable_message);
+                api_messages.push(last);
+            } else {
+                api_messages.push(variable_message);
             }
-            let mut parts: Vec<serde_json::Value> = message
-                .images
-                .iter()
-                .map(|uri| serde_json::json!({ "type": "image_url", "image_url": { "url": uri } }))
-                .collect();
-            if !message.text.is_empty() {
-                parts.push(serde_json::json!({ "type": "text", "text": message.text }));
-            }
-            serde_json::json!({ "role": "user", "content": parts })
-        }),
-    );
+        }
+    }
     let mut body = serde_json::json!({
         "model": model,
         "messages": api_messages,
@@ -426,6 +462,201 @@ mod tests {
             body["messages"][1],
             serde_json::json!({ "role": "user", "content": "Question" })
         );
+    }
+
+    #[test]
+    fn scoped_variable_context_follows_history_and_precedes_the_current_user() {
+        let make = |variable: &str, current: &str| {
+            request_body(
+                "gpt-6-luna",
+                0.2,
+                &[
+                    ChatMessage {
+                        role: "system".into(),
+                        content: "stable".into(),
+                    },
+                    ChatMessage {
+                        role: "user".into(),
+                        content: "old question".into(),
+                    },
+                    ChatMessage {
+                        role: "assistant".into(),
+                        content: "old answer".into(),
+                    },
+                    ChatMessage {
+                        role: "system_cache_variable".into(),
+                        content: variable.into(),
+                    },
+                    ChatMessage {
+                        role: "user_image".into(),
+                        content: "data:image/png;base64,AAA".into(),
+                    },
+                    ChatMessage {
+                        role: "user".into(),
+                        content: current.into(),
+                    },
+                ],
+                None,
+                None,
+                None,
+            )
+        };
+        let first = make("context one", "question one");
+        let second = make("context two", "question two");
+        let first = first["messages"].as_array().unwrap();
+        let second = second["messages"].as_array().unwrap();
+        assert_eq!(&first[..3], &second[..3]);
+        assert_eq!(first[0]["role"], "developer");
+        assert_eq!(
+            first[3],
+            serde_json::json!({"role":"developer", "content":"context one"})
+        );
+        assert_eq!(first[4]["role"], "user");
+        assert_eq!(first[4]["content"][0]["type"], "image_url");
+        assert_eq!(first[4]["content"][1]["text"], "question one");
+        assert_eq!(second[3]["content"], "context two");
+    }
+
+    #[test]
+    fn scoped_variable_context_keeps_empty_history_and_trailing_assistant_data() {
+        let empty_stable = request_body(
+            "deepseek-v4-flash",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: "context".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "q".into(),
+                },
+            ],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            empty_stable["messages"],
+            serde_json::json!([
+                {"role":"system", "content":"context"}, {"role":"user", "content":"q"}
+            ])
+        );
+        let trailing_assistant = request_body(
+            "gpt-4.1",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "user".into(),
+                    content: "q".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "a".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: "one".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: "two".into(),
+                },
+            ],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(trailing_assistant["messages"][1]["content"], "a");
+        assert_eq!(
+            trailing_assistant["messages"][2],
+            serde_json::json!({"role":"developer", "content":"onetwo"})
+        );
+
+        let empty_variable = request_body(
+            "gpt-5.2",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: String::new(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "q".into(),
+                },
+            ],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            empty_variable["messages"],
+            serde_json::json!([
+                {"role":"user", "content":"q"}
+            ])
+        );
+    }
+
+    #[test]
+    fn unsupported_models_keep_the_combined_system_message_shape() {
+        for model in ["unknown-model", "gpt-oss-20b"] {
+            let body = request_body(
+                model,
+                0.2,
+                &[
+                    ChatMessage {
+                        role: "system".into(),
+                        content: "stable".into(),
+                    },
+                    ChatMessage {
+                        role: "system_cache_variable".into(),
+                        content: " variable".into(),
+                    },
+                    ChatMessage {
+                        role: "user".into(),
+                        content: "q".into(),
+                    },
+                ],
+                None,
+                None,
+                None,
+            );
+            assert_eq!(
+                body["messages"][0],
+                serde_json::json!({"role":"system", "content":"stable variable"})
+            );
+        }
+    }
+
+    #[test]
+    fn advancing_context_and_growing_history_preserve_the_previous_history_prefix() {
+        let message = |role: &str, text: &str| ChatMessage {
+            role: role.into(),
+            content: text.into(),
+        };
+        for model in ["gpt-6-luna", "deepseek-v4-flash"] {
+            let mut history = vec![
+                message("user", "old question"),
+                message("assistant", "old answer"),
+            ];
+            let mut previous = None;
+            for round in 0..3 {
+                let mut messages = vec![message("system", "stable book rules")];
+                messages.push(message("system_cache_variable", &format!("page {round}")));
+                messages.extend(history.clone());
+                messages.push(message("user", &format!("question {round}")));
+                let body = request_body(model, 0.2, &messages, None, None, None);
+                let wire = body["messages"].as_array().unwrap();
+                if let Some((prefix, history_end)) = previous {
+                    assert_eq!(&wire[..history_end], prefix);
+                }
+                previous = Some((wire[..wire.len() - 2].to_vec(), wire.len() - 2));
+                assert_eq!(wire[wire.len() - 2]["content"], format!("page {round}"));
+                history.push(message("user", &format!("question {round}")));
+                history.push(message("assistant", &format!("answer {round}")));
+            }
+        }
     }
 
     #[test]

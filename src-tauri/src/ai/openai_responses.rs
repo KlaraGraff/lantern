@@ -15,12 +15,19 @@ fn request_body(
     temperature: Option<f64>,
     max_output_tokens: Option<u32>,
 ) -> serde_json::Value {
-    let instructions: String = messages
+    let instruction_role = crate::ai::in_history_instruction_role(model);
+    let scoped_cache = instruction_role.is_some()
+        && messages
+            .iter()
+            .any(|message| message.role == "system_cache_variable" && !message.content.is_empty());
+    let mut instructions: String = messages
         .iter()
-        .filter(|message| matches!(message.role.as_str(), "system" | "system_cache_variable"))
+        .filter(|message| {
+            message.role == "system" || (!scoped_cache && message.role == "system_cache_variable")
+        })
         .map(|message| message.content.as_str())
         .collect();
-    let input: Vec<serde_json::Value> =
+    let mut input: Vec<serde_json::Value> =
         crate::ai::merge_image_messages(messages.iter().filter(|message| {
             !matches!(message.role.as_str(), "system" | "system_cache_variable")
         }))
@@ -45,6 +52,35 @@ fn request_body(
             serde_json::json!({ "role": "user", "content": parts })
         })
         .collect();
+    if scoped_cache {
+        if instruction_role == Some("developer") && !instructions.is_empty() {
+            input.insert(
+                0,
+                serde_json::json!({
+                    "role": "developer", "content": std::mem::take(&mut instructions)
+                }),
+            );
+        }
+        let variable: String = messages
+            .iter()
+            .filter(|message| message.role == "system_cache_variable")
+            .map(|message| message.content.as_str())
+            .collect();
+        if !variable.is_empty() {
+            let variable_message =
+                serde_json::json!({ "role": instruction_role.unwrap(), "content": variable });
+            if input
+                .last()
+                .is_some_and(|message| message["role"] == "user")
+            {
+                let last = input.pop().unwrap();
+                input.push(variable_message);
+                input.push(last);
+            } else {
+                input.push(variable_message);
+            }
+        }
+    }
 
     let mut body = serde_json::json!({
         "model": model,
@@ -386,6 +422,132 @@ mod tests {
             body["input"][0],
             serde_json::json!({ "role": "user", "content": "Question" })
         );
+    }
+
+    #[test]
+    fn scoped_context_keeps_both_instructions_at_developer_priority() {
+        let body = request_body(
+            "chatgpt-5",
+            &[
+                ChatMessage {
+                    role: "system".into(),
+                    content: "stable".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "earlier".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "reply".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: "context".into(),
+                },
+                ChatMessage {
+                    role: "user_image".into(),
+                    content: "data:image/png;base64,AAA".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "current".into(),
+                },
+            ],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(body["instructions"], "");
+        assert_eq!(
+            body["input"][0],
+            serde_json::json!({"role":"developer", "content":"stable"})
+        );
+        assert_eq!(body["input"][1]["content"], "earlier");
+        assert_eq!(body["input"][2]["content"], "reply");
+        assert_eq!(
+            body["input"][3],
+            serde_json::json!({"role":"developer", "content":"context"})
+        );
+        assert_eq!(body["input"][4]["role"], "user");
+        assert_eq!(body["input"][4]["content"][0]["type"], "input_image");
+        assert_eq!(body["input"][4]["content"][1]["text"], "current");
+    }
+
+    #[test]
+    fn scoped_context_appends_after_non_user_end_and_empty_stable_instructions() {
+        let body = request_body(
+            "o3-mini",
+            &[
+                ChatMessage {
+                    role: "user".into(),
+                    content: "q".into(),
+                },
+                ChatMessage {
+                    role: "assistant".into(),
+                    content: "a".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: "one".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: "two".into(),
+                },
+            ],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(body["instructions"], "");
+        assert_eq!(body["input"][1]["content"], "a");
+        assert_eq!(
+            body["input"][2],
+            serde_json::json!({"role":"developer", "content":"onetwo"})
+        );
+
+        let empty_variable = request_body(
+            "o4-mini",
+            &[ChatMessage {
+                role: "system_cache_variable".into(),
+                content: String::new(),
+            }],
+            None,
+            None,
+            None,
+        );
+        assert_eq!(empty_variable["input"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn advancing_context_and_growing_history_preserve_the_previous_history_prefix() {
+        let message = |role: &str, text: &str| ChatMessage {
+            role: role.into(),
+            content: text.into(),
+        };
+        for model in ["gpt-6-luna", "deepseek-v4-flash"] {
+            let mut history = vec![
+                message("user", "old question"),
+                message("assistant", "old answer"),
+            ];
+            let mut previous = None;
+            for round in 0..3 {
+                let mut messages = vec![message("system", "stable book rules")];
+                messages.push(message("system_cache_variable", &format!("page {round}")));
+                messages.extend(history.clone());
+                messages.push(message("user", &format!("question {round}")));
+                let body = request_body(model, &messages, None, None, None);
+                let wire = body["input"].as_array().unwrap();
+                if let Some((prefix, history_end)) = previous {
+                    assert_eq!(&wire[..history_end], prefix);
+                }
+                previous = Some((wire[..wire.len() - 2].to_vec(), wire.len() - 2));
+                assert_eq!(wire[wire.len() - 2]["content"], format!("page {round}"));
+                history.push(message("user", &format!("question {round}")));
+                history.push(message("assistant", &format!("answer {round}")));
+            }
+        }
     }
 
     #[test]
