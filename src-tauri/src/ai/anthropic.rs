@@ -138,6 +138,15 @@ fn request_body(
                 .map(|(index, _)| index)
             {
                 mark_cache_control(&mut api_messages[index]);
+            } else if len > 1
+                && api_messages[len - 2]["role"] == "user"
+                && api_messages[len - 1]["role"] == "user"
+            {
+                // Chunk-grounding requests have a fixed chapter-prefix user
+                // message followed by a variable passage user message. With
+                // no shared assistant turn, the preceding user message is
+                // their shared-prefix boundary.
+                mark_cache_control(&mut api_messages[len - 2]);
             }
             mark_cache_control(&mut api_messages[len - 1]);
         }
@@ -547,6 +556,80 @@ mod tests {
             messages[4]["content"][0]["cache_control"]["type"],
             "ephemeral"
         );
+    }
+
+    #[test]
+    fn consecutive_user_chunks_cache_the_shared_chapter_prefix_and_each_passage() {
+        let make_body = |passage: &str| {
+            request_body(
+                "model",
+                0.2,
+                &[
+                    system("short system".into(), "system"),
+                    system("book and chapter".into(), "user"),
+                    system("fixed chapter text".into(), "user"),
+                    system(passage.into(), "user"),
+                ],
+                None,
+                None,
+                true,
+            )
+        };
+
+        let first = make_body("passage one");
+        let second = make_body("passage two");
+        for body in [&first, &second] {
+            let messages = body["messages"].as_array().unwrap();
+            assert_eq!(messages.len(), 3);
+            assert_eq!(messages[0]["content"], "book and chapter");
+            assert_eq!(messages[1]["content"][0]["text"], "fixed chapter text");
+            assert_eq!(
+                messages[1]["content"][0]["cache_control"]["type"],
+                "ephemeral"
+            );
+            assert_eq!(
+                messages[2]["content"][0]["cache_control"]["type"],
+                "ephemeral"
+            );
+            let breakpoint_count = body["system"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|block| !block["cache_control"].is_null())
+                .count()
+                + messages
+                    .iter()
+                    .flat_map(|message| message["content"].as_array().into_iter().flatten())
+                    .filter(|block| !block["cache_control"].is_null())
+                    .count();
+            assert!(breakpoint_count <= 3);
+        }
+        assert_eq!(first["messages"][1], second["messages"][1]);
+        assert_eq!(first["messages"][2]["content"][0]["text"], "passage one");
+        assert_eq!(second["messages"][2]["content"][0]["text"], "passage two");
+    }
+
+    #[test]
+    fn consecutive_user_chunks_keep_the_original_shape_when_cache_is_disabled() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                system("book and chapter".into(), "user"),
+                system("fixed chapter text".into(), "user"),
+                system("passage".into(), "user"),
+            ],
+            None,
+            None,
+            false,
+        );
+        let messages = body["messages"].as_array().unwrap();
+        assert_eq!(messages[0]["content"], "book and chapter");
+        assert_eq!(messages[1]["content"], "fixed chapter text");
+        assert_eq!(messages[2]["content"], "passage");
+        assert!(messages
+            .iter()
+            .all(|message| message["content"].is_string()));
     }
 
     #[test]

@@ -269,7 +269,15 @@ fn context_line_messages(
     section_rows: &[&ChunkRow],
     row: &ChunkRow,
 ) -> Vec<ChatMessage> {
-    let window = local_window(section_rows, row.chunk_index);
+    let section_tokens = section_rows
+        .iter()
+        .map(|chunk| chunk.token_estimate)
+        .sum::<usize>();
+    let window = if section_tokens > CONTEXT_WINDOW_TOKENS {
+        local_window(section_rows, row.chunk_index)
+    } else {
+        String::new()
+    };
     let mut messages = vec![ChatMessage {
         role: "system".to_string(),
         content: CONTEXT_LINE_SYSTEM_PROMPT.to_string(),
@@ -1920,6 +1928,43 @@ mod tests {
         let first_call = chapter_prefix(&rows);
         let second_call = chapter_prefix(&rows);
         assert_eq!(first_call, second_call);
+    }
+
+    #[test]
+    fn complete_short_chapter_does_not_repeat_nearby_text() {
+        let a = row(0, 0, 100, "opening passage");
+        let b = row(0, 1, 100, "target passage");
+        let c = row(0, 2, 100, "ending passage");
+        let rows = [&a, &b, &c];
+        let messages =
+            context_line_messages("Fixture · Chapter One", &chapter_prefix(&rows), &rows, &b);
+
+        assert!(messages[1].content.contains("opening passage"));
+        assert!(messages[1].content.contains("ending passage"));
+        assert!(!messages[2].content.contains("Nearby chapter text:"));
+        assert!(messages[2]
+            .content
+            .contains("Passage to describe:\ntarget passage"));
+    }
+
+    #[test]
+    fn oversized_chapter_keeps_local_window_around_target() {
+        let a = row(0, 0, 1_800, "opening passage");
+        let b = row(0, 1, 1_800, "nearby passage before target");
+        let c = row(0, 2, 1_800, "target passage");
+        let d = row(0, 3, 1_800, "nearby passage after target");
+        let e = row(0, 4, 1_800, "ending passage");
+        let rows = [&a, &b, &c, &d, &e];
+        let messages =
+            context_line_messages("Fixture · Chapter Two", &chapter_prefix(&rows), &rows, &c);
+
+        assert!(messages[1].content.contains("opening passage"));
+        assert!(messages[2].content.contains("Nearby chapter text:"));
+        assert!(messages[2].content.contains("nearby passage before target"));
+        assert!(messages[2].content.contains("nearby passage after target"));
+        assert!(messages[2]
+            .content
+            .contains("Passage to describe:\ntarget passage"));
     }
 
     #[test]

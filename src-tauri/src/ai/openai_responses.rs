@@ -103,6 +103,43 @@ fn request_body(
     body
 }
 
+fn cache_affinity_key(model: &str, messages: &[ChatMessage]) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let mut prefix: Vec<&str> = messages
+        .iter()
+        .filter(|message| message.role == "system")
+        .map(|message| message.content.as_str())
+        .collect();
+    // The first conversation item stays fixed in growing conversations and
+    // holds the shared chapter in chunk batches. Current context is excluded.
+    let first = messages
+        .iter()
+        .find(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"));
+    if let Some(first) = first {
+        prefix.push(first.role.as_str());
+        prefix.push(first.content.as_str());
+    }
+    if prefix.iter().all(|part| part.is_empty()) {
+        return None;
+    }
+    let mut digest = Sha256::new();
+    digest.update((model.len() as u64).to_le_bytes());
+    digest.update(model.as_bytes());
+    // Route by the beginning of the fixed prefix, not the entire first item:
+    // batch inputs can diverge later while sharing a cacheable instruction block.
+    let mut remaining = 1_024usize;
+    for part in prefix {
+        if remaining == 0 {
+            break;
+        }
+        let head: String = part.chars().take(remaining).collect();
+        remaining -= head.chars().count();
+        digest.update((head.len() as u64).to_le_bytes());
+        digest.update(head.as_bytes());
+    }
+    Some(format!("lantern-{:x}", digest.finalize()))
+}
+
 /// Stream chat using OpenAI's Responses API (`/responses`).
 /// When using OAuth tokens, requests go to `chatgpt.com/backend-api/codex`
 /// with the `chatgpt-account-id` header (same as Codex CLI).
@@ -128,11 +165,21 @@ pub async fn stream_chat<R: Runtime>(
     let client = crate::ai::http_client();
     let url = crate::ai::compat_endpoint(base_url, "responses");
 
-    // Responses API uses top-level "instructions" for system messages,
-    // and "input" for user/assistant messages only.
-    let body = request_body(model, messages, effort, temperature, max_output_tokens);
-
+    let mut body = request_body(model, messages, effort, temperature, max_output_tokens);
+    // The ChatGPT subscription backend derives cache affinity from session-id,
+    // unlike API-key compatible endpoints. Match Codex's header/key pairing.
+    let subscription =
+        account_id.is_some() || url == "https://chatgpt.com/backend-api/codex/responses";
+    let affinity = subscription
+        .then(|| cache_affinity_key(model, messages))
+        .flatten();
+    if let Some(key) = &affinity {
+        body["prompt_cache_key"] = serde_json::json!(key);
+    }
     let mut request = client.post(&url).json(&body);
+    if let Some(key) = affinity {
+        request = request.header("session-id", key);
+    }
     if !api_key.is_empty() {
         request = request.bearer_auth(api_key);
     }
@@ -548,6 +595,50 @@ mod tests {
                 history.push(message("assistant", &format!("answer {round}")));
             }
         }
+    }
+
+    #[test]
+    fn subscription_affinity_tracks_the_stable_book_or_chapter_not_the_current_passage() {
+        let message = |role: &str, content: &str| ChatMessage {
+            role: role.into(),
+            content: content.into(),
+        };
+        let first = vec![
+            message("system", "book rules"),
+            message("user", "chapter"),
+            message("user", "passage one"),
+        ];
+        let mut changed = first.clone();
+        changed[2].content = "passage two".into();
+        assert_eq!(
+            cache_affinity_key("gpt-6-luna", &first),
+            cache_affinity_key("gpt-6-luna", &changed)
+        );
+        changed[1].content = "different chapter".into();
+        assert_ne!(
+            cache_affinity_key("gpt-6-luna", &first),
+            cache_affinity_key("gpt-6-luna", &changed)
+        );
+        let mut growing = vec![
+            message("system", "book rules"),
+            message("system_cache_variable", "page one"),
+            message("user", "first question"),
+        ];
+        let original = cache_affinity_key("gpt-6-luna", &growing);
+        growing[1].content = "page two".into();
+        growing.extend([message("assistant", "answer"), message("user", "follow-up")]);
+        assert_eq!(original, cache_affinity_key("gpt-6-luna", &growing));
+        assert_ne!(original, cache_affinity_key("gpt-6-sol", &growing));
+        growing[0].content = "another book".into();
+        assert_ne!(original, cache_affinity_key("gpt-6-luna", &growing));
+        assert_eq!(cache_affinity_key("gpt-6-luna", &[]), None);
+        let mut long_fixed = vec![
+            message("system", &"stable instructions ".repeat(120)),
+            message("user", "batch one"),
+        ];
+        let fixed_key = cache_affinity_key("gpt-6-luna", &long_fixed);
+        long_fixed[1].content = "batch two".into();
+        assert_eq!(fixed_key, cache_affinity_key("gpt-6-luna", &long_fixed));
     }
 
     #[test]
