@@ -100,3 +100,12 @@ P1 表示重要功能可能长期不可用或验证门禁漏报；P2 表示条�
 - `7bb55fd0`：语音缓存失败仍返回已取得音频。
 
 上述改动在 main 统一提交，不创建版本标签、不发布安装包。实际用户数据尚未运行初始化；初始化会在运行升级后的应用时执行。
+
+## 推送后的线上检查补充
+
+`c53cc989` 的 CI（run 37002237578）中，Browser smoke、Docs、Rust Dependency Security 通过，Frontend 和 Backend 未通过，不能将本机通过等同为线上全绿。
+
+- Backend：本轮新增 `has_reader` 只被 macOS 分支调用，Linux 将未使用函数警告作为错误。已由子代理补上仅 macOS 编译的条件，主审核对唯一调用点后提交；Linux 结果需由新一轮线上检查确认。
+- T04（新增，P1 检查阻断）：Frontend 在 `npm audit --audit-level=high` 停止，后续类型、单元和构建步骤未执行。对前一基线 run 36996753737 的核对证实告警此前已存在，并非本轮引入。
+- 当前 npm 审计列出 3 个受影响包：`brace-expansion` 高危，`@humanfs/node` 与 `postcss` 中危。审计严重性不等于已证明生产应用可被利用；本轮已确认的后果是 CI 阻断。最小依赖升级方案已在临时目录验证为 0 漏洞，项目清单及锁文件须按用户规则确认后才修改。
+- 待确认的具体方案：PostCSS 8.5.19→8.5.23（清单+锁文件），brace-expansion 5.0.9→5.0.12、@humanfs/node 0.16.7→0.16.8（锁文件）；后者必需 @humanfs/core 0.19.1→0.19.2 和新增 @humanfs/types 0.15.0。其余已锁定版本保持。临时补丁 `/tmp/lantern-audit-minimal.patch` 已通过应用检查，尚未应用；此时仓库仍有上述 3 项依赖告警。

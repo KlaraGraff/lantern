@@ -36,6 +36,7 @@ impl ExitState {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub fn has_reader(app: &AppHandle, label: &str) -> bool {
     app.state::<ReaderExit>()
         .0
