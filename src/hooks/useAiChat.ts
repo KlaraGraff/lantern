@@ -551,6 +551,7 @@ async function generateAiTitle(
   const eventName = `ai-title-chunk-${requestId}`;
   let title = "";
   let finished = false;
+  let serverDone = false;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let unlisten: UnlistenFn | undefined;
   try {
@@ -562,10 +563,12 @@ async function generateAiTitle(
       resolveResult(value);
     };
     unlisten = await listen<AiStreamChunk>(eventName, (event) => {
+      if (finished) return;
       if (!event.payload.done) {
         title += event.payload.delta;
         return;
       }
+      serverDone = true;
       if (event.payload.error) return finish(null);
       title = title.replace(/^["']|["']$/g, "").replace(/[.!]$/, "").trim();
       if (title.length > 50) title = title.substring(0, 50).trim() + "...";
@@ -582,7 +585,7 @@ async function generateAiTitle(
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     unlisten?.();
-    if (!title || !finished) invoke("ai_cancel", { requestId }).catch(() => {});
+    if (!serverDone) invoke("ai_cancel", { requestId }).catch(() => {});
   }
 }
 

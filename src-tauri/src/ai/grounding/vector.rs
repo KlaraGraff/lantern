@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -17,6 +18,42 @@ pub const DEFAULT_EMBEDDING_DIMENSIONS: usize = 1_536;
 pub const EMBEDDING_SECRET_REF: &str = "ai_embedding_api_key";
 const RRF_K: f64 = 60.0;
 const EMBEDDING_BATCH_SIZE: usize = 32;
+// Accommodates a full 32-input batch at the supported 65,536 dimensions.
+const MAX_EMBEDDING_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+
+#[derive(Hash, PartialEq, Eq)]
+struct EmbeddingJobKey {
+    database: usize,
+    book: String,
+    profile: String,
+    endpoint: String,
+    model: String,
+    dimensions: usize,
+}
+
+fn embedding_job(db: &Db, book_id: &str, source: &EmbeddingSource) -> Arc<tokio::sync::Mutex<()>> {
+    type Jobs = HashMap<EmbeddingJobKey, Weak<tokio::sync::Mutex<()>>>;
+    static JOBS: OnceLock<Mutex<Jobs>> = OnceLock::new();
+    let mut jobs = JOBS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    jobs.retain(|_, job| job.strong_count() > 0);
+    let key = EmbeddingJobKey {
+        database: Arc::as_ptr(&db.conn) as usize,
+        book: book_id.to_string(),
+        profile: source.profile_id.clone(),
+        endpoint: source.endpoint.clone(),
+        model: source.model.clone(),
+        dimensions: source.dimensions,
+    };
+    if let Some(job) = jobs.get(&key).and_then(Weak::upgrade) {
+        return job;
+    }
+    let job = Arc::new(tokio::sync::Mutex::new(()));
+    jobs.insert(key, Arc::downgrade(&job));
+    job
+}
 
 #[derive(Clone)]
 pub(crate) struct EmbeddingSource {
@@ -451,6 +488,23 @@ async fn embeddings_internal(
     enforce_dimensions: bool,
     index: bool,
 ) -> AppResult<Vec<Vec<f32>>> {
+    embeddings_with_timeout(
+        source,
+        input,
+        enforce_dimensions,
+        index,
+        crate::ai::TOTAL_REQUEST_TIMEOUT,
+    )
+    .await
+}
+
+async fn embeddings_with_timeout(
+    source: &EmbeddingSource,
+    input: Vec<String>,
+    enforce_dimensions: bool,
+    index: bool,
+    total_timeout: std::time::Duration,
+) -> AppResult<Vec<Vec<f32>>> {
     let _cloud_slot =
         router::acquire_embedding_slot(&source.endpoint, source.cloud_concurrency, index).await?;
     let mut request = crate::ai::http_client()
@@ -463,13 +517,6 @@ async fn embeddings_internal(
     {
         request = request.bearer_auth(key);
     }
-    let response = tokio::time::timeout(crate::ai::FIRST_BYTE_TIMEOUT, request.send())
-        .await
-        .map_err(|_| AppError::Ai("AI_EMBEDDING_FIRST_BYTE_TIMEOUT".to_string()))?
-        .map_err(|error| AppError::Ai(error.to_string()))?;
-    if !response.status().is_success() {
-        return Err(crate::ai::http_status_error("Embedding", response).await);
-    }
     #[derive(serde::Deserialize)]
     struct EmbeddingItem {
         index: usize,
@@ -479,11 +526,39 @@ async fn embeddings_internal(
     struct EmbeddingResponse {
         data: Vec<EmbeddingItem>,
     }
-    let mut data = response
-        .json::<EmbeddingResponse>()
-        .await
-        .map_err(|_| AppError::Ai("AI_EMBEDDING_RESPONSE_INVALID".to_string()))?
-        .data;
+    let mut data = tokio::time::timeout(total_timeout, async {
+        let mut response = tokio::time::timeout(crate::ai::FIRST_BYTE_TIMEOUT, request.send())
+            .await
+            .map_err(|_| AppError::Ai("AI_EMBEDDING_FIRST_BYTE_TIMEOUT".to_string()))?
+            .map_err(|error| AppError::Ai(error.to_string()))?;
+        if !response.status().is_success() {
+            return Err(crate::ai::http_status_error("Embedding", response).await);
+        }
+        let invalid = || AppError::Ai("AI_EMBEDDING_RESPONSE_INVALID".to_string());
+        if response
+            .content_length()
+            .is_some_and(|size| size > MAX_EMBEDDING_RESPONSE_BYTES as u64)
+        {
+            return Err(invalid());
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) =
+            tokio::time::timeout(crate::ai::STREAM_IDLE_TIMEOUT, response.chunk())
+                .await
+                .map_err(|_| AppError::Ai("AI_STREAM_IDLE_TIMEOUT".to_string()))?
+                .map_err(|_| invalid())?
+        {
+            if chunk.len() > MAX_EMBEDDING_RESPONSE_BYTES - body.len() {
+                return Err(invalid());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice::<EmbeddingResponse>(&body)
+            .map(|response| response.data)
+            .map_err(|_| invalid())
+    })
+    .await
+    .map_err(|_| AppError::Ai("AI_TOTAL_TIMEOUT".to_string()))??;
     data.sort_by_key(|item| item.index);
     if data.len() != input.len()
         || data
@@ -648,6 +723,8 @@ pub async fn ensure_embeddings(
     source: &EmbeddingSource,
     progress: Option<super::ProgressFn<'_>>,
 ) -> AppResult<()> {
+    let job = embedding_job(db, book_id, source);
+    let _run = job.lock().await;
     let (source_sha256, chunks) = {
         let conn = db.reader();
         let source_sha256: String = conn.query_row(
@@ -1274,5 +1351,277 @@ mod tests {
             )
             .unwrap();
         assert_eq!(context_line, "an identity sentence");
+    }
+
+    enum LocalReply {
+        Json(&'static str),
+        Error,
+        Stall,
+        OversizedLength,
+        OversizedChunks,
+    }
+
+    async fn local_embedding_server(
+        replies: Vec<LocalReply>,
+        delay: std::time::Duration,
+    ) -> (
+        String,
+        Arc<std::sync::atomic::AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/v1/embeddings", listener.local_addr().unwrap());
+        let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let captured = Arc::clone(&seen);
+        let task = tokio::spawn(async move {
+            for reply in replies {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let seen = Arc::clone(&captured);
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    let mut buffer = [0u8; 4096];
+                    loop {
+                        let read = stream.read(&mut buffer).await.unwrap();
+                        if read == 0 {
+                            return;
+                        }
+                        request.extend_from_slice(&buffer[..read]);
+                        if let Some(end) =
+                            request.windows(4).position(|window| window == b"\r\n\r\n")
+                        {
+                            let headers = String::from_utf8_lossy(&request[..end]);
+                            let length = headers
+                                .lines()
+                                .find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    name.eq_ignore_ascii_case("content-length")
+                                        .then(|| value.trim().parse::<usize>().unwrap())
+                                })
+                                .unwrap_or(0);
+                            if request.len() >= end + 4 + length {
+                                break;
+                            }
+                        }
+                    }
+                    seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    tokio::time::sleep(delay).await;
+                    match reply {
+                        LocalReply::Json(body) => {
+                            let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                            let _ = stream.write_all(response.as_bytes()).await;
+                        }
+                        LocalReply::Error => {
+                            let _ = stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").await;
+                        }
+                        LocalReply::Stall => {
+                            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n").await;
+                            // End when cancellation/timeout drops the HTTP response.
+                            let _ = stream.read(&mut buffer).await;
+                        }
+                        LocalReply::OversizedLength => {
+                            let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", MAX_EMBEDDING_RESPONSE_BYTES + 1);
+                            let _ = stream.write_all(response.as_bytes()).await;
+                        }
+                        LocalReply::OversizedChunks => {
+                            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await;
+                            let chunk = vec![b' '; 1024 * 1024];
+                            for _ in 0..=MAX_EMBEDDING_RESPONSE_BYTES / chunk.len() {
+                                if stream.write_all(b"100000\r\n").await.is_err()
+                                    || stream.write_all(&chunk).await.is_err()
+                                    || stream.write_all(b"\r\n").await.is_err()
+                                {
+                                    return;
+                                }
+                            }
+                            let _ = stream.write_all(b"0\r\n\r\n").await;
+                        }
+                    }
+                });
+            }
+        });
+        (endpoint, seen, task)
+    }
+
+    const LOCAL_VECTOR: &str = r#"{"data":[{"index":0,"embedding":[0.1,0.2,0.3]}]}"#;
+
+    fn indexed_database() -> (tempfile::TempDir, Arc<Db>) {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Arc::new(Db::init(directory.path()).unwrap());
+        {
+            let conn = db.conn.lock().unwrap();
+            insert_chunk(&conn, "chunk", None);
+            conn.execute(
+                "INSERT INTO book_index_state
+                (book_id, source_sha256, index_version, chunk_count, status, indexed_at)
+                VALUES ('book', 'hash', 1, 1, 'ready', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        (directory, db)
+    }
+
+    #[tokio::test]
+    async fn embedding_success_reads_the_complete_body() {
+        let (endpoint, _, task) = local_embedding_server(
+            vec![LocalReply::Json(LOCAL_VECTOR)],
+            std::time::Duration::ZERO,
+        )
+        .await;
+        let mut source = test_source("model");
+        source.endpoint = endpoint;
+        let vectors = embeddings_with_timeout(
+            &source,
+            vec!["input".into()],
+            true,
+            false,
+            std::time::Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        assert_eq!(vectors, vec![vec![0.1, 0.2, 0.3]]);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn embedding_deadline_includes_a_stalled_200_body() {
+        let (endpoint, _, task) =
+            local_embedding_server(vec![LocalReply::Stall], std::time::Duration::ZERO).await;
+        let mut source = test_source("model");
+        source.endpoint = endpoint;
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            embeddings_with_timeout(
+                &source,
+                vec!["input".into()],
+                true,
+                false,
+                std::time::Duration::from_millis(100),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(AppError::Ai(message)) if message == "AI_TOTAL_TIMEOUT"));
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn embedding_rejects_both_declared_and_chunked_oversized_bodies() {
+        for reply in [LocalReply::OversizedLength, LocalReply::OversizedChunks] {
+            let (endpoint, _, task) =
+                local_embedding_server(vec![reply], std::time::Duration::ZERO).await;
+            let mut source = test_source("model");
+            source.endpoint = endpoint;
+            let result = embeddings_with_timeout(
+                &source,
+                vec!["input".into()],
+                true,
+                false,
+                std::time::Duration::from_secs(5),
+            )
+            .await;
+            assert!(
+                matches!(result, Err(AppError::Ai(message)) if message == "AI_EMBEDDING_RESPONSE_INVALID")
+            );
+            task.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_embedding_backfills_wait_then_recheck_missing_chunks() {
+        let (_directory, db) = indexed_database();
+        let (endpoint, seen, task) = local_embedding_server(
+            vec![
+                LocalReply::Json(LOCAL_VECTOR),
+                LocalReply::Json(LOCAL_VECTOR),
+            ],
+            std::time::Duration::from_millis(100),
+        )
+        .await;
+        let mut source = test_source("model");
+        source.endpoint = endpoint;
+        let (first, second) = tokio::join!(
+            ensure_embeddings(&db, "book", &source, None),
+            ensure_embeddings(&db, "book", &source, None)
+        );
+        first.unwrap();
+        second.unwrap();
+        assert!(has_complete_embeddings(&db, "book", &source).unwrap());
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_embedding_backfill_releases_the_job_for_a_waiter_to_retry() {
+        let (_directory, db) = indexed_database();
+        let (endpoint, seen, task) = local_embedding_server(
+            vec![LocalReply::Error, LocalReply::Json(LOCAL_VECTOR)],
+            std::time::Duration::from_millis(30),
+        )
+        .await;
+        let mut source = test_source("model");
+        source.endpoint = endpoint;
+        let (first, second) = tokio::join!(
+            ensure_embeddings(&db, "book", &source, None),
+            ensure_embeddings(&db, "book", &source, None)
+        );
+        assert!(first.is_err());
+        second.unwrap();
+        assert!(has_complete_embeddings(&db, "book", &source).unwrap());
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn cancelling_embedding_backfill_releases_the_job_for_retry() {
+        let (_directory, db) = indexed_database();
+        let (endpoint, seen, server) = local_embedding_server(
+            vec![LocalReply::Stall, LocalReply::Json(LOCAL_VECTOR)],
+            std::time::Duration::ZERO,
+        )
+        .await;
+        let mut source = test_source("model");
+        source.endpoint = endpoint;
+        let first_db = Arc::clone(&db);
+        let first_source = source.clone();
+        let first =
+            tokio::spawn(
+                async move { ensure_embeddings(&first_db, "book", &first_source, None).await },
+            );
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while seen.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        first.abort();
+        let _ = first.await;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            ensure_embeddings(&db, "book", &source, None),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(has_complete_embeddings(&db, "book", &source).unwrap());
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+        server.abort();
+    }
+
+    #[test]
+    fn embedding_jobs_share_clones_but_isolate_database_book_and_source() {
+        let (_first_directory, first) = indexed_database();
+        let (_second_directory, second) = indexed_database();
+        let source = test_source("model");
+        let job = embedding_job(&first, "book", &source);
+        assert!(Arc::ptr_eq(&job, &embedding_job(&first, "book", &source)));
+        assert!(!Arc::ptr_eq(&job, &embedding_job(&second, "book", &source)));
+        assert!(!Arc::ptr_eq(&job, &embedding_job(&first, "other", &source)));
+        assert!(!Arc::ptr_eq(
+            &job,
+            &embedding_job(&first, "book", &test_source("other"))
+        ));
     }
 }
