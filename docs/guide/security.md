@@ -22,7 +22,7 @@ is still there, and Lantern simply stops looking. If a very old install still ha
 credential, the fix is to re-enter the API key in AI settings, the same as setting one up for
 the first time.
 
-Credential sync is not implemented. In particular, credentials are not placed in the iCloud event log or snapshot. Encrypted credential sync requires a stable signed application identity and a formally provisioned iCloud Keychain access group; the current ad-hoc distribution cannot safely provide that identity.
+Credential sync is not implemented. In particular, credentials are not placed in the iCloud event log or snapshot. Encrypted credential sync would require a stable signed application identity and a formally provisioned iCloud Keychain access group. macOS release signing depends on the certificate and tag branch in the workflow; a successful Developer ID build alone does not provision credential sync, and ad-hoc builds do not provide that stable identity. Verify signing and notarization for the specific release using the [macOS distribution guide](macos-distribution.md), rather than assuming every version shares the same signing status.
 
 ## MCP Data Access
 
