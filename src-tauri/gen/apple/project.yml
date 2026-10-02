@@ -63,8 +63,63 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 2.18.12
-        CFBundleVersion: "2.18.12"
+        CFBundleShortVersionString: 2.18.14
+        CFBundleVersion: "2.18.14"
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: epub
+            CFBundleTypeExtensions: [epub]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: pdf
+            CFBundleTypeExtensions: [pdf]
+            LSItemContentTypes: [com.adobe.pdf]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: txt
+            CFBundleTypeExtensions: [txt]
+            LSItemContentTypes: [public.plain-text]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: md
+            CFBundleTypeExtensions: [md, markdown]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: html
+            CFBundleTypeExtensions: [html, htm]
+            LSItemContentTypes: [public.html]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: mobi
+            CFBundleTypeExtensions: [mobi, azw, azw3]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: fb2
+            CFBundleTypeExtensions: [fb2, fbz]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+          - CFBundleTypeName: cbz
+            CFBundleTypeExtensions: [cbz]
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.gribuser.fb2
+            UTTypeDescription: FictionBook Ebook
+            UTTypeConformsTo: [public.xml]
+            UTTypeTagSpecification:
+              public.mime-type: [application/x-fictionbook+xml]
+              public.filename-extension: [fb2]
+          - UTTypeIdentifier: org.gribuser.fb2.zip
+            UTTypeDescription: Compressed FictionBook Ebook
+            UTTypeConformsTo: [public.zip-archive]
+            UTTypeTagSpecification:
+              public.mime-type: [application/x-zip-compressed-fb2]
+              public.filename-extension: [fbz]
+          - UTTypeIdentifier: com.klaragraff.lantern.cbz
+            UTTypeDescription: Comic Book Archive
+            UTTypeConformsTo: [public.zip-archive]
+            UTTypeTagSpecification:
+              public.mime-type: [application/vnd.comicbook+zip]
+              public.filename-extension: [cbz]
     entitlements:
       path: lantern_iOS/lantern_iOS.entitlements
     scheme:

@@ -24,6 +24,7 @@ const repoFile = (path: string) => new URL(`../${path}`, import.meta.url);
 const readRepo = (path: string) => readFile(repoFile(path), "utf8");
 
 const PLIST = "src-tauri/gen/apple/lantern_iOS/Info.plist";
+const XCODEGEN_SPEC = "src-tauri/gen/apple/project.yml";
 const FORMATS = "src-tauri/src/commands/books/mod.rs";
 
 // Types Apple ships. Anything here needs no declaration from us; anything not
@@ -103,5 +104,14 @@ test("the declarations are imported, never exported", async () => {
   // parent is worse: .fbz and .cbz are zip containers, .fb2 is bare XML.
   for (const parent of ["public.xml", "public.zip-archive"]) {
     assert.match(plist, new RegExp(`<string>${parent.replace(".", "\\.")}</string>`));
+  }
+});
+
+test("the xcodegen source keeps the iOS version and custom types reproducible", async () => {
+  const spec = await readRepo(XCODEGEN_SPEC);
+  assert.match(spec, /CFBundleShortVersionString:\s*2\.18\.14/);
+  assert.match(spec, /CFBundleVersion:\s*["']?2\.18\.14["']?/);
+  for (const identifier of ["org.gribuser.fb2", "org.gribuser.fb2.zip", "com.klaragraff.lantern.cbz"]) {
+    assert.match(spec, new RegExp(`UTTypeIdentifier:\\s*${identifier.replaceAll(".", "\\.")}`));
   }
 });
