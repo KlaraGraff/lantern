@@ -530,7 +530,9 @@ pub fn run() {
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if !commands::reader_exit::has_reader(window.app_handle(), window.label()) {
+                        let _ = window.hide();
+                    }
                 }
             }
             #[cfg(not(target_os = "macos"))]
@@ -696,6 +698,7 @@ pub fn run() {
                 }
                 manager
             };
+            app.manage(commands::reader_exit::ReaderExit::default());
             app.manage(LocalDir(local_dir.clone()));
             app.manage(db);
             app.manage(secrets);
@@ -770,6 +773,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::reader_exit::reader_exit_register,
+            commands::reader_exit::reader_exit_ack,
+            commands::reader_exit::reader_close_saved,
             // App lifecycle
             commands::app::app_ready,
             commands::app::reveal_logs,
@@ -1120,6 +1126,9 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| match &event {
+        tauri::RunEvent::ExitRequested { api, code, .. } => {
+            commands::reader_exit::requested(app_handle, api, *code);
+        }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
             // Files dropped on the dock icon or opened through a file
@@ -1154,14 +1163,17 @@ pub fn run() {
         // On non-macOS, closing the main window quits the app (close-all-windows
         // convention). On macOS the main window is hidden instead (handled above
         // in on_window_event), so this branch is a no-op there.
-        #[cfg(not(target_os = "macos"))]
         tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::Destroyed,
             ..
-        } if label == "main" => {
-            for (_, window) in app_handle.webview_windows() {
-                let _ = window.close();
+        } => {
+            commands::reader_exit::destroyed(app_handle, label);
+            #[cfg(not(target_os = "macos"))]
+            if label == "main" {
+                for (_, window) in app_handle.webview_windows() {
+                    let _ = window.close();
+                }
             }
         }
         _ => {}

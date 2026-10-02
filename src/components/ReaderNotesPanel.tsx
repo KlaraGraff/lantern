@@ -14,6 +14,7 @@ import {
 import { useHighlights } from "../hooks/useBookmarks";
 import { useAutoHighlights } from "../hooks/useAutoHighlights";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { loadReaderNotes } from "../pages/reader/load-reader-notes";
 import { loadFoliateModules, type CfiModule } from "../pages/reader/foliate-modules";
 import { savedHighlightColor } from "./mark-palette";
 import HighlightToolbar from "./HighlightToolbar";
@@ -31,10 +32,6 @@ import {
 } from "./reader-mark-rows";
 
 export type { ReaderNoteAnchor } from "./reader-mark-rows";
-
-interface NotePage { notes: ReaderNote[]; total: number; next_cursor: string | null; }
-
-const NOTES_PAGE_SIZE = 500;
 
 export interface ReaderNotesPanelProps {
   bookId: string;
@@ -183,28 +180,37 @@ export default function ReaderNotesPanel({
   // aborted press that produced no blur cannot go on eating later ones.
   const discardingRef = useRef(false);
 
+  const notesRequestRef = useRef<AbortController | null>(null);
   const refreshNotes = useCallback(async () => {
+    notesRequestRef.current?.abort();
+    const request = new AbortController();
+    notesRequestRef.current = request;
     try {
-      const page = await invoke<NotePage>("list_notes", {
-        bookId,
-        anchorKind: null,
-        word: null,
-        search: null,
-        updatedAfter: null,
-        updatedBefore: null,
-        cursor: null,
-        limit: NOTES_PAGE_SIZE,
-      });
-      setNotes(page.notes);
+      const result = await loadReaderNotes<ReaderNote>(bookId, null, request.signal);
+      if (result === null || request.signal.aborted) return;
+      setNotes(result);
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (!request.signal.aborted) setFailed(true);
     } finally {
-      setLoading(false);
+      if (!request.signal.aborted) setLoading(false);
     }
   }, [bookId]);
 
-  useEffect(() => { void refreshNotes(); }, [refreshNotes]);
+  useEffect(() => {
+    setNotes([]);
+    setLoading(true);
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (!detail?.bookId || detail.bookId === bookId) void refreshNotes();
+    };
+    window.addEventListener("note-changed", changed);
+    void refreshNotes();
+    return () => {
+      notesRequestRef.current?.abort();
+      window.removeEventListener("note-changed", changed);
+    };
+  }, [bookId, refreshNotes]);
 
   // epubcfi.js lives in /public, so it arrives through the module bridge rather
   // than a bundled import. Until it lands the list still renders — just dated

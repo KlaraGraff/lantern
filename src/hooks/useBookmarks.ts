@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 export interface Highlight {
@@ -24,22 +24,40 @@ function notifyHighlightChanged(bookId: string) {
  * them. See `ReaderNotesPanel`.
  */
 export function useHighlights(bookId: string) {
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [snapshot, setSnapshot] = useState<{ bookId: string; highlights: Highlight[] }>({ bookId, highlights: [] });
+  const requestRef = useRef({ bookId, disposed: false, revision: 0 });
+  const highlights = snapshot.bookId === bookId ? snapshot.highlights : [];
 
   const refresh = useCallback(async () => {
+    const request = requestRef.current;
+    if (request.disposed || request.bookId !== bookId) return;
+    const revision = ++request.revision;
     try {
-      const result = await invoke<Highlight[]>("list_highlights", {
-        bookId,
-      });
-      setHighlights(result);
+      const result = await invoke<Highlight[]>("list_highlights", { bookId });
+      if (!request.disposed && revision === request.revision) {
+        setSnapshot({ bookId, highlights: result });
+      }
     } catch (err) {
-      console.error("Failed to load highlights:", err);
+      if (!request.disposed && revision === request.revision) console.error("Failed to load highlights:", err);
     }
   }, [bookId]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    const request = requestRef.current;
+    request.bookId = bookId;
+    request.disposed = false;
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (!detail?.bookId || detail.bookId === bookId) void refresh();
+    };
+    window.addEventListener("highlight-changed", changed);
+    void refresh();
+    return () => {
+      request.disposed = true;
+      request.revision += 1;
+      window.removeEventListener("highlight-changed", changed);
+    };
+  }, [bookId, refresh]);
 
   const add = useCallback(
     async (cfiRange: string, color?: string, textContent?: string) => {
@@ -49,7 +67,6 @@ export function useHighlights(bookId: string) {
         color: color || null,
         textContent: textContent || null,
       });
-      setHighlights((prev) => [highlight, ...prev]);
       notifyHighlightChanged(bookId);
       return highlight;
     },
@@ -58,15 +75,11 @@ export function useHighlights(bookId: string) {
 
   const remove = useCallback(async (id: string) => {
     await invoke("remove_highlight", { id });
-    setHighlights((prev) => prev.filter((h) => h.id !== id));
     notifyHighlightChanged(bookId);
   }, [bookId]);
 
   const updateColor = useCallback(async (id: string, color: string) => {
     await invoke("update_highlight_color", { id, color });
-    setHighlights((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, color } : h))
-    );
     notifyHighlightChanged(bookId);
   }, [bookId]);
 

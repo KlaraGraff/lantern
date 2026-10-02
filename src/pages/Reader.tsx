@@ -83,6 +83,7 @@ import {
   getReaderThemeVars,
 } from "./reader/reader-theme";
 import { ReadingProgressWriter } from "./reader/reading-progress-writer";
+import { flushBookProgress, retainReadingProgress } from "./reader/reader-exit";
 import { useBookAvailability } from "./reader/useBookAvailability";
 import { useCellularDownloadConsent } from "../hooks/useCellularDownloadConsent";
 import { usePageTurnInput } from "./reader/usePageTurnInput";
@@ -186,6 +187,12 @@ interface TextReaderProgressDetails {
 
 export default function Reader() {
   const { bookId } = useParams();
+  return <ReaderSession key={bookId} bookId={bookId} />;
+}
+
+// A route change must replace every transient interaction before children can
+// observe the destination book, including cards whose effects write notes.
+function ReaderSession({ bookId }: { bookId?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
@@ -279,6 +286,12 @@ export default function Reader() {
   // classifier, which lives in listeners installed once per chapter document
   // and must not re-install on a toggle; the state feeds the one-time zone
   // guide's render, where reading a ref is not allowed.
+  const [progressWriter] = useState(() => new ReadingProgressWriter((finishedId) => {
+    setBook((current) => current && current.id === finishedId
+      ? { ...current, status: "finished", progress: 100 }
+      : current);
+  }, false));
+  const autoSaveRevisionRef = useRef(0);
   const oneHandModeRef = useRef(false);
   const [oneHandMode, setOneHandMode] = useState(false);
   useEffect(() => {
@@ -286,6 +299,10 @@ export default function Reader() {
     let unlisten: (() => void) | undefined;
     listenForSettingsChanged((values) => {
       if (disposed) return;
+      if (values.auto_save !== undefined) {
+        autoSaveRevisionRef.current += 1;
+        progressWriter.setAutoSave(values.auto_save !== "false");
+      }
       // `null` is a deleted row (restore defaults), which means "off".
       if (values.one_hand_mode !== undefined) {
         oneHandModeRef.current = values.one_hand_mode === "true";
@@ -299,7 +316,7 @@ export default function Reader() {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [progressWriter]);
   useEffect(() => {
     chromeOpenRef.current = chromeOpen;
   }, [chromeOpen]);
@@ -376,11 +393,6 @@ export default function Reader() {
     visible: jumpHistoryVisible,
     label: jumpHistoryLabel,
   } = useJumpHistory(bookId);
-  const [progressWriter] = useState(() => new ReadingProgressWriter((finishedId) => {
-    setBook((current) => current && current.id === finishedId
-      ? { ...current, status: "finished", progress: 100 }
-      : current);
-  }));
   const [bookReady, setBookReady] = useState(false);
   const [readerError, setReaderError] = useState<ReaderOpenError | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
@@ -792,14 +804,9 @@ export default function Reader() {
     void markFinished(bookId);
   }, [bookId]);
 
-  useEffect(() => {
-    const flush = () => { void progressWriter.flush(); };
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("pagehide", flush);
-      flush();
-    };
-  }, [bookId, progressWriter]);
+  useEffect(() => retainReadingProgress(progressWriter, () => {
+    setReaderToast(t("notes.saveFailed"));
+  }, bookId), [bookId, progressWriter, t]);
 
   const handleTextBookProgress = useCallback((
     nextProgress: number,
@@ -1437,9 +1444,15 @@ export default function Reader() {
     setBookReady(false);
     setTextInitialLocation(null);
     resetProgressReadout();
-    getBook(bookId)
-      .then((b) => {
-        if (cancelled) return;
+    flushBookProgress(bookId).then((saved) => {
+      if (cancelled) return null;
+      if (!saved) {
+        setReaderError({ kind: "generic", detail: t("notes.saveFailed") });
+        return null;
+      }
+      return getBook(bookId);
+    }).then((b) => {
+        if (cancelled || !b) return;
         currentCfiRef.current = b.current_cfi;
         setTextInitialLocation(b.current_cfi);
         setBook(b);
@@ -1454,8 +1467,18 @@ export default function Reader() {
         if (!cancelled) setLoading(false);
       });
 
+    const autoSaveRevision = autoSaveRevisionRef.current;
+    const globalSettingsPromise = getAllSettings().then((settings) => {
+      if (!cancelled && autoSaveRevision === autoSaveRevisionRef.current) {
+        progressWriter.setAutoSave(settings.auto_save !== "false");
+      }
+      return settings;
+    }, (error: unknown) => {
+      if (!cancelled && autoSaveRevision === autoSaveRevisionRef.current) progressWriter.setAutoSave(true);
+      throw error;
+    });
     Promise.all([
-      getAllSettings(),
+      globalSettingsPromise,
       loadCustomFonts(),
       // Per-book overrides — one row per key, the row's existence *is* the
       // override, and the only per-book store the reader has. Failing to read
@@ -1489,6 +1512,9 @@ export default function Reader() {
     dbSettingsLoadedRef,
     loadReaderSettingsSources,
     readerSettingsRef,
+    readerRetry,
+    t,
+    progressWriter,
     resetAnnotationState,
     resetProgressReadout,
     restoreProgressReadout,
@@ -1510,7 +1536,7 @@ export default function Reader() {
     setReaderRetry((value) => value + 1);
   }, [setReaderError, setCurrentSectionIndex, setReaderRetry]);
   const { download: bookDownload } = useReaderFileDiagnosis(
-    bookId,
+    book ? bookId : undefined,
     readerError,
     setReaderError,
     requestCellularConsent,
@@ -2017,13 +2043,6 @@ export default function Reader() {
     );
   }
 
-  if (!book) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <p>{t("reader.bookNotFound")}</p>
-      </div>
-    );
-  }
 
   const returnToLibrary = () => {
     if (isStandaloneWindow) {
@@ -2126,7 +2145,7 @@ export default function Reader() {
               variant="secondary"
               size="sm"
               onClick={() => {
-                if (needsPreparation(book) && bookId) {
+                if (book && needsPreparation(book) && bookId) {
                   retryPreparation(book)
                     .then(() => getBook(bookId))
                     .then((updated) => {
@@ -2163,6 +2182,14 @@ export default function Reader() {
       />
       {cellularConsentDialog}
       </>
+    );
+  }
+
+  if (!book) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p>{t("reader.bookNotFound")}</p>
+      </div>
     );
   }
 

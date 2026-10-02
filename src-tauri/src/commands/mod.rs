@@ -30,6 +30,7 @@ pub mod notes;
 pub mod oauth;
 pub mod profile;
 pub mod quiz;
+pub mod reader_exit;
 pub mod reading_behavior;
 pub mod reading_stats;
 pub mod review_pile_ai;

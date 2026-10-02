@@ -78,6 +78,7 @@ import {
   cleanupBookFinishedHint,
   installBookFinishedHint,
 } from "../../components/book-finished-hint";
+import { loadReaderNotes } from "./load-reader-notes";
 import { notifySettingsChanged } from "../../components/settings-events";
 
 // Reader.tsx has its own copy of this pair for the same reason: a standalone
@@ -115,15 +116,6 @@ export interface LookupOccurrenceMark {
 export interface NoteAnchorMark {
   location: string | null;
 }
-
-interface NoteAnchorPage { notes: NoteAnchorMark[] }
-
-/**
- * The rail loads a page of notes at a time and so does this: a book with
- * thousands of notes must not stall the reader's first paint to mark them, and
- * the ones past this bound are on pages nobody is looking at yet.
- */
-const NOTE_ANCHOR_LIMIT = 500;
 
 type MarkerKind = "lookup" | "vocab";
 /**
@@ -886,8 +878,15 @@ export function useFoliateAnnotations({
     view.refreshSearchHighlights();
   }, [markerStyleRef, readerSettingsRef, supportsReflowSettings, viewRef]);
 
+  const annotationRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { annotationRequestRef.current?.abort(); }, [bookId]);
+
   const refreshAnnotations = useCallback(async (reapplyVisible = false) => {
     if (isTextBook || !bookId || !viewRef.current || !supportsManualAnnotations) return;
+    annotationRequestRef.current?.abort();
+    const request = new AbortController();
+    annotationRequestRef.current = request;
+    const view = viewRef.current;
     const [highlights, vocab, lookupOccurrences, noteAnchors] = await Promise.all([
       invoke<Highlight[]>("list_highlights", { bookId }),
       supportsWordMarkers
@@ -897,17 +896,10 @@ export function useFoliateAnnotations({
       // A margin note the reader cannot find again is a note they will not
       // write. The shipped rail left the passage unmarked, so a card and its
       // sentence had nothing tying them together on the page itself.
-      invoke<NoteAnchorPage>("list_notes", {
-        bookId,
-        anchorKind: "selection",
-        word: null,
-        search: null,
-        updatedAfter: null,
-        updatedBefore: null,
-        cursor: null,
-        limit: NOTE_ANCHOR_LIMIT,
-      }).then((page) => page.notes).catch(() => [] as NoteAnchorMark[]),
+      loadReaderNotes<NoteAnchorMark>(bookId, "selection", request.signal)
+        .catch(() => [] as NoteAnchorMark[]),
     ]);
+    if (request.signal.aborted || noteAnchors === null || viewRef.current !== view) return;
     markerSnapshotRef.current = { highlights, vocab, lookupOccurrences, noteAnchors };
     await applyAnnotations(reapplyVisible);
     applyFoliateMarkerStyles();
