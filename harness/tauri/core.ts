@@ -17,6 +17,7 @@ import { hasFixture, resolveFixture, DELIBERATE_REJECTIONS } from "../invoke-fix
 import { stubValueFor } from "../shape-defaults";
 import { harness, recordCall } from "../state";
 import { macrotask } from "../task";
+import { collectBoundaryDiagnostic } from "../collectors";
 
 export type InvokeArgs = Record<string, unknown>;
 
@@ -28,6 +29,7 @@ export type InvokeArgs = Record<string, unknown>;
 export function invoke<T = unknown>(command: string, args?: InvokeArgs): Promise<T> {
   const callArgs = args ?? {};
   recordCall(command, callArgs);
+  collectBoundaryDiagnostic(command, callArgs);
 
   return new Promise<T>((resolve, reject) => {
     void macrotask().then(() => {

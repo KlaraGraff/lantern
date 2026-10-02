@@ -4,15 +4,15 @@
  * thrown at module top-level or during the first render happens before any
  * listener the sweep could add later.
  *
- * Four sources:
+ * Fault sources:
  *  - `error` events (capture phase, so nothing can stop them first). React 19
  *    routes uncaught render errors through `reportError()`, which lands here —
- *    the app has no error boundary of its own, so this is the only React signal
- *    there is, and that fact is recorded in the report as `errorBoundary: null`.
+ *    render errors that escape the app's error boundaries land here.
  *  - `unhandledrejection`.
  *  - `console.error` / `console.warn` wrappers.
  *  - resource load failures (a 404 on a chunk or a font), which arrive as
  *    `error` events with a non-window target.
+ *  - ErrorBoundary's structured diagnostic IPC, observed by the mocked backend.
  *
  * `addEventListener` rather than assigning `window.onerror`, because the app's
  * own `installReaderDiagnostics()` installs handlers too and last-writer-wins
@@ -24,6 +24,7 @@ export type FaultKind =
   | "unhandledrejection"
   | "console.error"
   | "console.warn"
+  | "render-boundary"
   | "resource";
 
 export interface Fault {
@@ -143,6 +144,13 @@ export function getFaults(): Fault[] {
 
 export function faultCount(): number {
   return faults.length;
+}
+
+/** The same diagnostic contract used by app, page, region and silent boundaries. */
+export function collectBoundaryDiagnostic(command: string, args: Record<string, unknown>): void {
+  if (command !== "log_webview_warning" || args.scope !== "reader.diag") return;
+  if (typeof args.message !== "string" || !/^ui\.boundary\.(app|page|region|silent) \| /.test(args.message)) return;
+  record("render-boundary", args.message, null);
 }
 
 /** How many hidden-tab resize reports were set aside, for the report's notes. */

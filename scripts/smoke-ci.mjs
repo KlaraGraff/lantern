@@ -26,6 +26,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gate } from "../harness/smoke-gate.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 1440;
@@ -505,24 +506,6 @@ function summarize(report) {
   console.log("");
 }
 
-/**
- * The gate. Deliberately narrower than `report.ok`, which is
- * `errors.length === 0` and therefore also trips on `console.warn`.
- *
- * A warning is worth printing and worth fixing, but failing CI on one means the
- * next person to add a legitimate `console.warn` gets a red build and learns to
- * route around this check. What must never merge is a thrown exception, a
- * rejected promise, a click that blew up, or a render that emptied the root —
- * those are the class this harness exists to catch.
- */
-const FAILING_KINDS = new Set(["error", "unhandledrejection", "click-threw", "resource"]);
-
-function gate(report) {
-  const failures = report.errors.filter((e) => FAILING_KINDS.has(e.kind) || e.fatal);
-  const warnings = report.errors.filter((e) => !failures.includes(e));
-  return { failures, warnings };
-}
-
 /* ------------------------------------------------------------------ *
  * main
  * ------------------------------------------------------------------ */
@@ -556,7 +539,7 @@ try {
 
     const { failures, warnings } = gate(report);
     if (warnings.length) {
-      console.log(`· ${warnings.length} console warning(s) recorded, not failing the build`);
+      console.log(`· ${warnings.length} non-failing console diagnostic(s) recorded`);
     }
     if (failures.length) {
       console.error(`\n✗ ${layout.name} FAILED — ${failures.length} error(s) that must not merge`);

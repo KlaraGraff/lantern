@@ -139,8 +139,8 @@ declare global {
 /* ------------------------------------------------------------------ *
  * Crash recovery
  *
- * The app has no React error boundary, so one throwing component empties the
- * whole root and every later click hits a blank page. Without recovery the
+ * An error escaping all app boundaries can empty the whole root, so every
+ * later click hits a blank page. Without recovery the
  * sweep silently reports "5 actions, 1 error" and looks like it worked.
  *
  * So: when the root empties, the sweep saves its progress to `sessionStorage`,
@@ -446,6 +446,7 @@ function harvestFaults(fatal: boolean): void {
   const faults: Fault[] = getFaults();
   for (; harvested < faults.length; harvested++) {
     const fault = faults[harvested];
+    if (fault.kind === "render-boundary") report.errorBoundary = fault.message;
     report.errors.push({
       route: fault.route,
       element: fault.action,

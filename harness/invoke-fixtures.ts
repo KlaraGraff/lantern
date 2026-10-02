@@ -11,6 +11,7 @@
  * sweep is not asserting persistence, it is asserting "clicking this does not
  * throw".
  */
+import type { AiCredential, AiProfile } from "../src/components/settings/AiServiceCard";
 import {
   AUTO_HIGHLIGHTS,
   BOOKMARKS,
@@ -353,6 +354,10 @@ export const FIXTURES: Record<string, Fixture> = {
   list_collections: () => LIBRARY_COLLECTIONS.slice(),
   list_books_in_collection: () => LIBRARY.slice(0, 2).map((b) => b.id),
   update_reading_progress: false,
+  // Browser fixtures acknowledge IPC only; they do not exercise native exit.
+  reader_exit_register: null,
+  reader_exit_ack: null,
+  reader_close_saved: null,
   mark_finished: null,
   update_book_status: null,
   update_book_metadata: null,
@@ -712,18 +717,18 @@ export const FIXTURES: Record<string, Fixture> = {
    * AI is unconfigured and the library grows a warning banner — which is a
    * fixture bug, not a finding.
    */
-  ai_list_credentials: () => [
+  ai_list_credentials: (): AiCredential[] => [
     {
       id: "cred-1",
       profile_id: "profile-1",
       label: "Harness key",
-      provider: "openai",
       enabled: true,
-      state: "valid",
-      sort_order: 0,
-      created_at: nowMs(),
-      updated_at: nowMs(),
-      masked_key: "sk-…harness",
+      state: "active",
+      priority: 0,
+      masked_suffix: "harness",
+      cooldown_until: null,
+      last_error_kind: null,
+      last_used_at: null,
     },
   ],
   ai_list_models: ["harness-model-large", "harness-model-small"],
@@ -1161,23 +1166,26 @@ export const FIXTURES: Record<string, Fixture> = {
   export_vocab_backup: { version: 1, words: VOCAB.slice(), exported_at: nowMs() },
 };
 
-function harnessProfile() {
+function harnessProfile(): AiProfile {
   return {
     id: "profile-1",
-    name: "Harness profile",
+    label: "Harness profile",
     provider: "openai",
     model: "harness-model-large",
     base_url: "https://example.invalid/v1",
     enabled: true,
-    is_default: true,
-    sort_order: 0,
-    credential_id: "cred-1",
+    auth_mode: "api_key",
+    api_mode: "auto",
+    priority: 0,
+    state: "active",
+    cooldown_until: null,
+    last_error_kind: null,
+    last_used_at: null,
+    last_latency_ms: null,
     temperature: 0.7,
-    max_tokens: 2048,
     reasoning_effort: null,
-    system_prompt: null,
-    created_at: nowMs(),
-    updated_at: nowMs(),
+    reasoning_effort_all_features: false,
+    keep_alive: null,
   };
 }
 

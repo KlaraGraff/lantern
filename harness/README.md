@@ -78,13 +78,18 @@ nothing else. Hidden is the mode this harness was built for; see *Hidden tabs*
 below.
 
 **What fails the build:** `error`, `unhandledrejection`, `click-threw`,
-`resource`, and anything flagged `fatal`. Also a sweep that visited no routes,
-which is otherwise green for the wrong reason.
+`resource`, `render-boundary`, and anything flagged `fatal`. Also a sweep that
+visited no routes, which is otherwise green for the wrong reason.
 
 **What does not:** `console.warn`. It is printed and worth fixing, but a build
 that goes red on a legitimate warning teaches people to route around this check.
 `console.error` is likewise reported without failing — the app logs handled
 errors through it on paths the mocked backend deliberately rejects.
+Caught component crashes are collected separately as `render-boundary` through
+the existing `log_webview_warning` diagnostic (`reader.diag`, `ui.boundary.*`).
+This fails CI even when only a settings region or a silent boundary disappears
+and the React root remains populated. Console text and component stacks are
+not used to decide whether a boundary crashed.
 
 **Not gated on:** `readerRendered`. A hidden document gets no frames, so the
 book does not paint and the flag is false in CI by construction. That is a
@@ -251,7 +256,9 @@ window.__SMOKE__ = {
 ```
 
 `kind` is one of `error`, `unhandledrejection`, `console.error`, `console.warn`,
-`resource`, `click-threw`. `fatal: true` means that error emptied the React root.
+`resource`, `render-boundary`, `click-threw`. `fatal: true` means that error
+emptied the React root.
+`errorBoundary` holds the latest boundary diagnostic when one was collected.
 
 ## What it skips, and why
 
@@ -267,9 +274,10 @@ recorded on `window.__HARNESS__` instead of performed.
 
 ## Crash recovery
 
-The app has **no React error boundary anywhere in `src/`**. One throwing
-component empties `#root`, and every later click lands on a blank page — which
-without recovery looks exactly like "the sweep finished with one error".
+The app has boundaries around app, page, region and silent surfaces. Their
+caught crashes fail CI without reloading the page. If an error escapes them
+and empties `#root`, every later click lands on a blank page — which without
+recovery looks exactly like "the sweep finished with one error".
 
 So when the root empties, the sweep saves its progress to `sessionStorage`,
 marks that control poisoned, reloads, and resumes where it left off. Up to 12

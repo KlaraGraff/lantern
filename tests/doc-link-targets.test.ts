@@ -1,8 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // @ts-expect-error — plain .mjs script, no type declarations
-import { splitTarget } from "../scripts/check-doc-links.mjs";
+import { checkDocLinks, splitTarget } from "../scripts/check-doc-links.mjs";
+
+test("local links resolve absolute and relative targets and reject missing files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lantern-doc-links-"));
+  try {
+    const docDir = join(root, "docs");
+    await mkdir(docDir);
+    const existing = join(root, "evidence.jsonl");
+    await writeFile(existing, "{}\n");
+    const missing = join(root, "missing.jsonl");
+    const doc = join(docDir, "report.md");
+    await writeFile(doc, [
+      `[absolute](${existing}:12#entry)`,
+      "[relative](../evidence.jsonl:1)",
+      `[missing absolute](${missing})`,
+      "[missing relative](../missing.jsonl)",
+    ].join("\n"));
+
+    const result = await checkDocLinks({ files: [doc] });
+    assert.deepEqual(result.broken.map((link: { target: string }) => link.target), [
+      missing, "../missing.jsonl",
+    ]);
+    assert.equal(result.fixed, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("a bare path has no suffix to put back", () => {
   assert.deepEqual(splitTarget("../../src/pages/Reader.tsx"), {

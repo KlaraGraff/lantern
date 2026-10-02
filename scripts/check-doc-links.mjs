@@ -83,10 +83,10 @@ async function markdownFiles() {
   return found.sort();
 }
 
-export async function checkDocLinks({ fix = false } = {}) {
+export async function checkDocLinks({ fix = false, files } = {}) {
   const broken = [];
   let fixed = 0;
-  for (const file of await markdownFiles()) {
+  for (const file of files ?? await markdownFiles()) {
     const original = await readFile(file, "utf8");
     const masked = maskNonProse(original);
     const dir = dirname(file);
@@ -96,14 +96,14 @@ export async function checkDocLinks({ fix = false } = {}) {
       const [, label, target] = match;
       if (/^(https?:|mailto:|#)/.test(target)) continue;
       const { path } = splitTarget(target);
-      if (!path || existsSync(join(dir, path))) continue;
+      if (!path || existsSync(resolve(dir, path))) continue;
       const line = masked.slice(0, match.index).split("\n").length;
       const where = `${relative(ROOT, file)}:${line}`;
       // Always take the label from the source: masking blanks out any code
       // span inside it, and writing that back would erase the label.
       const sourceLabel = original.substr(match.index + 1, label.length);
       const hit = fix
-        ? candidates(dir, target).find((c) => existsSync(join(dir, c.path)))
+        ? candidates(dir, target).find((c) => existsSync(resolve(dir, c.path)))
         : undefined;
       if (!hit) {
         broken.push({ where, label: sourceLabel, target });
@@ -139,6 +139,6 @@ if (isMain) {
     );
     process.exitCode = 1;
   } else {
-    console.log("Documentation links: all relative links resolve.");
+    console.log("Documentation links: all local links resolve.");
   }
 }
