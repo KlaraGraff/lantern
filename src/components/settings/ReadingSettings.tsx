@@ -1,3 +1,4 @@
+import { createSettingsSaveFeedback, runSettingsSave } from "./settings-save-feedback";
 import { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronRight, Download, RotateCcw, Trash2 } from "lucide-react";
@@ -392,21 +393,19 @@ export default function ReadingSettings({
    * touching (restore defaults). Recording those as already applied would
    * explain the echo away and leave every row showing its old value.
    */
-  const persist = useCallback((entries: Record<string, string>, options?: { repaint?: boolean }) => {
+  const saveFeedbackRef = useRef(createSettingsSaveFeedback());
+  const persist = useCallback((entries: Record<string, string>, options?: { repaint?: boolean; toast?: boolean }) => {
     const keys = Object.keys(entries);
     addPendingWrites(pendingWritesRef.current, keys);
     if (!options?.repaint) appliedRef.current = { ...appliedRef.current, ...entries };
-    return saveBulk(entries)
-      .then(() => true)
-      .catch((error) => {
-        console.error("Failed to save reading settings:", error);
-        return false;
-      })
+    return runSettingsSave(saveFeedbackRef.current, keys, () => saveBulk(entries), () => {
+      showSavedToast(t("readerSettings.scope.actionFailed"));
+    }, options?.toast ? () => showSavedToast() : undefined)
       .finally(() => {
         removePendingWrites(pendingWritesRef.current, keys);
         setWritesSettled((count) => count + 1);
       });
-  }, [saveBulk]);
+  }, [saveBulk, showSavedToast, t]);
 
   // One write for all twenty rows, and deliberately not recorded as applied:
   // `saveBulk` pushes the new values back into `settings`, and the effect above
@@ -417,18 +416,17 @@ export default function ReadingSettings({
     try {
       const saved = await persist(
         buildReadingDefaultSettings(createDefaultReaderSettings()),
-        { repaint: true },
+        { repaint: true, toast: true },
       );
       // The dialog closes either way: a failure message belongs next to the row
       // that still says 「恢复默认」, and a modal left open over the page hides the
       // very settings the user is being told did not change.
       setRestoreConfirm(false);
-      if (saved) showSavedToast();
-      else setRestoreError(t("settings.layout.restoreDefaultsFailed"));
+      if (!saved) setRestoreError(t("settings.layout.restoreDefaultsFailed"));
     } finally {
       setRestoreBusy(false);
     }
-  }, [persist, showSavedToast, t]);
+  }, [persist, t]);
 
   // A number row commits on blur and only on blur (Enter blurs it), so blur is
   // also where the hold on its group is lifted: by then the digits are on their
@@ -504,8 +502,7 @@ export default function ReadingSettings({
               type="button"
               onClick={() => {
                 setReaderTheme(theme.value);
-                void persist({ reader_theme: theme.value });
-                showSavedToast();
+                void persist({ reader_theme: theme.value }, { toast: true });
               }}
               className="w-[44px] flex flex-col items-center gap-1.5 cursor-pointer"
             >
@@ -540,7 +537,7 @@ export default function ReadingSettings({
               void persist({
                 reader_theme: "custom",
                 reader_custom_theme: JSON.stringify(next),
-              }).then((saved) => { if (saved) showSavedToast(); });
+              }, { toast: true });
             }}
           />
         </div>
@@ -554,7 +551,7 @@ export default function ReadingSettings({
         <Select
           className={ROW_CONTROL_WIDTH}
           value={fontFamily}
-          onChange={(v) => { setFontFamily(v); void persist({ font_family: v }); showSavedToast(); }}
+          onChange={(v) => { setFontFamily(v); void persist({ font_family: v }, { toast: true }); }}
           options={fontOptions}
         />
       </div>
@@ -569,7 +566,7 @@ export default function ReadingSettings({
         <Select
           className={ROW_CONTROL_WIDTH}
           value={cjkFontFamily}
-          onChange={(v) => { setCjkFontFamily(v); void persist({ cjk_font_family: v }); showSavedToast(); }}
+          onChange={(v) => { setCjkFontFamily(v); void persist({ cjk_font_family: v }, { toast: true }); }}
           options={getReaderCjkFontOptions(t)}
         />
       </div>
@@ -686,8 +683,7 @@ export default function ReadingSettings({
           checked={narrowFontShrink}
           onChange={(v) => {
             setNarrowFontShrink(v);
-            void persist({ narrow_font_shrink: String(v) });
-            showSavedToast();
+            void persist({ narrow_font_shrink: String(v) }, { toast: true });
           }}
         />
       </div>
@@ -704,7 +700,7 @@ export default function ReadingSettings({
             <button
               type="button"
               className="mt-1 text-[12px] text-accent-text underline underline-offset-2"
-              onClick={() => { setLineSpacing("auto"); void persist({ line_spacing: "auto" }); showSavedToast(); }}
+              onClick={() => { setLineSpacing("auto"); void persist({ line_spacing: "auto" }, { toast: true }); }}
             >
               {t("settings.layout.lineSpacingUseAuto")}
             </button>
@@ -751,7 +747,7 @@ export default function ReadingSettings({
             <p className="mt-0.5 text-[12px] text-text-muted">{t("settings.layout.justifyHint")}</p>
           </div>
           <Toggle label={t("settings.layout.justify")} checked={textJustification} onChange={(value) => {
-            setTextJustification(value); void persist({ text_justification: String(value) }); showSavedToast();
+            setTextJustification(value); void persist({ text_justification: String(value) }, { toast: true });
           }} />
         </div>
         <div className="mt-3 flex items-center justify-between gap-4">
@@ -766,8 +762,7 @@ export default function ReadingSettings({
             void persist({
               first_line_indent: String(next.firstLineIndent),
               paragraph_spacing: next.paragraphSpacing,
-            });
-            showSavedToast();
+            }, { toast: true });
           }} />
         </div>
         <div className="mt-3">
@@ -781,8 +776,7 @@ export default function ReadingSettings({
                 void persist({
                   paragraph_spacing: next.paragraphSpacing,
                   first_line_indent: String(next.firstLineIndent),
-                });
-                showSavedToast();
+                }, { toast: true });
               }} className={`h-8 rounded-md text-[12px] touch:h-11 ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
                 {t(`readerSettings.paragraphSpacing.${value}`)}
               </button>
@@ -826,8 +820,7 @@ export default function ReadingSettings({
           onChange={(value) => {
             const next = value as ReadingMode;
             setReadingMode(next);
-            void persist({ reading_mode: next });
-            showSavedToast();
+            void persist({ reading_mode: next }, { toast: true });
           }}
           options={[
             { value: "scrolling", label: t("readerSettings.scrolling") },
@@ -847,8 +840,7 @@ export default function ReadingSettings({
           onChange={(value) => {
             const next = value as "1" | "2";
             setPageLayout(next);
-            void persist({ page_columns: next });
-            showSavedToast();
+            void persist({ page_columns: next }, { toast: true });
           }}
           options={[
             { value: "1", label: t("readerSettings.singlePage") },
@@ -868,8 +860,7 @@ export default function ReadingSettings({
           onChange={(value) => {
             const next = value as PageTurnAnimation;
             setPageTurnAnimation(next);
-            void persist({ page_turn_animation: next });
-            showSavedToast();
+            void persist({ page_turn_animation: next }, { toast: true });
           }}
           options={[
             { value: "slide", label: t("readerSettings.animationSlide") },
@@ -894,8 +885,7 @@ export default function ReadingSettings({
             checked={oneHandMode}
             onChange={(v) => {
               setOneHandMode(v);
-              void persist({ one_hand_mode: String(v) });
-              showSavedToast();
+              void persist({ one_hand_mode: String(v) }, { toast: true });
             }}
           />
         </div>
@@ -931,11 +921,9 @@ export default function ReadingSettings({
             const previous = previousPageBinding;
             setPreviousPageBinding(value);
             if (swapsNext) setNextPageBinding(previous);
-            void persist(
-              swapsNext
+            void persist(swapsNext
                 ? { previous_page_binding: value, next_page_binding: previous }
-                : { previous_page_binding: value },
-            ).then((saved) => { if (saved) showSavedToast(); });
+                : { previous_page_binding: value }, { toast: true });
           }}
         />
       </div>
@@ -954,11 +942,9 @@ export default function ReadingSettings({
             const previous = nextPageBinding;
             setNextPageBinding(value);
             if (swapsPrevious) setPreviousPageBinding(previous);
-            void persist(
-              swapsPrevious
+            void persist(swapsPrevious
                 ? { next_page_binding: value, previous_page_binding: previous }
-                : { next_page_binding: value },
-            ).then((saved) => { if (saved) showSavedToast(); });
+                : { next_page_binding: value }, { toast: true });
           }}
         />
       </div>
@@ -987,8 +973,7 @@ export default function ReadingSettings({
               onClick={() => {
                 const next = !chip.checked;
                 chip.setter(next);
-                void persist({ [chip.settingKey]: String(next) });
-                showSavedToast();
+                void persist({ [chip.settingKey]: String(next) }, { toast: true });
               }}
               className={`h-8 rounded-full border px-3 text-[12px] font-medium transition-colors touch:h-11 ${
                 chip.checked
@@ -1018,8 +1003,7 @@ export default function ReadingSettings({
           checked={autoSave}
           onChange={(v) => {
             setAutoSave(v);
-            void persist({ auto_save: String(v) });
-            showSavedToast();
+            void persist({ auto_save: String(v) }, { toast: true });
           }}
         />
       </div>
@@ -1034,8 +1018,7 @@ export default function ReadingSettings({
           checked={skipFrontMatter}
           onChange={(v) => {
             setSkipFrontMatter(v);
-            void persist({ skip_front_matter: String(v) });
-            showSavedToast();
+            void persist({ skip_front_matter: String(v) }, { toast: true });
           }}
         />
       </div>
@@ -1060,8 +1043,7 @@ export default function ReadingSettings({
           checked={bookOpenCardEnabled}
           onChange={(v) => {
             setBookOpenCardEnabled(v);
-            void persist({ book_open_card_enabled: String(v) });
-            showSavedToast();
+            void persist({ book_open_card_enabled: String(v) }, { toast: true });
           }}
         />
       </div>

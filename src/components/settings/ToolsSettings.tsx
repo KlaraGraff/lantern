@@ -400,7 +400,10 @@ export default function ToolsSettings({
       .then(() => saveBulk(entries))
       .then(() => notifyReadingAssistanceSettingsChanged(keys))
       .then(() => showSavedToast(toastMessage))
-      .catch((error) => console.error("Failed to save learning tool settings:", error))
+      .catch((error) => {
+        console.error("Failed to save learning tool settings:", error);
+        showSavedToast(t("readerSettings.scope.actionFailed"));
+      })
       .finally(() => removePendingWrites(pendingWritesRef.current, keys));
   };
   const persistConfig = (next: CardDesignConfigV1) => {
@@ -427,6 +430,7 @@ export default function ToolsSettings({
       })
       .catch((error) => {
         console.error(`Failed to save ${key}:`, error);
+        showSavedToast(t("readerSettings.scope.actionFailed"));
       })
       .finally(() => removePendingWrites(pendingWritesRef.current, [key]));
   };

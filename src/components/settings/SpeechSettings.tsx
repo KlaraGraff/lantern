@@ -211,7 +211,10 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
   const persist = (values: Record<string, string>) => {
     updateSpeechSettings(values)
       .then(() => showSavedToast())
-      .catch((error) => console.error("Failed to save speech settings:", error));
+      .catch((error) => {
+        console.error("Failed to save speech settings:", error);
+        showSavedToast(t("readerSettings.scope.actionFailed"));
+      });
   };
 
   const clampRate = (value: number) =>

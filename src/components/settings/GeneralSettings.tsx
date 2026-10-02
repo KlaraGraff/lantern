@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import Select from "../ui/Select";
@@ -15,6 +15,7 @@ import {
 } from "./theme-preference";
 import { ONBOARDING_STATE_KEY } from "../onboarding/onboarding-state";
 import i18n from "../../i18n";
+import { createSettingsSaveFeedback, runSettingsSave } from "./settings-save-feedback";
 
 /**
  * 通用 — the app-shell layer only. Six flat rows, no sub-groups: interface
@@ -31,15 +32,32 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
   const { t } = useTranslation();
   const [language, setLanguage] = useState("en");
   const [displayName, setDisplayName] = useState("Reader");
+  const displayNameDraftRef = useRef({ value: "Reader", dirty: false });
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
 
   useEffect(() => {
     if (loading) return;
     if (settings.language) setLanguage(settings.language);
-    if (settings.user_name) setDisplayName(settings.user_name);
+    if (settings.user_name && !displayNameDraftRef.current.dirty) {
+      displayNameDraftRef.current.value = settings.user_name;
+      setDisplayName(settings.user_name);
+    }
     // Unset means on, matching what the toast does with a missing value.
     setAutoCheckUpdates(settings.auto_check_updates !== "false");
   }, [settings, loading]);
+
+  const saveFeedbackRef = useRef(createSettingsSaveFeedback());
+  const savesRef = useRef<Promise<void>>(Promise.resolve());
+  const persist = (key: string, value: string, afterSave?: () => void | Promise<unknown>, message?: string) => {
+    return runSettingsSave(saveFeedbackRef.current, [key], () => {
+      const result = savesRef.current.catch(() => {}).then(async () => {
+        await save(key, value);
+        await afterSave?.();
+      });
+      savesRef.current = result;
+      return result;
+    }, () => showSavedToast(t("readerSettings.scope.actionFailed")), () => showSavedToast(message));
+  };
 
   const theme = themePreferenceOf(settings.theme);
 
@@ -58,10 +76,10 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           value={language}
           onChange={(lang) => {
             setLanguage(lang);
-            save("language", lang);
-            localStorage.setItem("lantern-language", lang);
-            i18n.changeLanguage(lang);
-            showSavedToast();
+            void persist("language", lang, async () => {
+              localStorage.setItem("lantern-language", lang);
+              await i18n.changeLanguage(lang);
+            });
           }}
           options={LANGUAGE_OPTIONS}
         />
@@ -79,10 +97,10 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           className={ROW_CONTROL_WIDTH}
           value={theme}
           onChange={(value) => {
-            save("theme", value);
-            localStorage.setItem("lantern-theme", value);
-            applyThemePreference(value);
-            showSavedToast();
+            void persist("theme", value, () => {
+              localStorage.setItem("lantern-theme", value);
+              applyThemePreference(value);
+            });
           }}
           options={THEME_PREFERENCES.map((option) => ({
             value: option,
@@ -99,8 +117,16 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
         </div>
         <input
           value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          onBlur={() => { save("user_name", displayName); showSavedToast(); }}
+          onChange={(e) => {
+            displayNameDraftRef.current = { value: e.target.value, dirty: true };
+            setDisplayName(e.target.value);
+          }}
+          onBlur={() => {
+            const draft = displayNameDraftRef.current.value;
+            void persist("user_name", draft).then((saved) => {
+              if (saved && displayNameDraftRef.current.value === draft) displayNameDraftRef.current.dirty = false;
+            });
+          }}
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           placeholder="Reader"
           className={`${ROW_CONTROL_WIDTH} h-8 bg-white dark:bg-bg-surface rounded-[10px] px-3 text-[13px] font-medium text-text-secondary text-center outline-none border border-border focus:border-accent transition-colors`}
@@ -121,8 +147,7 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
             checked={autoCheckUpdates}
             onChange={(v) => {
               setAutoCheckUpdates(v);
-              save("auto_check_updates", String(v));
-              showSavedToast();
+              void persist("auto_check_updates", String(v));
             }}
           />
         </div>
@@ -140,7 +165,7 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           size="sm"
           className={`${ROW_CONTROL_WIDTH} justify-center`}
           onClick={() => {
-            void save(ONBOARDING_STATE_KEY, "").then(() => showSavedToast(t("settings.onboarding.replayed")));
+            void persist(ONBOARDING_STATE_KEY, "", undefined, t("settings.onboarding.replayed"));
           }}
         >
           {t("settings.onboarding.replayButton")}

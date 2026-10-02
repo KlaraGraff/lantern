@@ -1,3 +1,4 @@
+import { createSettingsSaveFeedback, runSettingsSave } from "./settings-save-feedback";
 import { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -114,6 +115,12 @@ function localDateInputValue(date = new Date()): string {
  */
 export default function LearningSettings({ settings, loading, save, saveBulk, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
+  const saveFeedbackRef = useRef(createSettingsSaveFeedback());
+  const saveWithFeedback = (keys: string[], write: () => Promise<unknown>, message?: string) => (
+    runSettingsSave(saveFeedbackRef.current, keys, write,
+      () => showSavedToast(t("readerSettings.scope.actionFailed")),
+      () => showSavedToast(message))
+  );
   const [lookupHistoryRetention, setLookupHistoryRetention] = useState("0");
   const [profileSoftLimit, setProfileSoftLimit] = useState("1200");
   const [cefrLevel, setCefrLevel] = useState("B1");
@@ -299,8 +306,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
   };
 
   const applyAssessmentLevel = async (level: string, source: string) => {
-    await applyLevel(level, source);
-    showSavedToast(t("settings.learner.levelApplied"));
+    await saveWithFeedback(["cefr_level"], () => applyLevel(level, source), t("settings.learner.levelApplied"));
   };
 
   const saveAssessment = async () => {
@@ -401,8 +407,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           className={ROW_CONTROL_WIDTH}
           value={cefrLevel}
           onChange={(level) => {
-            void applyLevel(level, "manual")
-              .then(() => showSavedToast(t("settings.learner.manualLevelSaved")));
+            void saveWithFeedback(["cefr_level", "explanation_mode"], () => applyLevel(level, "manual"), t("settings.learner.manualLevelSaved"));
           }}
           options={CEFR_LEVELS.map((level) => ({ value: level, label: level }))}
         />
@@ -429,7 +434,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
               && (cefrLevel === "A1" || cefrLevel === "A2")
               && !lowLevelEnglishAcknowledged,
             );
-            void saveManualExplanationMode(mode).then(() => showSavedToast());
+            void saveWithFeedback([EXPLANATION_MODE_SETTING_KEY], () => saveManualExplanationMode(mode));
           }}
           options={[
             { value: "adaptive_bilingual", label: t("settings.learner.adaptiveBilingual", { defaultValue: "Adaptive bilingual" }) },
@@ -484,10 +489,10 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                 role="radio"
                 aria-checked={selected}
                 onClick={() => {
-                  if (selected) return;
+                  if (selected && normalizedExplanationStyle(settings.explanation_style) === style) return;
                   setExplanationStyle(style);
                   setStyleSampleOpen(true);
-                  void save("explanation_style", style).then(() => showSavedToast());
+                  void saveWithFeedback(["explanation_style"], () => save("explanation_style", style));
                 }}
                 className={`cursor-pointer rounded-lg border px-3 py-2.5 text-left transition-colors ${
                   selected ? "border-accent ring-1 ring-accent" : "border-border hover:border-accent/50"
@@ -572,7 +577,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           value={translationLanguage}
           onChange={(value) => {
             setTranslationLanguage(value);
-            void save("translation_language", value).then(() => showSavedToast());
+            void saveWithFeedback(["translation_language"], () => save("translation_language", value));
           }}
           options={LANGUAGE_OPTIONS}
         />
@@ -591,7 +596,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           value={levelWordClass}
           onChange={(value) => {
             setLevelWordClass(value);
-            void save("level_observation_word_class", value).then(() => showSavedToast());
+            void saveWithFeedback(["level_observation_word_class"], () => save("level_observation_word_class", value));
           }}
           options={[
             { value: "ai", label: t("settings.learner.levelWordClassAi") },
@@ -613,7 +618,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                 onClick={() => {
                   setLowLevelEnglishAcknowledged(true);
                   setShowLowLevelEnglishWarning(false);
-                  void save("cefr_low_level_english_warning_ack", "true").then(() => showSavedToast());
+                  void saveWithFeedback(["cefr_low_level_english_warning_ack"], () => save("cefr_low_level_english_warning_ack", "true"));
                 }}
                 className="h-7 rounded-md border border-border bg-bg-surface px-2.5 text-[11px] font-medium text-text-secondary hover:border-accent touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
               >
@@ -624,7 +629,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                 onClick={() => {
                   setShowLowLevelEnglishWarning(false);
                   // 从警告里退回中英对照也是他自己的一次表态，等级不再改写它。
-                  void saveManualExplanationMode("adaptive_bilingual").then(() => showSavedToast());
+                  void saveWithFeedback([EXPLANATION_MODE_SETTING_KEY], () => saveManualExplanationMode("adaptive_bilingual"));
                 }}
                 className="h-7 rounded-md bg-accent px-2.5 text-[11px] font-medium text-white touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
               >
@@ -909,12 +914,12 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           value={lookupHistoryRetention}
           onChange={async (days) => {
             setLookupHistoryRetention(days);
-            await save("lookup_history_retention_days", days);
-            await invoke("prune_lookup_records", { retentionDays: Number(days) || null });
-            // Retention is library-wide, so this one is not about a book and
-            // every open reader has to redraw.
-            notifyAllReaders("lookup-record-changed");
-            showSavedToast();
+            await saveWithFeedback(["lookup_history_retention_days"], async () => {
+              await save("lookup_history_retention_days", days);
+              await invoke("prune_lookup_records", { retentionDays: Number(days) || null });
+              // Retention is library-wide, so every open reader redraws.
+              notifyAllReaders("lookup-record-changed");
+            });
           }}
           options={[
             { value: "0", label: t("settings.general.lookupHistoryForever") },
@@ -942,8 +947,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
             const normalized = String(parsed);
             setProfileSoftLimit(normalized);
             if (normalized !== settings["profile.soft_limit"]) {
-              await save("profile.soft_limit", normalized);
-              showSavedToast();
+              await saveWithFeedback(["profile.soft_limit"], () => save("profile.soft_limit", normalized));
             }
           }}
           className={`${ROW_CONTROL_WIDTH} h-9 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary text-center outline-none hover:border-border focus:border-accent`}
@@ -959,8 +963,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           checked={countFamiliarFrom(settings)}
           label={t("settings.coverage.countFamiliar")}
           onChange={async (checked) => {
-            await save(COUNT_FAMILIAR_SETTING_KEY, checked ? "true" : "false");
-            showSavedToast();
+            await saveWithFeedback([COUNT_FAMILIAR_SETTING_KEY], () => save(COUNT_FAMILIAR_SETTING_KEY, checked ? "true" : "false"));
           }}
         />
       </div>
@@ -974,8 +977,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           checked={shelfCoverageFrom(settings)}
           label={t("settings.coverage.showOnShelf")}
           onChange={async (checked) => {
-            await save(SHELF_COVERAGE_SETTING_KEY, checked ? "true" : "false");
-            showSavedToast();
+            await saveWithFeedback([SHELF_COVERAGE_SETTING_KEY], () => save(SHELF_COVERAGE_SETTING_KEY, checked ? "true" : "false"));
           }}
         />
       </div>
