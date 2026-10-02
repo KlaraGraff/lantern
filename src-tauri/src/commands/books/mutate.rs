@@ -30,12 +30,12 @@ pub(crate) fn do_delete_book_with_note_policy(
     sync: &SyncWriter,
 ) -> AppResult<()> {
     crate::sync::validation::validate_entity_id(id)?;
-    let (file_path, source_file_path): (String, Option<String>) = {
+    let (file_path, source_file_path, cover_path): (String, Option<String>, Option<String>) = {
         let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
         conn.query_row(
-            "SELECT file_path, source_file_path FROM books WHERE id = ?1",
+            "SELECT file_path, source_file_path, cover_path FROM books WHERE id = ?1",
             params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?
     };
 
@@ -105,8 +105,10 @@ pub(crate) fn do_delete_book_with_note_policy(
         let abs_source = db.resolve_path(&source_path)?;
         let _ = fs::remove_file(abs_source);
     }
-    let cover_file = db.resolve_path(&format!("covers/{id}.img"))?;
-    let _ = fs::remove_file(&cover_file);
+    let cover_path = cover_path.unwrap_or_else(|| format!("covers/{id}.img"));
+    if cover_path != "none" {
+        let _ = fs::remove_file(db.resolve_path(&cover_path)?);
+    }
 
     Ok(())
 }
@@ -199,6 +201,7 @@ pub(crate) fn do_update_reading_progress(
              WHERE id = ?5",
             params![progress, cfi, ts, device, id],
         )?;
+        crate::sync::book_fields::stamp(tx, id, "progress", ts, &device)?;
         if was_unread {
             // Published unconditionally — the throttle below coalesces noisy
             // page turns, but this transition happens once in a book's life
@@ -270,31 +273,9 @@ pub fn update_book_pages(id: String, pages: i32, db: State<'_, Db>) -> AppResult
 /// `mark_finished` command and by `do_update_reading_progress`'s §2.2
 /// auto-finish check.
 ///
-/// Two *sequential* transactions, each with its own strictly-increasing
-/// `SyncWriter::next_logical_timestamp()` — deliberately not one `with_tx`
-/// call sharing one timestamp for both events (bug 3 in
-/// docs/impls/reading-flow-decisions-2026-08-06.md §2's writeup, present on
-/// HEAD before this change too). `books` keeps a single `updated_at` /
-/// `updated_by_device` pair for the whole row, not one per column, and the
-/// merge engine's LWW check
-/// (`updated_at < event.ts OR (updated_at = event.ts AND updated_by_device <
-/// event.device)`, in `sync::merge`) is strict: when two events from the
-/// same device carry the *identical* `(ts, device)`, only whichever one a
-/// peer happens to replay first can ever satisfy that condition — the
-/// second finds `updated_at` already equal to its own `ts` and its own
-/// device already credited, so `device < device` is false and it becomes a
-/// silent no-op, forever. Which one "happens to replay first" is an
-/// unordered tiebreak (`replay.rs` sorts same-`(ts,device)` events by a
-/// random UUID), so which half of "finished" survives on a peer is not
-/// determined by this function at all — it was observed to drop the
-/// progress write and leave a peer at `status=reading, progress=0` even
-/// though every field committed correctly here, on this device.
-///
-/// Giving the two events distinct, increasing timestamps removes the tie
-/// entirely: the second event's `updated_at < event.ts` legitimately holds
-/// (the first event's `ts` — now sitting in `updated_at` — is strictly less
-/// than the second event's own, later `ts`), so it applies in the same
-/// order on every peer, deterministically, regardless of replay order.
+/// The existing two transactions retain distinct logical timestamps. Status
+/// and progress now arbitrate against independent field clocks, so either
+/// replay order preserves both changes.
 fn do_mark_finished(db: &Db, sync: &SyncWriter, id: &str) -> AppResult<()> {
     let device = sync.self_device().to_string();
 
@@ -355,7 +336,7 @@ pub(crate) fn do_update_book(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<Book> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         if let Some(t) = title {
@@ -445,17 +426,12 @@ pub fn update_book_cover(
 ) -> AppResult<()> {
     crate::sync::validation::validate_entity_id(&id)?;
     let bytes = validated_cover_bytes(Path::new(&image_path))?;
-    let relative_path = format!("covers/{id}.img");
+    let _mutation = sync.mutation_guard()?;
+    let relative_path = crate::sync::covers::relative_path(&id, &bytes);
     let destination = db.resolve_path(&relative_path)?;
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temporary = destination.with_extension("img.tmp");
-    let previous = fs::read(&destination).ok();
-    fs::write(&temporary, &bytes)?;
-    fs::rename(&temporary, &destination)?;
+    crate::sync::covers::publish(&destination, &bytes)?;
 
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     let result = sync.with_tx(&db, now, |tx, events| {
         let changed = tx.execute(
@@ -474,14 +450,9 @@ pub fn update_book_cover(
         });
         Ok(())
     });
-    if let Err(error) = result {
-        if let Some(previous) = previous {
-            let _ = fs::write(&destination, previous);
-        } else {
-            let _ = fs::remove_file(&destination);
-        }
-        return Err(error);
-    }
+    // An unreferenced immutable file is safe to retain if the transaction
+    // fails; deleting it could race another successful use of the same hash.
+    result?;
     sync.queue_cover_write(&db, &id, &bytes);
     Ok(())
 }
@@ -489,6 +460,27 @@ pub fn update_book_cover(
 #[cfg(test)]
 mod cover_tests {
     use super::*;
+
+    #[test]
+    fn throttled_progress_still_advances_its_local_field_clock_when_sync_is_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".into());
+        db.conn.lock().unwrap().execute(
+            "INSERT INTO books(id, title, author, file_path, format, status, created_at, updated_at, updated_by_device)
+             VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub', 'reading', 1, 1, 'origin')", [],
+        ).unwrap();
+        do_update_reading_progress("b1", 10, Some("first"), &db, &sync).unwrap();
+        let first = crate::sync::book_fields::load(&db.conn.lock().unwrap(), "b1").unwrap();
+        do_update_reading_progress("b1", 20, Some("second"), &db, &sync).unwrap();
+        let second = crate::sync::book_fields::load(&db.conn.lock().unwrap(), "b1").unwrap();
+        assert!(second["progress"] > first["progress"]);
+        assert_eq!(second["title"], first["title"]);
+        do_update_book("b1", Some("Renamed"), None, None, None, &db, &sync).unwrap();
+        let third = crate::sync::book_fields::load(&db.conn.lock().unwrap(), "b1").unwrap();
+        assert!(third["title"] > second["title"]);
+        assert_eq!(third["progress"], second["progress"]);
+    }
 
     #[test]
     fn custom_cover_rejects_non_image_bytes() {

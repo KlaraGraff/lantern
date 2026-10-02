@@ -32,7 +32,8 @@ use sha2::{Digest, Sha256};
 /// which rewrites a saved word's whole learning card in one write.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 14;
+// Version 15 arbitrates mutable book fields independently.
+pub const EVENT_SCHEMA_VERSION: u32 = 15;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {

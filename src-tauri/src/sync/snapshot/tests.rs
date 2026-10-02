@@ -77,6 +77,18 @@ fn apply_to(conn: &mut Connection, events: &[Event]) {
 
 fn text_book_row(updated_at: i64, source_sha256: &str) -> BookRow {
     BookRow {
+        field_clocks: crate::sync::book_fields::FIELDS
+            .iter()
+            .map(|field| {
+                (
+                    field.to_string(),
+                    crate::sync::book_fields::FieldClock {
+                        updated_at,
+                        updated_by_device: "dev-A".into(),
+                    },
+                )
+            })
+            .collect(),
         title: "Text book".into(),
         author: "Author".into(),
         description: None,
@@ -2472,4 +2484,257 @@ fn second_compaction_picks_up_new_events_via_prior_snapshot() {
         2,
         "fresh snapshot must include both books"
     );
+}
+
+#[test]
+fn independent_book_edits_converge_through_events_and_snapshots() {
+    let birth = ev(1, "dev-0", import("b1"));
+    let title = ev(
+        10,
+        "dev-A",
+        EventBody::BookMetadataSet {
+            book: "b1".into(),
+            field: "title".into(),
+            value: serde_json::json!("new title"),
+        },
+    );
+    let progress = ev(
+        11,
+        "dev-B",
+        EventBody::BookProgressSet {
+            book: "b1".into(),
+            progress: 50,
+            cfi: Some("chapter-5".into()),
+        },
+    );
+    let status = ev(
+        12,
+        "dev-B",
+        EventBody::BookStatusSet {
+            book: "b1".into(),
+            status: "reading".into(),
+        },
+    );
+    let author = ev(
+        10,
+        "dev-A",
+        EventBody::BookMetadataSet {
+            book: "b1".into(),
+            field: "author".into(),
+            value: serde_json::json!("new author"),
+        },
+    );
+    for via_snapshot in [false, true] {
+        let mut a = open_db();
+        let mut b = open_db();
+        let a_events = [birth.clone(), title.clone(), author.clone()];
+        let b_events = [birth.clone(), progress.clone(), status.clone()];
+        apply_to(&mut a, &a_events);
+        apply_to(&mut b, &b_events);
+        if via_snapshot {
+            let a_snapshot = Snapshot::from_events("dev-A", &a_events).unwrap();
+            let b_snapshot = Snapshot::from_events("dev-B", &b_events).unwrap();
+            let tx = a.transaction().unwrap();
+            b_snapshot.apply_peer(&tx, "dev-B").unwrap();
+            tx.commit().unwrap();
+            let tx = b.transaction().unwrap();
+            a_snapshot.apply_peer(&tx, "dev-A").unwrap();
+            tx.commit().unwrap();
+        } else {
+            apply_to(&mut a, &b_events);
+            apply_to(&mut b, &a_events);
+        }
+        // Repeat in reverse order: older independent fields still land, while
+        // duplicate delivery cannot undo any of them.
+        apply_to(
+            &mut a,
+            &[
+                status.clone(),
+                progress.clone(),
+                author.clone(),
+                title.clone(),
+            ],
+        );
+        apply_to(
+            &mut b,
+            &[
+                title.clone(),
+                author.clone(),
+                progress.clone(),
+                status.clone(),
+            ],
+        );
+        let a_state = super::apply::dump_state(&a).unwrap();
+        let b_state = super::apply::dump_state(&b).unwrap();
+        assert_eq!(a_state.books, b_state.books);
+        let book = &a_state.books["b1"];
+        assert_eq!(
+            (
+                &book.title[..],
+                &book.author[..],
+                book.progress,
+                &book.status[..]
+            ),
+            ("new title", "new author", 50, "reading")
+        );
+        assert_eq!(book.field_clocks["title"].updated_at, 10);
+        assert_eq!(book.field_clocks["progress"].updated_at, 11);
+        assert_eq!(book.field_clocks["status"].updated_at, 12);
+    }
+}
+
+#[test]
+fn book_field_ties_use_device_and_delete_removes_clocks() {
+    let mut conn = open_db();
+    let title = |device, value| {
+        ev(
+            10,
+            device,
+            EventBody::BookMetadataSet {
+                book: "b1".into(),
+                field: "title".into(),
+                value: serde_json::json!(value),
+            },
+        )
+    };
+    apply_to(
+        &mut conn,
+        &[
+            ev(1, "dev-0", import("b1")),
+            title("dev-Z", "winner"),
+            title("dev-A", "loser"),
+        ],
+    );
+    let state = super::apply::dump_state(&conn).unwrap();
+    assert_eq!(state.books["b1"].title, "winner");
+    apply_to(
+        &mut conn,
+        &[ev(20, "dev-A", EventBody::BookDelete { id: "b1".into() })],
+    );
+    assert!(crate::sync::book_fields::load(&conn, "b1")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn existing_library_initializes_field_clocks_without_changing_books_or_annotations() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    Db::run_migrations_up_to(&conn, 76).unwrap();
+    conn.execute_batch(
+        "INSERT INTO books(id, title, author, file_path, format, status, progress, current_cfi, created_at, updated_at, updated_by_device, cover_data)
+         VALUES ('b1', 'Kept title', 'Kept author', 'books/b1.epub', 'epub', 'reading', 37, 'kept-cfi', 1, 9, 'dev-A', X'010203');
+         INSERT INTO highlights(id, book_id, cfi_range, color, text_content, created_at, updated_at, updated_by_device)
+         VALUES ('h1', 'b1', 'kept-range', 'yellow', 'kept passage', 2, 3, 'dev-A');
+         INSERT INTO notes(id, book_id, anchor_kind, location, content, created_at, updated_at, updated_by_device)
+         VALUES ('n1', 'b1', 'selection', 'kept-range', 'kept note', 3, 4, 'dev-A');"
+    ).unwrap();
+    let dump = |conn: &Connection| {
+        ["books", "highlights", "notes"]
+            .into_iter()
+            .map(|table| {
+                let mut stmt = conn
+                    .prepare(&format!("SELECT * FROM {table} ORDER BY id"))
+                    .unwrap();
+                let columns = stmt.column_count();
+                stmt.query_map([], |row| {
+                    (0..columns)
+                        .map(|index| row.get::<_, rusqlite::types::Value>(index))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = dump(&conn);
+    Db::run_migrations_on(&conn).unwrap();
+    assert_eq!(dump(&conn), before);
+    let clocks = crate::sync::book_fields::load(&conn, "b1").unwrap();
+    assert_eq!(clocks.len(), crate::sync::book_fields::FIELDS.len());
+    assert!(clocks
+        .values()
+        .all(|clock| clock.updated_at == 9 && clock.updated_by_device == "dev-A"));
+    apply_to(
+        &mut conn,
+        &[
+            ev(
+                11,
+                "dev-B",
+                EventBody::BookProgressSet {
+                    book: "b1".into(),
+                    progress: 50,
+                    cfi: Some("new-cfi".into()),
+                },
+            ),
+            ev(
+                10,
+                "dev-A",
+                EventBody::BookMetadataSet {
+                    book: "b1".into(),
+                    field: "title".into(),
+                    value: serde_json::json!("new title"),
+                },
+            ),
+        ],
+    );
+    let row = &super::apply::dump_state(&conn).unwrap().books["b1"];
+    assert_eq!(
+        (&row.title[..], row.progress, row.current_cfi.as_deref()),
+        ("new title", 50, Some("new-cfi"))
+    );
+    assert_eq!(dump(&conn)[1..], before[1..]);
+}
+
+#[test]
+fn snapshot_cover_change_invalidates_only_the_replaced_identity() {
+    let old_path = crate::sync::covers::relative_path("b1", b"old cover");
+    let new_path = crate::sync::covers::relative_path("b1", b"new cover");
+    let mut birth = import("b1");
+    if let EventBody::BookImport(payload) = &mut birth {
+        payload.cover_path = Some(old_path);
+    }
+    let birth = ev(1, "dev-A", birth);
+    let changed = ev(
+        10,
+        "dev-A",
+        EventBody::BookMetadataSet {
+            book: "b1".into(),
+            field: "cover_path".into(),
+            value: serde_json::json!(new_path),
+        },
+    );
+    let mut local = open_db();
+    apply_to(&mut local, &[birth.clone()]);
+    local
+        .execute(
+            "UPDATE books SET cover_data = ?1 WHERE id = 'b1'",
+            [b"old cover".as_slice()],
+        )
+        .unwrap();
+    let snapshot = Snapshot::from_events("dev-A", &[birth, changed]).unwrap();
+    let tx = local.transaction().unwrap();
+    snapshot.apply_peer(&tx, "dev-A").unwrap();
+    tx.commit().unwrap();
+    let data: Option<Vec<u8>> = local
+        .query_row("SELECT cover_data FROM books WHERE id = 'b1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(data.is_none());
+    local
+        .execute(
+            "UPDATE books SET cover_data = ?1 WHERE id = 'b1'",
+            [b"new cover".as_slice()],
+        )
+        .unwrap();
+    let tx = local.transaction().unwrap();
+    snapshot.apply_peer(&tx, "dev-A").unwrap();
+    tx.commit().unwrap();
+    let data: Vec<u8> = local
+        .query_row("SELECT cover_data FROM books WHERE id = 'b1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(data, b"new cover");
 }

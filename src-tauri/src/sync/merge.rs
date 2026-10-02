@@ -10,8 +10,8 @@
 //! 2. **LWW updates** (`*.set`, `*.rename`, `*.color.set`, …) compare the
 //!    tuple `(stored.updated_at, stored.updated_by_device)` against
 //!    `(event.ts, event.device)`. Strict-less-than wins; equality means we've
-//!    already applied this exact write. The compare lives in the `WHERE`
-//!    clause so SQLite skips the row in one statement.
+//!    already applied this exact write. Books use independent field clocks;
+//!    other entities compare their row clock in the UPDATE's WHERE clause.
 //! 3. **Deletes** drop the row plus all children manually (explicit
 //!    cascading — the app does not rely on `ON DELETE CASCADE`),
 //!    then `INSERT OR IGNORE` a tombstone keyed `(entity, id)`.
@@ -649,67 +649,60 @@ fn apply_book_asset_delete(tx: &Transaction, event: &Event, id: &str) -> AppResu
     insert_tombstone(tx, entity::BOOK_ASSET, id, event.ts)
 }
 
-fn apply_book_progress(
+pub(crate) fn apply_book_progress(
     tx: &Transaction,
     event: &Event,
     book: &str,
     progress: i32,
     cfi: Option<&str>,
 ) -> AppResult<()> {
+    if !super::book_fields::wins(tx, book, "progress", event.ts, &event.device)? {
+        return Ok(());
+    }
     tx.execute(
-        "UPDATE books
-         SET progress = ?1, current_cfi = ?2, updated_at = ?3, updated_by_device = ?4
-         WHERE id = ?5
-           AND (updated_at < ?3 OR (updated_at = ?3 AND updated_by_device < ?4))",
-        params![progress, cfi, event.ts, event.device, book],
+        "UPDATE books SET progress = ?1, current_cfi = ?2 WHERE id = ?3",
+        params![progress, cfi, book],
     )?;
-    Ok(())
+    super::book_fields::stamp(tx, book, "progress", event.ts, &event.device)
 }
 
-fn apply_book_status(tx: &Transaction, event: &Event, book: &str, status: &str) -> AppResult<()> {
+pub(crate) fn apply_book_status(
+    tx: &Transaction,
+    event: &Event,
+    book: &str,
+    status: &str,
+) -> AppResult<()> {
+    if !super::book_fields::wins(tx, book, "status", event.ts, &event.device)? {
+        return Ok(());
+    }
     tx.execute(
-        "UPDATE books
-         SET status = ?1, updated_at = ?2, updated_by_device = ?3
-         WHERE id = ?4
-           AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
-        params![status, event.ts, event.device, book],
+        "UPDATE books SET status = ?1 WHERE id = ?2",
+        params![status, book],
     )?;
-    Ok(())
+    super::book_fields::stamp(tx, book, "status", event.ts, &event.device)
 }
 
-fn apply_book_metadata(
+pub(crate) fn apply_book_metadata(
     tx: &Transaction,
     event: &Event,
     book: &str,
     field: &str,
     value: &Value,
 ) -> AppResult<()> {
-    // Allowlist — only fields the metadata-set event is allowed to touch.
-    // Unknown fields (e.g. from a future schema) are dropped silently rather
-    // than blowing up a whole replay tick.
     let column = match field {
-        "title" | "author" | "description" | "cover_path" | "genre" | "file_path" => field,
-        "pages" => "pages",
-        _ => {
-            log::warn!("sync: unknown book.metadata.set field {field:?}, skipping");
-            return Ok(());
+        "title" | "author" | "description" | "cover_path" | "genre" | "file_path" | "pages" => {
+            field
         }
+        _ => return Ok(()),
     };
-
-    // Use `<=` rather than `<`: the live `update_book_metadata` command
-    // emits one event per field changed (see Step 3 of the spec), so a
-    // multi-field edit like "rename + author" produces two events with
-    // identical `(ts, device)`. With strict `<` the second would lose the
-    // tuple compare and be silently skipped. `<=` lets every event in the
-    // group land while staying idempotent on re-apply (the column already
-    // holds `value`, so the UPDATE is a no-op write).
-    let sql = format!(
-        "UPDATE books
-         SET {column} = ?1, updated_at = ?2, updated_by_device = ?3
-         WHERE id = ?4
-           AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device <= ?3))"
-    );
-
+    if !super::book_fields::wins(tx, book, field, event.ts, &event.device)? {
+        return Ok(());
+    }
+    let sql = if column == "cover_path" {
+        "UPDATE books SET cover_data = CASE WHEN cover_path IS NOT ?1 THEN NULL ELSE cover_data END, cover_path = ?1 WHERE id = ?2".to_string()
+    } else {
+        format!("UPDATE books SET {column} = ?1 WHERE id = ?2")
+    };
     if column == "pages" {
         let int_val: Option<i64> = match value {
             Value::Null => None,
@@ -717,23 +710,23 @@ fn apply_book_metadata(
             other => {
                 return Err(AppError::Other(format!(
                     "book.metadata.set pages expects number/null, got {other:?}"
-                )));
+                )))
             }
         };
-        tx.execute(&sql, params![int_val, event.ts, event.device, book])?;
+        tx.execute(&sql, params![int_val, book])?;
     } else {
-        let str_val: Option<String> = match value {
+        let str_val = match value {
             Value::Null => None,
-            Value::String(s) => Some(s.clone()),
+            Value::String(s) => Some(s.as_str()),
             other => {
                 return Err(AppError::Other(format!(
                     "book.metadata.set {field} expects string/null, got {other:?}"
-                )));
+                )))
             }
         };
-        tx.execute(&sql, params![str_val, event.ts, event.device, book])?;
+        tx.execute(&sql, params![str_val, book])?;
     }
-    Ok(())
+    super::book_fields::stamp(tx, book, field, event.ts, &event.device)
 }
 
 // ---------------------------------------------------------------------------

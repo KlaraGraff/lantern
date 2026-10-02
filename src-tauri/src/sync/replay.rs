@@ -885,81 +885,7 @@ fn read_outbox(conn: &Connection) -> AppResult<Vec<OutboxRow>> {
 }
 
 fn ingest_peer_covers(shared_dir: &Path, db: &Db) -> usize {
-    let covers_dir = shared_dir.join("covers");
-    let entries = match std::fs::read_dir(&covers_dir) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-
-    // Phase 1: collect candidates — quick SQL check per file, no file I/O.
-    // Recognizes both real files (foo.img) and iCloud placeholders (.foo.img.icloud).
-    let candidates: Vec<(String, std::path::PathBuf)> = {
-        let Ok(conn) = db.read_conn.lock() else {
-            return 0;
-        };
-        entries
-            .flatten()
-            .filter_map(|entry| {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                let (book_id, path) = if let Some(id) = name_str.strip_suffix(".img") {
-                    (id.to_string(), entry.path())
-                } else if name_str.starts_with('.') && name_str.ends_with(".img.icloud") {
-                    let inner = &name_str[1..name_str.len() - 7]; // strip leading '.' and trailing '.icloud'
-                    let id = inner.strip_suffix(".img")?.to_string();
-                    let real_path = covers_dir.join(format!("{id}.img"));
-                    crate::icloud::trigger_download_file(&real_path);
-                    return None; // skip this tick, file will be available next tick
-                } else {
-                    return None;
-                };
-                let has_cover: bool = conn
-                    .query_row(
-                        "SELECT cover_data IS NOT NULL AND LENGTH(cover_data) > 0 FROM books WHERE id = ?1",
-                        rusqlite::params![&book_id],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or(true);
-                if has_cover { None } else { Some((book_id, path)) }
-            })
-            .collect()
-    };
-
-    if candidates.is_empty() {
-        return 0;
-    }
-
-    // Phase 2: read files (no DB lock held — safe if iCloud stalls).
-    let loaded: Vec<(String, Vec<u8>)> = candidates
-        .into_iter()
-        .filter_map(|(id, path)| {
-            std::fs::read(&path)
-                .ok()
-                .filter(|b| !b.is_empty())
-                .map(|b| (id, b))
-        })
-        .collect();
-
-    if loaded.is_empty() {
-        return 0;
-    }
-
-    // Phase 3: brief write lock to store covers.
-    let Ok(conn) = db.conn.lock() else { return 0 };
-    let mut ingested = 0usize;
-    for (book_id, bytes) in &loaded {
-        if conn
-            .execute(
-                "UPDATE books SET cover_data = ?1 WHERE id = ?2 AND (cover_data IS NULL OR LENGTH(cover_data) = 0)",
-                rusqlite::params![bytes, book_id],
-            )
-            .is_ok_and(|n| n > 0)
-        {
-            ingested += 1;
-            ::log::info!("sync: ingested cover for book {book_id}");
-        }
-    }
-    ingested
+    super::covers::ingest(shared_dir, db)
 }
 
 #[derive(Debug)]
@@ -1917,13 +1843,52 @@ mod tests {
     }
 
     #[test]
+    fn existing_fixed_cover_paths_still_hydrate_without_rewriting_the_library() {
+        for stored_path in [None, Some("covers/b1.img"), Some("covers/b1.png")] {
+            let env = setup("self");
+            insert_book_no_cover(&env.conn(), "b1");
+            env.conn()
+                .execute(
+                    "UPDATE books SET cover_path = ?1 WHERE id = 'b1'",
+                    [stored_path],
+                )
+                .unwrap();
+            fs::create_dir_all(env.shared.join("covers")).unwrap();
+            fs::write(
+                env.shared.join(stored_path.unwrap_or("covers/b1.img")),
+                b"existing cover",
+            )
+            .unwrap();
+            assert_eq!(ingest_peer_covers(&env.shared, &env.db), 1);
+            let (path, blob): (Option<String>, Vec<u8>) = env
+                .conn()
+                .query_row(
+                    "SELECT cover_path, cover_data FROM books WHERE id = 'b1'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(path.as_deref(), stored_path);
+            assert_eq!(blob, b"existing cover");
+        }
+    }
+
+    #[test]
     fn ingest_peer_covers_reads_file_into_blob() {
         let env = setup("self");
         insert_book_no_cover(&env.conn(), "b1");
 
         let covers = env.shared.join("covers");
         fs::create_dir_all(&covers).unwrap();
-        fs::write(covers.join("b1.img"), b"\x89PNG fake cover bytes").unwrap();
+        let bytes = b"\x89PNG fake cover bytes";
+        let relative = crate::sync::covers::relative_path("b1", bytes);
+        env.conn()
+            .execute(
+                "UPDATE books SET cover_path = ?1 WHERE id = 'b1'",
+                [&relative],
+            )
+            .unwrap();
+        fs::write(env.shared.join(&relative), bytes).unwrap();
 
         let ingested = ingest_peer_covers(&env.shared, &env.db);
         assert_eq!(ingested, 1, "the one new cover file should be ingested");
@@ -1938,7 +1903,7 @@ mod tests {
     }
 
     #[test]
-    fn ingest_peer_covers_skips_books_that_already_have_a_blob() {
+    fn ingest_peer_covers_retains_the_blob_for_the_current_identity() {
         let env = setup("self");
         {
             let conn = env.conn();
@@ -1952,7 +1917,15 @@ mod tests {
 
         let covers = env.shared.join("covers");
         fs::create_dir_all(&covers).unwrap();
-        fs::write(covers.join("b1.img"), b"newer bytes").unwrap();
+        let old_path = crate::sync::covers::relative_path("b1", b"existing");
+        env.conn()
+            .execute(
+                "UPDATE books SET cover_path = ?1 WHERE id = 'b1'",
+                [&old_path],
+            )
+            .unwrap();
+        let unreferenced = crate::sync::covers::relative_path("b1", b"newer bytes");
+        fs::write(env.shared.join(unreferenced), b"newer bytes").unwrap();
 
         let ingested = ingest_peer_covers(&env.shared, &env.db);
         assert_eq!(
@@ -1978,7 +1951,15 @@ mod tests {
         // yet. Ingestion triggers a download and defers to a later tick.
         let covers = env.shared.join("covers");
         fs::create_dir_all(&covers).unwrap();
-        fs::write(covers.join(".b1.img.icloud"), b"placeholder").unwrap();
+        let relative = crate::sync::covers::relative_path("b1", b"new bytes");
+        env.conn()
+            .execute(
+                "UPDATE books SET cover_path = ?1 WHERE id = 'b1'",
+                [&relative],
+            )
+            .unwrap();
+        let file_name = Path::new(&relative).file_name().unwrap().to_str().unwrap();
+        fs::write(covers.join(format!(".{file_name}.icloud")), b"placeholder").unwrap();
 
         let ingested = ingest_peer_covers(&env.shared, &env.db);
         assert_eq!(
@@ -1996,6 +1977,72 @@ mod tests {
             blob.is_none(),
             "no bytes should be written from a placeholder"
         );
+    }
+
+    #[test]
+    fn changed_cover_converges_in_both_arrival_orders_and_rejects_wrong_bytes() {
+        for file_first in [false, true] {
+            let env = setup("self");
+            let old = b"old cover";
+            let new = b"new cover";
+            let old_path = crate::sync::covers::relative_path("b1", old);
+            let new_path = crate::sync::covers::relative_path("b1", new);
+            {
+                let conn = env.conn();
+                insert_book_no_cover(&conn, "b1");
+                conn.execute(
+                    "UPDATE books SET cover_path = ?1, cover_data = ?2 WHERE id = 'b1'",
+                    params![old_path, old],
+                )
+                .unwrap();
+            }
+            fs::create_dir_all(env.shared.join("covers")).unwrap();
+            fs::write(env.shared.join(&old_path), old).unwrap();
+            if file_first {
+                fs::write(env.shared.join(&new_path), new).unwrap();
+                assert_eq!(ingest_peer_covers(&env.shared, &env.db), 0);
+            }
+            let event = ev(
+                20,
+                "peer-A",
+                EventBody::BookMetadataSet {
+                    book: "b1".into(),
+                    field: "cover_path".into(),
+                    value: serde_json::json!(new_path),
+                },
+            );
+            {
+                let mut conn = env.conn();
+                let tx = conn.transaction().unwrap();
+                merge::apply_event(&tx, &event).unwrap();
+                tx.commit().unwrap();
+            }
+            let blob: Option<Vec<u8>> = env
+                .conn()
+                .query_row("SELECT cover_data FROM books WHERE id = 'b1'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert!(blob.is_none(), "new identity invalidates the old blob");
+            if !file_first {
+                assert_eq!(ingest_peer_covers(&env.shared, &env.db), 0);
+                fs::write(env.shared.join(&new_path), old).unwrap();
+                assert_eq!(
+                    ingest_peer_covers(&env.shared, &env.db),
+                    0,
+                    "same-sized wrong bytes fail the hash"
+                );
+                fs::write(env.shared.join(&new_path), new).unwrap();
+            }
+            assert_eq!(ingest_peer_covers(&env.shared, &env.db), 1);
+            let blob: Vec<u8> = env
+                .conn()
+                .query_row("SELECT cover_data FROM books WHERE id = 'b1'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(blob, new);
+        }
     }
 
     #[test]

@@ -182,6 +182,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (74, include_str!("../migrations/074_vocab_source.sql")),
     (75, include_str!("../migrations/075_ai_api_mode.sql")),
     (76, include_str!("../migrations/076_book_manual_order.sql")),
+    (77, include_str!("../migrations/077_book_field_clocks.sql")),
 ];
 
 fn register_sqlite_vec() {
@@ -639,69 +640,11 @@ impl Db {
     /// 2. Read files from disk (no lock held)
     /// 3. Brief write-conn lock to store each cover
     pub fn backfill_cover_data(&self) {
-        let data_dir = match self.data_dir.lock() {
-            Ok(d) => d.clone(),
-            Err(_) => return,
-        };
-
-        // Phase 1: find candidates via read conn
-        let rows: Vec<(String, String)> = {
-            let Ok(conn) = self.read_conn.lock() else {
-                return;
-            };
-            let Ok(mut stmt) = conn.prepare(
-                "SELECT id, cover_path FROM books
-                 WHERE cover_data IS NULL
-                   AND cover_path IS NOT NULL
-                   AND cover_path != 'none'",
-            ) else {
-                return;
-            };
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-                .into_iter()
-                .flatten()
-                .flatten()
-                .collect()
-        };
-
-        if rows.is_empty() {
+        let Ok(data_dir) = self.data_dir.lock().map(|path| path.clone()) else {
             return;
-        }
-
-        log::info!("db: backfilling cover_data for {} books", rows.len());
-
-        // Process one cover at a time: file I/O remains outside the lock while
-        // avoiding a transient Vec containing every cover in the library.
-        let mut backfilled = 0;
-        for (id, cover_path) in rows {
-            let abs = match crate::sync::validation::resolve_cover_path(&data_dir, &cover_path) {
-                Ok(path) => path,
-                Err(error) => {
-                    log::warn!("db: refusing unsafe cover path for {id}: {error}");
-                    continue;
-                }
-            };
-            let bytes = match fs::read(&abs) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    log::warn!("db: backfill cover_data failed for {id}: {error}");
-                    continue;
-                }
-            };
-            if let Ok(conn) = self.conn.lock() {
-                if conn
-                    .execute(
-                        "UPDATE books SET cover_data = ?1 WHERE id = ?2",
-                        params![bytes, id],
-                    )
-                    .is_ok()
-                {
-                    backfilled += 1;
-                }
-            }
-        }
-
-        log::info!("db: backfilled {backfilled} cover(s)");
+        };
+        let count = crate::sync::covers::ingest(&data_dir, self);
+        log::info!("db: backfilled {count} verified cover(s)");
     }
 
     /// Migrate existing absolute paths in the books table to relative paths.

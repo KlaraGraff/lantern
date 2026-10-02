@@ -311,10 +311,9 @@ impl SyncWriter {
                     // time — see `crate::lifecycle`. Park rather than start
                     // a write the OS is about to freeze halfway through.
                     let _permit = crate::lifecycle::gate().permit();
-                    if let Some(parent) = path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
+                    if let Err(error) = super::covers::publish(&path, &bytes) {
+                        log::warn!("sync: cover publish failed: {error}");
                     }
-                    let _ = std::fs::write(&path, &bytes);
                 }
             })
             .ok();
@@ -380,7 +379,7 @@ impl SyncWriter {
         let Ok(data_dir) = db.data_dir.lock() else {
             return;
         };
-        let path = data_dir.join("covers").join(format!("{book_id}.img"));
+        let path = data_dir.join(super::covers::relative_path(book_id, bytes));
         if let Ok(guard) = self.cover_tx.lock() {
             if let Some(tx) = guard.as_ref() {
                 let _ = tx.send((path, bytes.to_vec()));
@@ -388,24 +387,20 @@ impl SyncWriter {
         }
     }
 
-    /// One-time backfill: ensure every book with `cover_data` in the DB
-    /// has a corresponding `.img` file in the covers directory. Queues
-    /// missing files to the cover-writer thread. Only needed when
-    /// upgrading from schema <13 (before covers-in-db existed).
+    /// Retry publishing current cover blobs after startup or enabling sync.
     pub fn backfill_cover_files(&self, db: &crate::db::Db) {
         let Ok(data_dir) = db.data_dir.lock() else {
             return;
         };
-        let covers_dir = data_dir.join("covers");
 
         let Ok(conn) = db.read_conn.lock() else {
             return;
         };
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id, cover_data FROM books WHERE cover_data IS NOT NULL AND LENGTH(cover_data) > 0",
+            "SELECT id, cover_path, cover_data FROM books WHERE cover_data IS NOT NULL AND LENGTH(cover_data) > 0",
         ) else { return };
-        let rows: Vec<(String, Vec<u8>)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        let rows: Vec<(String, Option<String>, Vec<u8>)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .into_iter()
             .flatten()
             .flatten()
@@ -419,9 +414,13 @@ impl SyncWriter {
         let Some(tx) = guard.as_ref() else { return };
 
         let mut queued = 0usize;
-        for (id, bytes) in rows {
-            let path = covers_dir.join(format!("{id}.img"));
-            if !path.exists() {
+        for (id, stored_path, bytes) in rows {
+            let relative = stored_path.unwrap_or_else(|| format!("covers/{id}.img"));
+            if !super::covers::matches(&id, &relative, &bytes) {
+                continue;
+            }
+            let path = data_dir.join(&relative);
+            if std::fs::read(&path).ok().as_deref() != Some(bytes.as_slice()) {
                 let _ = tx.send((path, bytes));
                 queued += 1;
             }
@@ -571,6 +570,9 @@ impl SyncWriter {
             let tx = conn.unchecked_transaction()?;
             let mut events: Vec<EventBody> = Vec::new();
             let result = f(&tx, &mut events)?;
+            for body in &events {
+                super::book_fields::stamp_local_event(&tx, body, ts, self.self_device())?;
+            }
 
             if should_queue && !events.is_empty() {
                 // `created_at` is just bookkeeping for the outbox row's

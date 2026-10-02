@@ -82,6 +82,7 @@ pub struct SnapshotState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookRow {
+    pub field_clocks: BTreeMap<String, crate::sync::book_fields::FieldClock>,
     pub title: String,
     pub author: String,
     pub description: Option<String>,

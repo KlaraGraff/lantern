@@ -8,6 +8,7 @@
 //! - `sync_remove_peer` — remove a peer's log/snapshot/manifest.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -862,7 +863,7 @@ pub(crate) fn reconcile_local_blobs_to_ubiquity(
     Ok(())
 }
 
-/// Copy every entry from `src` to `dst`, skipping clashes. Skipped
+/// Copy every entry from `src` to `dst`, replacing incomplete or stale copies. Skipped
 /// when `src` doesn't exist.
 ///
 /// **iCloud placeholder handling:** evicted iCloud entries appear in
@@ -907,12 +908,6 @@ fn copy_dir_contents_with_progress(
                 AppError::Other(format!("invalid iCloud file path: {}", real.display()))
             })?;
             let target = dst.join(file_name);
-            if target.exists() {
-                if let Some(p) = progress.as_deref_mut() {
-                    p.complete("skipped", Some(display_file_name(&target)));
-                }
-                continue;
-            }
             if let Some(p) = progress.as_deref() {
                 p.emit("downloading", Some(display_file_name(&real)));
             }
@@ -932,7 +927,7 @@ fn copy_one_disable_file(
     progress: Option<&mut DisableCopyProgressEmitter>,
 ) -> AppResult<()> {
     let name = display_file_name(src);
-    if dst.exists() {
+    if disable_files_match(src, dst)? {
         if let Some(p) = progress {
             p.complete("skipped", Some(name));
         }
@@ -941,10 +936,61 @@ fn copy_one_disable_file(
     if let Some(p) = progress.as_deref() {
         p.emit("copying", Some(name.clone()));
     }
-    fs::copy(src, dst)?;
+    atomic_copy_disable_file(src, dst, |source, temporary| {
+        std::io::copy(&mut fs::File::open(source)?, temporary)
+    })?;
     if let Some(p) = progress {
         p.complete("copying", Some(name));
     }
+    Ok(())
+}
+
+// Existence and length cannot distinguish a complete copy from an interrupted
+// or stale one. Keep memory bounded even for large PDFs.
+fn disable_files_match(src: &Path, dst: &Path) -> std::io::Result<bool> {
+    let mut source = fs::File::open(src)?;
+    let mut destination = match fs::File::open(dst) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let mut remaining = source.metadata()?.len();
+    if remaining != destination.metadata()?.len() {
+        return Ok(false);
+    }
+    let mut source_buffer = [0; 64 * 1024];
+    let mut destination_buffer = [0; 64 * 1024];
+    while remaining > 0 {
+        let count = remaining.min(source_buffer.len() as u64) as usize;
+        source.read_exact(&mut source_buffer[..count])?;
+        destination.read_exact(&mut destination_buffer[..count])?;
+        if source_buffer[..count] != destination_buffer[..count] {
+            return Ok(false);
+        }
+        remaining -= count as u64;
+    }
+    Ok(source.read(&mut source_buffer[..1])? == 0
+        && destination.read(&mut destination_buffer[..1])? == 0)
+}
+
+fn atomic_copy_disable_file(
+    src: &Path,
+    dst: &Path,
+    copy: impl FnOnce(&Path, &mut fs::File) -> std::io::Result<u64>,
+) -> AppResult<()> {
+    let parent = dst
+        .parent()
+        .ok_or_else(|| AppError::Other(format!("invalid local copy path: {}", dst.display())))?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    copy(src, temporary.as_file_mut())?;
+    temporary.as_file().sync_all()?;
+    if !disable_files_match(src, temporary.path())? {
+        return Err(AppError::Other(format!(
+            "Cannot disable sync: copied file failed verification: {}",
+            src.display()
+        )));
+    }
+    temporary.persist(dst).map_err(|error| error.error)?;
     Ok(())
 }
 
@@ -1159,6 +1205,8 @@ mod tests {
         let dst = tmp.path().join("local");
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join(".evicted.epub.icloud"), b"stub").unwrap();
+        fs::create_dir_all(&dst).unwrap();
+        fs::write(dst.join("evicted.epub"), b"stale copy").unwrap();
 
         let real = src.join("evicted.epub");
         let real_for_hook = real.clone();
@@ -1201,6 +1249,64 @@ mod tests {
         copy_dir_contents(&src, &dst).unwrap();
         assert!(dst.join("a.epub").exists());
         assert!(src.join("a.epub").exists(), "copy must not delete source");
+    }
+
+    #[test]
+    fn disable_copy_replaces_partial_and_same_length_stale_destinations() {
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("source.epub");
+        let destination = tmp.path().join("local.epub");
+        fs::write(&source, b"complete book").unwrap();
+        for stale in [b"partial".as_slice(), b"wrong content".as_slice()] {
+            fs::write(&destination, stale).unwrap();
+            copy_one_disable_file(&source, &destination, None).unwrap();
+            assert_eq!(fs::read(&destination).unwrap(), b"complete book");
+            assert_eq!(fs::read(&source).unwrap(), b"complete book");
+        }
+    }
+
+    #[test]
+    fn disable_copy_interruption_preserves_destination_and_retry_succeeds() {
+        use std::io::Write;
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("source.epub");
+        let destination = tmp.path().join("local.epub");
+        fs::write(&source, b"complete book").unwrap();
+        for previous in [None, Some(b"previous book".as_slice())] {
+            if let Some(bytes) = previous {
+                fs::write(&destination, bytes).unwrap();
+            } else if destination.exists() {
+                fs::remove_file(&destination).unwrap();
+            }
+            let result = atomic_copy_disable_file(&source, &destination, |_, temporary| {
+                temporary.write_all(b"partial")?;
+                Err(std::io::Error::other("injected interruption"))
+            });
+            assert!(result.is_err());
+            assert_eq!(fs::read(&destination).ok().as_deref(), previous);
+            assert_eq!(
+                fs::read_dir(tmp.path()).unwrap().count(),
+                1 + usize::from(previous.is_some())
+            );
+            copy_one_disable_file(&source, &destination, None).unwrap();
+            assert_eq!(fs::read(&destination).unwrap(), b"complete book");
+            assert_eq!(fs::read(&source).unwrap(), b"complete book");
+        }
+    }
+
+    #[test]
+    fn disable_copy_rejects_incomplete_success_before_publish() {
+        use std::io::Write;
+        let tmp = TempDir::new().unwrap();
+        let source = tmp.path().join("source.epub");
+        let destination = tmp.path().join("local.epub");
+        fs::write(&source, b"complete book").unwrap();
+        let result = atomic_copy_disable_file(&source, &destination, |_, temporary| {
+            temporary.write_all(b"partial")?;
+            Ok(7)
+        });
+        assert!(result.is_err());
+        assert!(!destination.exists());
     }
 
     /// Regression for PR #193's review finding: enabling sync on a

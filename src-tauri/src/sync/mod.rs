@@ -19,6 +19,8 @@
 //! once every symbol has a non-test caller.
 #![allow(dead_code)]
 
+pub(crate) mod book_fields;
+pub(crate) mod covers;
 pub mod device;
 pub mod events;
 pub mod icloud_query;

@@ -16,8 +16,9 @@
 //! ```
 //!
 //! `apply_peer` is the inverse: ingest a peer's snapshot into local SQLite
-//! under the same merge rules as `merge::apply_event`. Per-row LWW (compare
-//! `(updated_at, updated_by_device)` tuples), tombstones win over inserts,
+//! under the same merge rules as `merge::apply_event`: books merge per field,
+//! other entities per row using `(updated_at, updated_by_device)` tuples.
+//! Tombstones win over inserts,
 //! `_replay_state` watermarks are updated monotonically. See Step 6 of
 //! `docs/impls/sync/31-sync.md` for the apply procedure.
 
@@ -48,7 +49,8 @@ pub const COMPACT_AGE_THRESHOLD_MS: i64 = 30 * 24 * 60 * 60 * 1_000; // 30 days
 /// know the entity name and rejects the whole snapshot in
 /// `validate_tombstone_entity`; moving the constant makes it reject the envelope
 /// up front instead, which is the same outcome named honestly.
-pub const SNAPSHOT_SCHEMA_VERSION: u32 = 9;
+// Version 10 carries book field clocks for lossless field-wise merging.
+pub const SNAPSHOT_SCHEMA_VERSION: u32 = 10;
 pub const MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 

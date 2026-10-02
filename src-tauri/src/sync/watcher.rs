@@ -502,7 +502,17 @@ mod tests {
         let handle = spawn(shared_dir.path().to_path_buf(), db.clone(), engine).unwrap();
         thread::sleep(Duration::from_millis(100));
 
-        fs::write(covers_dir.join("b1.img"), b"\x89PNG cover bytes").unwrap();
+        let bytes = b"\x89PNG cover bytes";
+        let relative = crate::sync::covers::relative_path("b1", bytes);
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE books SET cover_path = ?1 WHERE id = 'b1'",
+                [&relative],
+            )
+            .unwrap();
+        fs::write(shared_dir.path().join(relative), bytes).unwrap();
         handle.drain_for_test(Duration::from_millis(1500));
 
         let blob: Option<Vec<u8>> = db

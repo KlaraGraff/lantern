@@ -165,6 +165,7 @@ impl Snapshot {
             "SYNC_SNAPSHOT_ENVELOPE_INVALID",
         )?;
         for (id, book) in &self.state.books {
+            crate::sync::book_fields::validate(&book.field_clocks)?;
             validation::validate_entity_id(id)?;
             validation::validate_book_file_path(&book.file_path)?;
             if let Some(path) = book.cover_path.as_deref() {
@@ -562,6 +563,86 @@ impl Snapshot {
 // ---------------------------------------------------------------------------
 
 pub(super) fn upsert_book(tx: &Transaction, id: &str, r: &BookRow) -> AppResult<()> {
+    use crate::sync::book_fields;
+    use crate::sync::events::{EventBody, EVENT_SCHEMA_VERSION};
+    book_fields::validate(&r.field_clocks)?;
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM books WHERE id = ?1)",
+        [id],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        upsert_book_source(tx, id, r)?;
+        for (field, clock) in &r.field_clocks {
+            book_fields::stamp(tx, id, field, clock.updated_at, &clock.updated_by_device)?;
+        }
+        return Ok(());
+    }
+    for (field, clock) in &r.field_clocks {
+        if !book_fields::wins(tx, id, field, clock.updated_at, &clock.updated_by_device)? {
+            continue;
+        }
+        if field == "source" {
+            upsert_book_source(tx, id, r)?;
+            book_fields::stamp(tx, id, field, clock.updated_at, &clock.updated_by_device)?;
+            continue;
+        }
+        let body = match field.as_str() {
+            "progress" => EventBody::BookProgressSet {
+                book: id.into(),
+                progress: r.progress,
+                cfi: r.current_cfi.clone(),
+            },
+            "status" => EventBody::BookStatusSet {
+                book: id.into(),
+                status: r.status.clone(),
+            },
+            _ => {
+                let value = match field.as_str() {
+                    "title" => serde_json::json!(r.title),
+                    "author" => serde_json::json!(r.author),
+                    "description" => serde_json::json!(r.description),
+                    "cover_path" => serde_json::json!(r.cover_path),
+                    "genre" => serde_json::json!(r.genre),
+                    "pages" => serde_json::json!(r.pages),
+                    _ => unreachable!("validated book field"),
+                };
+                EventBody::BookMetadataSet {
+                    book: id.into(),
+                    field: field.clone(),
+                    value,
+                }
+            }
+        };
+        let event = Event {
+            id: String::new(),
+            ts: clock.updated_at,
+            device: clock.updated_by_device.clone(),
+            v: EVENT_SCHEMA_VERSION,
+            body,
+            extra: Default::default(),
+        };
+        match &event.body {
+            EventBody::BookProgressSet { progress, cfi, .. } => {
+                merge::apply_book_progress(tx, &event, id, *progress, cfi.as_deref())?
+            }
+            EventBody::BookStatusSet { status, .. } => {
+                merge::apply_book_status(tx, &event, id, status)?
+            }
+            EventBody::BookMetadataSet { field, value, .. } => {
+                merge::apply_book_metadata(tx, &event, id, field, value)?
+            }
+            _ => unreachable!(),
+        }
+    }
+    tx.execute(
+        "UPDATE books SET created_at = MIN(created_at, ?2) WHERE id = ?1",
+        params![id, r.created_at],
+    )?;
+    Ok(())
+}
+
+fn upsert_book_source(tx: &Transaction, id: &str, r: &BookRow) -> AppResult<()> {
     tx.execute(
         "INSERT INTO books
          (id, title, author, description, cover_path, file_path, genre, pages,
@@ -573,13 +654,7 @@ pub(super) fn upsert_book(tx: &Transaction, id: &str, r: &BookRow) -> AppResult<
                       ELSE 'ready' END, NULL,
                  ?15, ?16, ?17, ?18, ?19, ?20)
          ON CONFLICT(id) DO UPDATE SET
-           title=excluded.title,
-           author=excluded.author,
-           description=excluded.description,
-           cover_path=excluded.cover_path,
            file_path=excluded.file_path,
-           genre=excluded.genre,
-           pages=excluded.pages,
            format=excluded.format,
            source_format=excluded.source_format,
            render_format=excluded.render_format,
@@ -614,13 +689,7 @@ pub(super) fn upsert_book(tx: &Transaction, id: &str, r: &BookRow) -> AppResult<
              THEN NULL
              ELSE books.preparation_error
            END,
-           status=excluded.status,
-           progress=excluded.progress,
-           current_cfi=excluded.current_cfi,
-           updated_at=excluded.updated_at,
-           updated_by_device=excluded.updated_by_device
-         WHERE (books.updated_at, books.updated_by_device)
-             < (excluded.updated_at, excluded.updated_by_device)",
+           created_at=MIN(books.created_at, excluded.created_at)",
         params![
             id, r.title, r.author, r.description, r.cover_path, r.file_path,
             r.genre, r.pages, r.format, r.source_format, r.render_format,
@@ -1262,6 +1331,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
         Ok((
             r.get::<_, String>("id")?,
             BookRow {
+                field_clocks: Default::default(),
                 title: r.get("title")?,
                 author: r.get("author")?,
                 description: r.get("description")?,
@@ -1286,7 +1356,8 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
         ))
     })?;
     for row in rows {
-        let (id, b) = row?;
+        let (id, mut b) = row?;
+        b.field_clocks = crate::sync::book_fields::load(conn, &id)?;
         state.books.insert(id, b);
     }
     drop(stmt);

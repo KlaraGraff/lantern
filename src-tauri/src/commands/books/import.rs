@@ -435,6 +435,7 @@ fn do_insert_book(
     local: LocalOnlyColumns<'_>,
 ) -> AppResult<()> {
     let device = sync.self_device().to_string();
+    let cover_path = cover_bytes.map(|bytes| crate::sync::covers::relative_path(&book.id, bytes));
     sync.with_tx(db, now, |tx, events| {
         tx.execute(
             "INSERT INTO books (id, title, author, description, cover_path, file_path, format, source_format, render_format, source_file_path, source_sha256, conversion_version, preparation_state, preparation_error, genre, pages, status, progress, current_cfi, created_at, updated_at, updated_by_device, cover_data, language, original_title, original_author)
@@ -444,7 +445,7 @@ fn do_insert_book(
                 book.title,
                 book.author,
                 book.description,
-                book.cover_path,
+                cover_path,
                 book.file_path,
                 book.format,
                 book.source_format.as_deref().unwrap_or(&book.format),
@@ -473,7 +474,7 @@ fn do_insert_book(
             title: book.title.clone(),
             author: book.author.clone(),
             description: book.description.clone(),
-            cover_path: book.cover_path.clone(),
+            cover_path: cover_path.clone(),
             file_path: book.file_path.clone(),
             format: book.format.clone(),
             source_format: book.source_format.clone(),
