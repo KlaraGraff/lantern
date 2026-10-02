@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { build } from "esbuild";
+import { runInNewContext } from "node:vm";
 
 import {
   SETTINGS_ROOT_ROWS,
@@ -129,4 +131,23 @@ test("every root row arrives with an icon, its own or its section's", () => {
   assert.notEqual(services[0].icon, services[1].icon);
   const reading = SETTINGS_ROOT_ROWS.find((row) => row.id === "reading");
   assert.equal(reading?.icon, SETTINGS_SECTIONS.reading.icon);
+});
+
+
+test("library navigation and pane copy match the platform's actual sync capability", async () => {
+  for (const hasFolderSync of [false, true]) {
+    const result = await build({
+      entryPoints: ["src/components/settings/settings-sections.ts"],
+      bundle: true, write: false, format: "cjs", platform: "node", external: ["lucide-react"],
+      plugins: [{ name: "platform-capability", setup(builder) {
+        builder.onResolve({ filter: /services\/platform\.ts$/ }, () => ({ path: "platform", namespace: "mock" }));
+        builder.onLoad({ filter: /.*/, namespace: "mock" }, () => ({ contents: `export const platform = { hasFolderSync: ${hasFolderSync} };` }));
+      } }],
+    });
+    const module = { exports: {} as typeof import("../src/components/settings/settings-sections.ts") };
+    runInNewContext(result.outputFiles[0].text, { module, exports: module.exports, require: () => ({}) });
+    const library = module.exports.SETTINGS_SECTIONS.library;
+    assert.equal(library.labelKey, hasFolderSync ? "settings.library.title" : "settings.library.titleNoSync");
+    assert.equal(library.subtitleKey, hasFolderSync ? "settings.library.subtitle" : "settings.library.subtitleNoSync");
+  }
 });

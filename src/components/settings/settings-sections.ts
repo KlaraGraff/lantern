@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SettingsSection, SettingsView } from "../settings-destination";
+import { platform } from "../../services/platform.ts";
 
 /**
  * The single declarative source for every settings section: what it's called,
@@ -171,8 +172,8 @@ export const SETTINGS_SECTIONS: Record<SettingsSection, SettingsSectionMeta> = {
   library: {
     group: "library",
     icon: Library,
-    labelKey: "settings.library.title",
-    subtitleKey: "settings.library.subtitle",
+    labelKey: platform.hasFolderSync ? "settings.library.title" : "settings.library.titleNoSync",
+    subtitleKey: platform.hasFolderSync ? "settings.library.subtitle" : "settings.library.subtitleNoSync",
     // 书籍来源 + 书库同步 merged into one section, so the phone gets one root
     // row for it instead of two.
     rootRows: [{ id: "library", skeletonWidth: 66 }],
