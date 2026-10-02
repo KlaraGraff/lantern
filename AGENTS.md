@@ -39,15 +39,15 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
 ## Subagent Dispatch
 
 - Explicitly set both model and reasoning effort for every subagent; do not inherit the parent session's settings by default.
-- Use the following task-based defaults and minimums. Do not use `gpt-6-luna` for delegated work.
+- Default to `gpt-6.1-sol` for delegated work. Use the following task-based reasoning defaults and minimums; do not use `gpt-6-luna`.
 
 | Task | Model | Reasoning effort |
 | --- | --- | --- |
 | Read-only code search, call-chain summaries, information gathering, existing test execution | `gpt-6.1-sol` minimum | `low` minimum |
 | Implementation, bug fixes, refactoring, optimization, test changes | `gpt-6.1-sol` minimum | `medium` minimum |
-| Review, design, tradeoff analysis, complex diagnosis or high-risk implementation | `gpt-6-astra` | `high` minimum |
+| Review, design, tradeoff analysis, complex diagnosis or high-risk implementation | `gpt-6.1-sol` | `high` minimum |
 
-- Escalate an individual task when needed instead of assigning every subagent the most expensive configuration. Keep cross-source synthesis and final judgment in the main conversation.
+- Use `xhigh` only when the task's risk or lack of machine-verifiable acceptance justifies it. Enable `gpt-6-astra` only when the user explicitly requests it or when a specific task cannot progress with `gpt-6.1-sol`; do not make Astra the default. Escalate an individual task when needed instead of assigning every subagent the most expensive configuration. Keep cross-source synthesis and final judgment in the main conversation.
 - Subagents must not stage, commit, push, or publish. The main agent reviews their changes and validation results, requests follow-up work as needed, and handles focused commits under this guide.
 
 ## Commands
