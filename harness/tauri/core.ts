@@ -2,8 +2,8 @@
  * Mock of `@tauri-apps/api/core`.
  *
  * `invoke` resolves in three steps:
- *   1. a hand-written fixture (`invoke-fixtures.ts`), for the ~40 commands that
- *      gate rendering;
+ *   1. a hand-written fixture (`invoke-fixtures.ts`), for explicitly modeled
+ *      rendering and interaction paths;
  *   2. a deliberate rejection, for the handful that would need a live network
  *      (AI, speech, dictionary) — recorded separately so the sweep never counts
  *      them as app bugs;
@@ -17,7 +17,7 @@ import { hasFixture, resolveFixture, DELIBERATE_REJECTIONS } from "../invoke-fix
 import { stubValueFor } from "../shape-defaults";
 import { harness, recordCall } from "../state";
 import { macrotask } from "../task";
-import { collectBoundaryDiagnostic } from "../collectors";
+import { collectBoundaryDiagnostic, context } from "../collectors";
 
 export type InvokeArgs = Record<string, unknown>;
 
@@ -30,6 +30,14 @@ export function invoke<T = unknown>(command: string, args?: InvokeArgs): Promise
   const callArgs = args ?? {};
   recordCall(command, callArgs);
   collectBoundaryDiagnostic(command, callArgs);
+  // Capture the initiating route/action, before the asynchronous response can
+  // be attributed to whichever page happens to be visible next.
+  if (!hasFixture(command) && !DELIBERATE_REJECTIONS[command]) {
+    const gap = { command, route: location.pathname, action: context.action, status: "not-covered" as const };
+    if (!harness.coverageGaps.some((item) => item.command === gap.command && item.route === gap.route && item.action === gap.action)) {
+      harness.coverageGaps.push(gap);
+    }
+  }
 
   return new Promise<T>((resolve, reject) => {
     void macrotask().then(() => {

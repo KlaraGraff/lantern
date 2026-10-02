@@ -86,7 +86,8 @@ export const BOOKS: HarnessBook[] = [
     pages: 284,
     status: "reading",
     progress: 37,
-    current_cfi: "epubcfi(/6/4!/4/2/2[chapter]/2)",
+    // The served compatibility EPUB has one spine item; resume inside its paragraph.
+    current_cfi: "epubcfi(/6/2!/4/4/1:8)",
     created_at: ago(40),
     updated_at: ago(1),
     available: true,

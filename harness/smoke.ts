@@ -42,8 +42,9 @@
  */
 import { context, getFaults, hiddenTabResizeNoiseCount, type Fault } from "./collectors";
 import { BOOKS } from "./fixture-data";
-import { harness } from "./state";
+import { harness, type CoverageGap } from "./state";
 import { sleep } from "./task";
+import { inspectReader, readerHasLayout, readerIsReady, type ReaderEvidence } from "./reader-proof";
 
 /* ------------------------------------------------------------------ *
  * Tunables
@@ -120,6 +121,9 @@ export interface SmokeReport {
   durationMs: number;
   errorBoundary: string | null;
   readerRendered: boolean;
+  mode: "route-sweep" | "reader-visible";
+  coverageGaps: CoverageGap[];
+  readerEvidence?: ReaderEvidence;
   notes: string[];
   /** How many times a fatal render forced the sweep to reload and resume. */
   restarts: number;
@@ -157,6 +161,7 @@ const MAX_RESTARTS = 12;
  * friends back or it resumes against a different app.
  */
 const bootSearch = location.search;
+const readerOnly = new URLSearchParams(bootSearch).get("smoke") === "reader";
 
 interface ResumeState {
   visited: string[];
@@ -173,6 +178,7 @@ interface ResumeState {
   startedAt: number;
   /** Default-stubbed commands seen so far; a reload resets the mock's own set. */
   unstubbedAll: string[];
+  coverageGaps?: CoverageGap[];
 }
 
 function loadResume(): ResumeState | null {
@@ -220,6 +226,8 @@ const report: SmokeReport = {
   durationMs: 0,
   errorBoundary: null,
   readerRendered: resumed?.readerRendered ?? false,
+  mode: readerOnly ? "reader-visible" : "route-sweep",
+  coverageGaps: resumed?.coverageGaps ?? [],
   notes: resumed?.notes ?? [],
   restarts,
   unstubbedAll: resumed?.unstubbedAll ?? [],
@@ -247,6 +255,7 @@ function snapshot(): ResumeState {
     restarts,
     startedAt,
     unstubbedAll: [...new Set([...report.unstubbedAll, ...harness.unstubbed])].sort(),
+    coverageGaps: [...report.coverageGaps, ...harness.coverageGaps],
   };
 }
 
@@ -660,29 +669,39 @@ interface FoliateView extends Element {
  * finds it.
  *
  * Returns a verdict rather than a bare boolean, because "the book never loaded"
- * and "the book loaded but the browser refused to lay it out" are different
- * facts and only one of them is about the app.
+ * and "the book loaded without observed body layout" are different facts.
+ * Background observations cannot establish why layout was absent.
  */
 async function waitForReader(): Promise<{ painted: boolean; note: string }> {
   const deadline = Date.now() + READER_SETTLE_MAX_MS;
   let loaded = false;
+  let frames = 0;
+  let frame = 0;
+  const tick = () => {
+    const evidence = inspectReader(0);
+    frames = readerHasLayout(evidence) ? frames + 1 : 0;
+    report.readerEvidence = { ...evidence, animationFrames: frames };
+    frame = requestAnimationFrame(tick);
+  };
+  if (readerOnly) { report.readerEvidence = inspectReader(0); frame = requestAnimationFrame(tick); }
   while (Date.now() < deadline) {
     const view = document.querySelector("foliate-view") as FoliateView | null;
     if (view?.book) loaded = true;
     const contents = view?.renderer?.getContents?.() ?? [];
     const doc = contents[0]?.doc;
-    if (doc && (doc.body?.textContent ?? "").trim().length > 0) {
+    if (readerOnly ? readerIsReady(report.readerEvidence!) : doc && (doc.body?.textContent ?? "").trim().length > 0) {
+      cancelAnimationFrame(frame);
       return { painted: true, note: "reader: book content painted through foliate-js" };
     }
     await sleep(200);
   }
+  cancelAnimationFrame(frame);
   if (loaded && document.hidden) {
     return {
       painted: false,
       note:
-        "reader: foliate opened the book but painted nothing — document.hidden is true, " +
-        "and the paginator lays out on ResizeObserver/rAF, which browsers do not run for " +
-        "hidden documents. Not an app fault; run the sweep in a visible window to cover it.",
+        "reader: book loaded but no body layout was observed in this hidden document; " +
+        "reader rendering remains unverified until the independent foreground check passes.",
     };
   }
   return {
@@ -699,6 +718,7 @@ async function waitForReader(): Promise<{ painted: boolean; note: string }> {
 
 /** Every route the sweep walks, in order. */
 function routes(): string[] {
+  if (readerOnly) return [`/reader/${BOOKS[0].id}`];
   return [
     "/",
     `/book/${BOOKS[0].id}`,
@@ -741,8 +761,10 @@ export async function runSmoke(): Promise<SmokeReport> {
         harvestFaults(false);
       }
 
-      await sweepScope(document, 0, route);
-      await sweepSettings(route);
+      if (!readerOnly) {
+        await sweepScope(document, 0, route);
+        await sweepSettings(route);
+      }
     }
   } catch (error) {
     if (error instanceof Error && error.message === "__smoke_restart__") throw error;
@@ -754,9 +776,10 @@ export async function runSmoke(): Promise<SmokeReport> {
   }
 
   // Back to the library so a human landing on the page afterwards sees it.
-  await goto("/");
+  if (!readerOnly) await goto("/");
   harvestFaults(false);
 
+  report.coverageGaps = [...report.coverageGaps, ...harness.coverageGaps];
   report.unstubbed = [...harness.unstubbed].sort();
   report.unstubbedAll = [...new Set([...report.unstubbedAll, ...report.unstubbed])].sort();
   report.rejectedByHarness = [...harness.rejected].sort();

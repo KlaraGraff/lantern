@@ -28,7 +28,7 @@ if (params.get("shot")) {
   });
 }
 
-if (params.get("smoke") === "1") {
+if (["1", "reader"].includes(params.get("smoke") ?? "")) {
   // Load the sweep lazily so a plain harness run (no `?smoke=1`) does not pay
   // for it, and start it only once the app has had its first paint.
   window.addEventListener("load", () => {

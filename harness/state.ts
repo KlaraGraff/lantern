@@ -12,7 +12,15 @@ export interface HarnessInvokeRecord {
   at: number;
 }
 
+export interface CoverageGap {
+  command: string;
+  route: string;
+  action: string | null;
+  status: "not-covered";
+}
+
 export interface HarnessState {
+  coverageGaps: CoverageGap[];
   /** Commands answered by the default stub rather than a hand-written fixture. */
   unstubbed: Set<string>;
   /** Commands a fixture deliberately rejected (never counted as an app bug). */
@@ -35,6 +43,7 @@ const MAX_CALLS = 4000;
 
 function create(): HarnessState {
   return {
+    coverageGaps: [],
     unstubbed: new Set<string>(),
     rejected: new Set<string>(),
     calls: [],

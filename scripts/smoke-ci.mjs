@@ -31,7 +31,7 @@ import { gate } from "../harness/smoke-gate.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 1440;
 const ORIGIN = `http://localhost:${PORT}`;
-const reportPath = (layout) => join(root, "dist", `smoke-report-${layout.name}.json`);
+const reportPath = (layout, readerOnly = false) => join(root, "dist", `smoke-report-${layout.name}${readerOnly ? "-reader" : ""}.json`);
 
 /**
  * Both layouts, because they are different applications.
@@ -312,7 +312,7 @@ async function backgroundTheSweepTab(port) {
  * The sweep
  * ------------------------------------------------------------------ */
 
-async function runSweep(layout) {
+async function runSweep(layout, readerOnly = false) {
   const chromeBin = findChrome();
   const profile = await mkdtemp(join(tmpdir(), "lantern-smoke-"));
   const args = [
@@ -349,15 +349,17 @@ async function runSweep(layout) {
 
     // Before navigating, so the collectors are installed in an already-hidden
     // document rather than seeing the boot frames as visible.
-    await backgroundTheSweepTab(port);
+    if (!readerOnly) await backgroundTheSweepTab(port);
+    else await cdp.send("Page.bringToFront");
 
-    await cdp.send("Page.navigate", { url: `${ORIGIN}/?smoke=1` });
+    await cdp.send("Page.navigate", { url: `${ORIGIN}/?smoke=${readerOnly ? "reader" : "1"}` });
 
     // Assert it rather than assume it. If a future Chrome stops honouring tab
     // visibility in headless, the symptom is thousands of ResizeObserver
     // faults and a red build with no obvious cause — so say it here instead.
     const hidden = await cdp.evaluate("document.hidden === true");
-    if (!hidden) {
+    if (readerOnly && hidden) throw new Error("Reader proof requires a visible foreground document");
+    if (!readerOnly && !hidden) {
       console.warn(
         "! the sweep tab is visible; expect ResizeObserver noise.\n" +
           "  See backgroundTheSweepTab() — the throwaway foreground tab did not take.",
@@ -379,7 +381,7 @@ async function runSweep(layout) {
       );
     }
     console.log(
-      `· sweeping ${layout.name} (${width}x${height}, tab hidden: ${hidden}) …`,
+      `· ${readerOnly ? "reader proof" : "sweeping"} ${layout.name} (${width}x${height}, tab hidden: ${hidden}) …`,
     );
 
     const startedAt = Date.now();
@@ -478,6 +480,13 @@ function summarize(report) {
   console.log(`  unstubbed cmds   ${report.unstubbedAll.length}  (harness gap, not app bugs)`);
   console.log(`  restarts         ${report.restarts}`);
   console.log(`  reader painted   ${report.readerRendered}`);
+  if (report.readerEvidence) console.log(`  reader evidence  ${JSON.stringify(report.readerEvidence)}`);
+  const gaps = report.coverageGaps ?? [];
+  if (gaps.length) {
+    console.log("  backend behavior NOT COVERED for these default-stubbed route/command pairs:");
+    const pairs = new Set(gaps.map((gap) => `${gap.route} :: ${gap.command}`));
+    for (const pair of pairs) console.log(`    - ${pair}`);
+  }
   console.log(`  duration         ${(report.durationMs / 1000).toFixed(1)}s`);
   console.log(`  errors           ${report.errors.length}`);
 
@@ -530,33 +539,36 @@ try {
   // Sequential, not parallel: two Chromes sweeping one dev server would race
   // for it, and the sweep's own timing budgets are tuned for an idle machine.
   for (const layout of layouts) {
-    const report = await runSweep(layout);
-    summarize(report);
+    for (const readerOnly of process.argv.includes("--reader-only") ? [true] : [false, true]) {
+      const report = await runSweep(layout, readerOnly);
+      summarize(report);
 
-    const path = reportPath(layout);
-    writeFileSync(path, JSON.stringify(report, null, 2));
-    console.log(`· full ${layout.name} report written to ${path.replace(`${root}/`, "")}`);
+      const path = reportPath(layout, readerOnly);
+      writeFileSync(path, JSON.stringify(report, null, 2));
+      console.log(`· full ${layout.name} report written to ${path.replace(`${root}/`, "")}`);
 
-    const { failures, warnings } = gate(report);
-    if (warnings.length) {
-      console.log(`· ${warnings.length} non-failing console diagnostic(s) recorded`);
+      const { failures, warnings } = gate(report);
+      if (warnings.length) {
+        console.log(`· ${warnings.length} non-failing console diagnostic(s) recorded`);
+      }
+      if (failures.length) {
+        console.error(`\n✗ ${layout.name} FAILED — ${failures.length} error(s) that must not merge`);
+        exitCode = 1;
+      } else if (!report.visited.length) {
+        // A sweep that reached nothing is green for the wrong reason.
+        console.error(`\n✗ ${layout.name} FAILED — the sweep visited no routes at all`);
+        exitCode = 1;
+      } else {
+        console.log(`✓ ${layout.name} ${readerOnly ? "foreground reader layout" : "browser exception check"} PASSED`);
+        if (report.coverageGaps?.length) console.log("  Coverage remains INCOMPLETE; unmodeled backend operations above are not accepted as tested.");
+      }
+      console.log("");
     }
-    if (failures.length) {
-      console.error(`\n✗ ${layout.name} FAILED — ${failures.length} error(s) that must not merge`);
-      exitCode = 1;
-    } else if (!report.visited.length) {
-      // A sweep that reached nothing is green for the wrong reason.
-      console.error(`\n✗ ${layout.name} FAILED — the sweep visited no routes at all`);
-      exitCode = 1;
-    } else {
-      console.log(`✓ ${layout.name} PASSED`);
-    }
-    console.log("");
   }
 
   // Both layouts ran, so say so once — a single "PASSED" above could otherwise
   // be read as the whole gate having passed.
-  if (!exitCode) console.log(`✓ smoke PASSED (${layouts.map((l) => l.name).join(" + ")})`);
+  if (!exitCode) console.log(`✓ browser exception and foreground reader checks PASSED (${layouts.map((l) => l.name).join(" + ")}); see reports for untested backend/native behavior`);
 } catch (error) {
   console.error(`\n✗ smoke driver failed: ${error instanceof Error ? error.message : error}`);
   exitCode = 1;

@@ -4,18 +4,17 @@ Runs the Lantern React frontend in plain Chrome against a fake Tauri backend, an
 sweeps it for runtime errors — clicks every safe control on every route it can
 reach and reports everything that threw.
 
-It exists to close one specific gap: the ~900 frontend unit tests are all
-pure-function tests. Nothing in the suite renders a component or clicks
-anything, so "click this and it throws" would otherwise be invisible to CI.
-This catches that class, and only that class.
+It complements unit tests with rendered React routes, control clicks, and a
+separate foreground EPUB layout check. Backend operations remain mocked; a
+passing browser check does not validate the corresponding native workflow.
 
 CI runs it on every push and PR — the `Browser smoke` job, via
 `npm run smoke:ci` (`scripts/smoke-ci.mjs`). See [In CI](#in-ci) below for what
 that gate does and does not fail on.
 
 Nothing in `src/` knows the harness exists. No production file was modified for
-it; outside `harness/`, `vite.config.harness.ts` and `scripts/smoke-ci.mjs` the
-whole footprint is two npm scripts and one CI job.
+it; the harness, its Vite configuration, driver, and tests are separate from
+production code.
 
 ## Run it
 
@@ -25,6 +24,7 @@ open http://localhost:1440/        # drive it by hand
 open http://localhost:1440/?smoke=1  # run the automated sweep
 
 npm run smoke:ci                   # what CI runs: boots the harness, sweeps, gates
+npm run smoke:ci -- --reader-only  # foreground EPUB proof only
 npm run smoke:ci -- --keep         # same, but leave the dev server up afterwards
 ```
 
@@ -42,7 +42,8 @@ URL knobs, all optional and additive:
 
 | Param | Effect |
 | --- | --- |
-| `?smoke=1` | run the sweep instead of just booting |
+| `?smoke=1` | run the route sweep instead of just booting |
+| `?smoke=reader` | verify foreground EPUB body layout without sweeping controls |
 | `?empty=1` | empty library — exercises the empty state |
 | `?onboarding=1` | clear `onboarding_state` so onboarding shows |
 | `?lang=zh` | boot in Chinese |
@@ -57,11 +58,10 @@ dependencies, polls `window.__SMOKE_DONE__`, and writes each report to
 the job fails. `google-chrome` is preinstalled on the runner image; locally it
 finds the macOS install, and `CHROME_BIN` overrides both.
 
-**It sweeps twice, once per layout,** at 1280×800 and 500×900 — roughly 60s and
-100s. The narrow side of `useIsNarrow`'s breakpoint (Tailwind `md:`, 768px) is
-not a reflow of the same screens: settings become their own routes and panels
-become sheets, so it is the *bigger* surface, ~435 actions against desktop's
-~194.
+**Each layout gets two independent passes:** a background route sweep and a
+foreground EPUB layout check, at 1280×800 and 500×900. The narrow side of
+`useIsNarrow`'s breakpoint (Tailwind `md:`, 768px) exposes different settings
+routes and sheets. Foreground reports use `smoke-report-<layout>-reader.json`.
 
 The window size is pinned, and the driver then asks the page which layout it
 actually got and aborts on a mismatch. That check exists because the unpinned
@@ -70,16 +70,13 @@ gives 756px on macOS and 800px on the Linux runner, so the same commit swept
 mobile locally and desktop in CI, both reporting `PASSED`, with nothing in the
 output saying which.
 
-**The sweep tab is deliberately backgrounded.** The driver opens a throwaway
-foreground tab before navigating, because `--headless=new` otherwise reports
-`document.hidden === false` and the `ResizeObserver loop` filter in
-`collectors.ts` never engages — the first run collected 1991 of those and
-nothing else. Hidden is the mode this harness was built for; see *Hidden tabs*
-below.
+**Only the route sweep is deliberately backgrounded.** The driver opens a
+throwaway foreground tab for that pass. The separate reader pass keeps its
+page visible and never relies on the hidden-tab ResizeObserver filter.
 
 **What fails the build:** `error`, `unhandledrejection`, `click-threw`,
 `resource`, `render-boundary`, and anything flagged `fatal`. Also a sweep that
-visited no routes, which is otherwise green for the wrong reason.
+visited no routes, or a foreground reader pass without verified body layout.
 
 **What does not:** `console.warn`. It is printed and worth fixing, but a build
 that goes red on a legitimate warning teaches people to route around this check.
@@ -91,9 +88,12 @@ This fails CI even when only a settings region or a silent boundary disappears
 and the React root remains populated. Console text and component stacks are
 not used to decide whether a boundary crashed.
 
-**Not gated on:** `readerRendered`. A hidden document gets no frames, so the
-book does not paint and the flag is false in CI by construction. That is a
-property of automation, not a regression.
+The background pass reports `readerRendered` for diagnosis but does not gate
+on it. The independent foreground pass **must** prove loaded EPUB content,
+visible iframe and text rectangles intersecting the reader and viewport, and
+two consecutive animation-frame samples with that evidence and the known
+fixture paragraph text. Empty reader
+chrome and offscreen cached content cannot satisfy this gate.
 
 ## What is here
 
@@ -102,7 +102,8 @@ vite.config.harness.ts     reuses the production Vite config, then aliases the
                            @tauri-apps/* packages to the mocks, injects
                            harness/entry.ts ahead of src/main.tsx, and serves
                            the real EPUB/PDF fixtures at /__harness/book.*
-harness/entry.ts           installs collectors, then (on ?smoke=1) the sweep
+harness/entry.ts           installs collectors and the requested smoke pass
+harness/reader-proof.ts    collects foreground EPUB text/layout evidence
 harness/collectors.ts      window error / unhandledrejection / console wrappers
 harness/smoke.ts           the sweep runner + the __SMOKE__ report contract
 harness/state.ts           window.__HARNESS__ bookkeeping
@@ -114,8 +115,9 @@ harness/promo/*.ts         the README screenshot scenes (see below)
 harness/books/             the twelve public-domain EPUBs the promo shots use
 ```
 
-`harness/` is outside `tsconfig.json`'s `include` and outside `npm run lint`'s
-`src/` scope, so it never affects production typechecking or linting.
+`harness/` is outside production `tsconfig.json`'s `include`; `npm run lint`
+checks both `src/` and `harness/`. Focused tests cover the report gate and
+reader-evidence predicates.
 
 ## How `invoke` answers
 
@@ -125,17 +127,19 @@ Three steps, in order:
    need a live network. These reject with `harness: no AI backend`, which
    exercises the app's error paths on purpose. Recorded in
    `report.rejectedByHarness`, never counted as an app bug.
-2. **Hand-written fixture** — `invoke-fixtures.ts`, ~45 commands. Only the ones
-   that actually gate rendering got one.
-3. **Shape-guessed default stub** — for the other ~170. `vite.config.harness.ts`
+2. **Hand-written fixture** — `invoke-fixtures.ts`, for explicitly modeled
+   rendering and interaction paths.
+3. **Shape-guessed default stub** — for remaining commands. `vite.config.harness.ts`
    scrapes every `#[tauri::command]` signature out of `src-tauri/src` at server
-   start (217 found) and maps the Rust return type to a plausible JS empty
+   start and maps the Rust return type to a plausible JS empty
    value: `Vec<T>` → `[]`, `Option<T>` → `null`, `HashMap` → `{}`, `String` →
    `""`, integers → `0`, `bool` → `false`, a struct → `{}`. The command name is
    logged once as `[harness] unstubbed command: <name>` and lands in
-   `report.unstubbed`.
+   `report.unstubbed`. Each call also records its route and action in
+   `report.coverageGaps` with `status: "not-covered"`. The driver prints these
+   as **NOT COVERED**, even if no browser exception occurred.
 
-**An unstubbed command is a harness gap, never an app bug.** The report keeps
+**An unstubbed command is a coverage gap, not evidence of backend success.** The report keeps
 the two apart, and every recorded error carries a `stubsInFlight` list: if it is
 non-empty, suspect the harness first — most likely a component dereferenced a
 field of a `{}` that the real backend would have filled in.
@@ -159,14 +163,14 @@ Shared data (books, vocab, settings) lives in `harness/fixture-data.ts`; put
 anything more than one command needs there.
 
 Add a fixture when a command's `{}` crashes a component or leaves a screen the
-sweep can't get past. Do not backfill fixtures for all 217 commands — the
-default stub is the point.
+sweep can't get past, after checking the real command protocol. Do not add
+guessed fixtures just to remove entries from the coverage-gap list.
 
 ## The fixtures that exist and why
 
-- **Three books.** An EPUB in progress (37%, with a CFI, so the reader resumes
-  mid-book), a finished EPUB (100%, the finished-state branch), and a PDF that
-  is `available: false` (the missing-file branch, which otherwise never renders).
+- **Four books.** An EPUB in progress with a resume CFI, a finished EPUB, a
+  PDF that is `available: false` (the missing-file branch), and a plain-text
+  book exercising the separate text reader.
 - **Vocab across all mastery states** (0–4, two of them due) so the review and
   dashboard code paths have something to sort and bucket.
 - **Settings deliberately mixed on and off**, because a settings screen where
@@ -219,25 +223,26 @@ Four rules hold this together:
 
 ## The reader, honestly
 
-The whole open path is real and it works: `fetch` → `File` → `view.open(file)`,
-and the reader's own diagnostics run clean through `reader.open.ready`. The
-reader chrome (title, chapter count, toolbar, progress) renders.
+The EPUB open path uses real fixture bytes through `fetch` → `File` →
+`view.open(file)`. Detection goes through `view.renderer.getContents()` because
+the paginator uses a closed shadow root. A loaded `view.book` or reader toolbar
+alone is insufficient: the foreground pass records `readerEvidence`, including
+viewport size, document visibility, content-document count, visible text
+rectangles, a body-text sample, and consecutive animation-frame samples.
 
-**But the book itself only paints in a visible window.** foliate's paginator
-lays out from a `ResizeObserver` plus `requestAnimationFrame`, and browsers run
-neither for a hidden document — which is exactly what a background automation
-tab is. Run the sweep with the window on screen if you want the reader covered;
-otherwise `readerRendered` stays `false` and the report says why, in
-`notes`. It is not faked, and a false there is not an app bug.
-
-Detection goes through `view.renderer.getContents()`, not the DOM: the paginator
-attaches its shadow root with `mode: "closed"`, so its iframe cannot be reached
-by any selector.
+A background pass can finish with `readerRendered: false`; its report does not
+establish the cause or excuse a visible-reader failure. The foreground pass
+must pass independently. This proves initial EPUB body layout in Blink, not
+native WKWebView rendering or successful reading-position persistence.
 
 ## Report shape
 
 ```
 window.__SMOKE__ = {
+  mode: "route-sweep" | "reader-visible"
+  coverageGaps: [{ command, route, action, status: "not-covered" }]
+  readerEvidence?: { foreground, focused, bookLoaded, viewWidth, viewHeight,
+                     contentDocuments, visibleTextRects, textSample, animationFrames }
   ok:        boolean            // no errors collected
   done:      boolean            // sweep finished
   visited:   string[]           // routes actually rendered, in order
@@ -306,22 +311,24 @@ advancing, the sweep is stuck rather than slow.
 and iOS. Rendering, layout, scrolling, and the entire graphics stack are
 different code. A crash that only happens in WebKit is invisible here — last
 week's real `WebCore::ScrollingTree` SIGSEGV would have swept green. A clean
-report means "no JS exception in Blink", never "the app doesn't crash".
+route-sweep report means "no gated browser exception in these Blink paths";
+the separate reader report adds evidence of initial EPUB body layout. Neither
+means "the native app does not crash".
 
 Also out of scope, by construction:
 
 - **The Rust backend.** Every `invoke` is fake. Command signature changes,
   serde shape drift, SQL, migrations, and real error strings are all unmodelled;
   the harness cannot tell you a fixture has gone stale against the real backend.
-- **Anything inside the foliate iframe.** The sweep detects whether the book
-  painted, but does not click inside the reader's iframe document — selection,
-  highlight gestures, and pagination inside the book are untested here. In a
-  hidden window the book does not paint at all (see above).
-- **Visual bugs.** No layout, contrast, overflow, or animation checking. A
-  screen that renders unreadably still passes.
+- **Reader gestures.** Initial EPUB body layout is checked in the foreground,
+  but selection, highlights, pagination, and saved progress are not exercised
+  by that proof.
+- **Visual quality.** The reader gate checks initial text geometry, not
+  readability, contrast, overflow, typography, or correctness of every page.
 - **Timing and concurrency.** The mocked `invoke` resolves on the next tick, so
   real latency, races between slow commands, and cancellation are not exercised.
 - **Native integration.** File dialogs, drag-and-drop of real files, updater,
-  deep links, OS permissions.
+  deep links, OS permissions, real iCloud propagation, or two-device sync.
+  This browser harness does not launch a native app or isolate its data directory.
 - **Anything reachable only through a destructive control**, and anything
   reachable only after a state change a skipped control would have made.

@@ -46,3 +46,10 @@ test("uncaught faults and fatal renders still fail the gate", () => {
   errors.push({ kind: "console.error", fatal: true });
   assert.equal(gate({ errors }).failures.length, 5);
 });
+
+test("foreground reader proof fails the gate even if empty chrome throws no error", () => {
+  const result = gate({ errors: [], mode: "reader-visible", readerRendered: false });
+  assert.equal(result.failures.length, 1);
+  assert.equal(result.failures[0].kind, "reader-not-rendered");
+  assert.equal(gate({ errors: [], mode: "reader-visible", readerRendered: true }).failures.length, 0);
+});

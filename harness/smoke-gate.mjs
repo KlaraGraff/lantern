@@ -6,6 +6,9 @@ const FAILING_KINDS = new Set([
 
 export function gate(report) {
   const failures = report.errors.filter((error) => FAILING_KINDS.has(error.kind) || error.fatal);
+  if (report.mode === "reader-visible" && !report.readerRendered) {
+    failures.push({ kind: "reader-not-rendered", message: "Foreground EPUB has no verified visible body layout", fatal: false });
+  }
   const warnings = report.errors.filter((error) => !failures.includes(error));
   return { failures, warnings };
 }

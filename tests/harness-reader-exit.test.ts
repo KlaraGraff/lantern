@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 // Test browser-only command shapes and unknown-command accounting. Native
 // window destruction and application termination require separate app checks.
 const bundled = await build({
-  stdin: { contents: 'export { invoke } from "./harness/tauri/core"; export { harness } from "./harness/state";',
+  stdin: { contents: 'export { invoke } from "./harness/tauri/core"; export { harness } from "./harness/state"; export { context } from "./harness/collectors";',
     resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "ts" },
   bundle: true, write: false, format: "cjs", platform: "node",
   plugins: [{ name: "deterministic-macrotask", setup(builder) {
@@ -16,11 +16,12 @@ const bundled = await build({
       ? "export default {};" : "export const macrotask = () => Promise.resolve();" }));
   } }],
 });
-function harnessHost() {
+function harnessHost(location = { search: "", pathname: "/reader/book-epub-reading" }) {
   const module = { exports: {} as { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-    harness: { unstubbed: Set<string>; stubsSinceMark: string[]; calls: { command: string; args: unknown }[] } } };
+    context: { action: string | null };
+    harness: { coverageGaps: { command: string; route: string; action: string | null; status: string }[]; unstubbed: Set<string>; stubsSinceMark: string[]; calls: { command: string; args: unknown }[] } } };
   runInNewContext(bundled.outputFiles[0].text, { module, exports: module.exports,
-    window: { location: { search: "" } }, URLSearchParams, btoa, console, setTimeout, clearTimeout });
+    window: { location }, location, URLSearchParams, btoa, console, setTimeout, clearTimeout });
   return module.exports;
 }
 
@@ -40,7 +41,17 @@ test("reader exit IPC gets explicit unit-return fixtures without claiming native
 });
 
 test("exit fixtures do not weaken the unknown-command gate", async () => {
-  const h = harnessHost(); await h.invoke("harness_genuinely_unknown_reader_command");
+  const location = { search: "", pathname: "/reader/book-epub-reading" };
+  const h = harnessHost(location);
+  h.context.action = "next-page";
+  const pending = h.invoke("harness_genuinely_unknown_reader_command");
+  location.pathname = "/";
+  h.context.action = null;
+  await pending;
   assert.equal(h.harness.unstubbed.has("harness_genuinely_unknown_reader_command"), true);
   assert.equal(h.harness.stubsSinceMark[0], "harness_genuinely_unknown_reader_command");
+  assert.deepEqual(JSON.parse(JSON.stringify(h.harness.coverageGaps)), [{
+    command: "harness_genuinely_unknown_reader_command", route: "/reader/book-epub-reading",
+    action: "next-page", status: "not-covered",
+  }]);
 });
