@@ -36,6 +36,20 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
   2. Run `git status --short` before every commit. Files you didn't touch are another session's in-flight work — leave them alone: no stash, no checkout, no restore. They are uncommitted on purpose, pending human review.
   3. `src/i18n/zh.json` and `src/i18n/en.json` are the highest-risk files — several sessions add keys to them at once. Edit them only with targeted in-place replacements (never rewrite the whole file), and before committing run `git diff --cached src/i18n/` to confirm every staged key is yours; `git restore --staged` anything that isn't. (Staging these files whole has twice swept a concurrent session's keys into an unrelated commit.)
 
+## Subagent Dispatch
+
+- Explicitly set both model and reasoning effort for every subagent; do not inherit the parent session's settings by default.
+- Use the following task-based defaults and minimums. Do not use `gpt-6-luna` for delegated work.
+
+| Task | Model | Reasoning effort |
+| --- | --- | --- |
+| Read-only code search, call-chain summaries, information gathering, existing test execution | `gpt-6.1-sol` minimum | `low` minimum |
+| Implementation, bug fixes, refactoring, optimization, test changes | `gpt-6.1-sol` minimum | `medium` minimum |
+| Review, design, tradeoff analysis, complex diagnosis or high-risk implementation | `gpt-6-astra` | `high` minimum |
+
+- Escalate an individual task when needed instead of assigning every subagent the most expensive configuration. Keep cross-source synthesis and final judgment in the main conversation.
+- Subagents must not stage, commit, push, or publish. The main agent reviews their changes and validation results, requests follow-up work as needed, and handles focused commits under this guide.
+
 ## Commands
 
 | Task | Command |
