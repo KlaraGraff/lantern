@@ -706,7 +706,9 @@ where
         return Ok((audio, false));
     }
 
-    fs::create_dir_all(dir)?;
+    if fs::create_dir_all(dir).is_err() {
+        return Ok((audio, false));
+    }
     // A partial write would poison the cache, so land it under a temporary
     // name. The name is now unique per call rather than a shared
     // `{stem}.partial`: two syntheses of the same text could otherwise
@@ -1058,6 +1060,26 @@ mod tests {
         // Counted in characters, not bytes, or a Chinese phrase would be
         // rejected at a third of the intended length.
         assert!(is_vocabulary_sized(&"字".repeat(MAX_CACHEABLE_TEXT_CHARS)));
+    }
+
+    #[tokio::test]
+    async fn a_failed_cache_directory_keeps_successfully_fetched_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().join("ordinary-file");
+        fs::write(&parent, b"not a directory").unwrap();
+        let cache_dir = parent.join("speech-cache");
+        let identity = SourceIdentity::edge(Accent::Us);
+
+        let (audio, cached) = cached_audio(&cache_dir, &identity, "schedule", true, || async {
+            Ok(b"ID3\x04word".to_vec())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(audio, b"ID3\x04word");
+        assert!(!cached);
+        assert!(!cache_dir.exists());
+        assert_eq!(fs::read(parent).unwrap(), b"not a directory");
     }
 
     /// A word clip is 15–30 KB and gets replayed during review; a passage is
