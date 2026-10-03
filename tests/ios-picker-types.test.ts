@@ -26,6 +26,13 @@ const readRepo = (path: string) => readFile(repoFile(path), "utf8");
 const PLIST = "src-tauri/gen/apple/lantern_iOS/Info.plist";
 const XCODEGEN_SPEC = "src-tauri/gen/apple/project.yml";
 const FORMATS = "src-tauri/src/commands/books/mod.rs";
+const PACKAGE = "package.json";
+
+const packageVersion = (packageJson: string): string => {
+  const parsed = JSON.parse(packageJson) as { version?: unknown };
+  assert.equal(typeof parsed.version, "string", `${PACKAGE} must declare a string version`);
+  return parsed.version;
+};
 
 // Types Apple ships. Anything here needs no declaration from us; anything not
 // here does. Kept as a literal because the alternative is asking the host
@@ -108,9 +115,17 @@ test("the declarations are imported, never exported", async () => {
 });
 
 test("the xcodegen source keeps the iOS version and custom types reproducible", async () => {
-  const spec = await readRepo(XCODEGEN_SPEC);
-  assert.match(spec, /CFBundleShortVersionString:\s*2\.18\.14/);
-  assert.match(spec, /CFBundleVersion:\s*["']?2\.18\.14["']?/);
+  const [spec, plist, packageJson] = await Promise.all([
+    readRepo(XCODEGEN_SPEC),
+    readRepo(PLIST),
+    readRepo(PACKAGE),
+  ]);
+  const version = packageVersion(packageJson);
+  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(spec, new RegExp(`CFBundleShortVersionString:\\s*${escapedVersion}`));
+  assert.match(spec, new RegExp(`CFBundleVersion:\\s*["']?${escapedVersion}["']?`));
+  assert.match(plist, new RegExp(`<key>CFBundleShortVersionString</key>\\s*<string>${escapedVersion}</string>`));
+  assert.match(plist, new RegExp(`<key>CFBundleVersion</key>\\s*<string>${escapedVersion}</string>`));
   for (const identifier of ["org.gribuser.fb2", "org.gribuser.fb2.zip", "com.klaragraff.lantern.cbz"]) {
     assert.match(spec, new RegExp(`UTTypeIdentifier:\\s*${identifier.replaceAll(".", "\\.")}`));
   }

@@ -1,6 +1,6 @@
 [package]
 name = "lantern"
-version = "2.18.14"
+version = "2.18.15"
 description = "A personalized English learning ebook reader"
 authors = ["OA"]
 edition = "2021"
