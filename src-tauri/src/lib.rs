@@ -511,12 +511,7 @@ pub fn run() {
     let app = install_menu(builder)
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-                commands::books::import_external_paths(
-                    paths.clone(),
-                    window.state::<Db>().inner(),
-                    window.state::<SyncWriter>().inner(),
-                    window.app_handle(),
-                );
+                commands::books::import_external_paths(paths.clone(), window.app_handle().clone());
             }
 
             // On macOS, closing the main window via the red button should hide
@@ -1139,12 +1134,7 @@ pub fn run() {
                 .filter_map(|url| url.to_file_path().ok())
                 .collect();
             if !paths.is_empty() {
-                commands::books::import_external_paths(
-                    paths,
-                    app_handle.state::<Db>().inner(),
-                    app_handle.state::<SyncWriter>().inner(),
-                    app_handle,
-                );
+                commands::books::import_external_paths(paths, app_handle.clone());
             }
         }
         // Dock icon click while the app is already running. If the main

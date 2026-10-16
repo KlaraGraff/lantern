@@ -249,7 +249,7 @@ pub fn sync_reveal_folder(app: AppHandle, local: State<'_, LocalDir>) -> AppResu
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_enable(
     app: tauri::AppHandle,
     local: State<'_, LocalDir>,
@@ -604,7 +604,11 @@ pub fn sync_cancel(app: tauri::AppHandle, sync_state: State<'_, SyncState>) -> A
     Ok(())
 }
 
-#[tauri::command]
+// `async` keeps a full tick (iCloud reads, file coordination, one transaction
+// per event) off the main thread: there it froze the window, kept the
+// `sync-progress` events it emits from painting, and queued `sync_cancel`
+// behind the very run it was meant to stop. Same reason for enable/compact.
+#[tauri::command(async)]
 pub fn sync_now(
     app: tauri::AppHandle,
     db: State<'_, Db>,
@@ -625,7 +629,7 @@ pub fn sync_now(
 ///
 /// Returns an error when sync isn't enabled in this process — the
 /// settings UI surfaces it as a toast.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn sync_compact(sync_state: State<'_, SyncState>) -> AppResult<SyncCompactResult> {
     let engine = sync_state
         .engine_snapshot()?
@@ -1000,8 +1004,11 @@ fn atomic_copy_disable_file(
 // background thread racing the (test-shortened) wait deadline on a
 // loaded CI runner.
 #[cfg(test)]
+type DownloadTrigger = Box<dyn FnMut(&Path)>;
+
+#[cfg(test)]
 thread_local! {
-    static TEST_DOWNLOAD_TRIGGER: std::cell::RefCell<Option<Box<dyn FnMut(&Path)>>> =
+    static TEST_DOWNLOAD_TRIGGER: std::cell::RefCell<Option<DownloadTrigger>> =
         const { std::cell::RefCell::new(None) };
 }
 

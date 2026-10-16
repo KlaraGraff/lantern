@@ -614,12 +614,20 @@ pub async fn import_book_from_dialog(
 /// Native drag/drop and OS file-association events have already been approved
 /// by the operating system. They are handled in Rust instead of forwarding a
 /// path through a webview command.
-pub(crate) fn import_external_paths(
-    paths: Vec<PathBuf>,
-    db: &Db,
-    sync: &SyncWriter,
-    app: &AppHandle,
-) {
+///
+/// Both events arrive on the main thread, and an import parses, hashes and
+/// copies the whole file, so the work runs on the blocking pool: a large PDF
+/// dropped on the window must not freeze the UI. Results still arrive as the
+/// `book-imported` / `book-import-failed` events.
+pub(crate) fn import_external_paths(paths: Vec<PathBuf>, app: AppHandle) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<Db>();
+        let sync = app.state::<SyncWriter>();
+        import_paths(paths, &db, &sync, &app);
+    });
+}
+
+fn import_paths(paths: Vec<PathBuf>, db: &Db, sync: &SyncWriter, app: &AppHandle) {
     for path in paths {
         if !path.is_file() || !is_importable_book_path(&path) {
             continue;
