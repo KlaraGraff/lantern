@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
-import SettingsModal from "./SettingsModal";
 import {
   settingsDestinationSection,
   settingsDestinationView,
   type SettingsDestination,
 } from "./settings-destination";
 import { listenForOpenSettings } from "./settings-open";
+
+// Every settings section ships in this chunk. It is fetched on the first open
+// rather than at startup, and stays mounted after that.
+const SettingsModal = lazy(() => import("./SettingsModal"));
 
 /**
  * The settings modal, mounted once for the whole window.
@@ -22,11 +25,13 @@ import { listenForOpenSettings } from "./settings-open";
  */
 export default function SettingsHost() {
   const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState(false);
   const [destination, setDestination] = useState<SettingsDestination>("root");
 
   useEffect(() => listenForOpenSettings((next) => {
     setDestination(next);
     setOpen(true);
+    setOpened(true);
   }), []);
 
   useEffect(() => {
@@ -37,21 +42,26 @@ export default function SettingsHost() {
         // landing spot, rather than following the gear button to the root list.
         setDestination("general");
         setOpen(true);
+        setOpened(true);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  if (!opened) return null;
+
   return (
-    <SettingsModal
-      open={open}
-      onClose={() => {
-        setOpen(false);
-        setDestination("root");
-      }}
-      initialSection={settingsDestinationSection(destination)}
-      initialView={settingsDestinationView(destination)}
-    />
+    <Suspense fallback={null}>
+      <SettingsModal
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          setDestination("root");
+        }}
+        initialSection={settingsDestinationSection(destination)}
+        initialView={settingsDestinationView(destination)}
+      />
+    </Suspense>
   );
 }
