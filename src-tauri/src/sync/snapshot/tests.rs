@@ -2705,7 +2705,7 @@ fn snapshot_cover_change_invalidates_only_the_replaced_identity() {
         },
     );
     let mut local = open_db();
-    apply_to(&mut local, &[birth.clone()]);
+    apply_to(&mut local, std::slice::from_ref(&birth));
     local
         .execute(
             "UPDATE books SET cover_data = ?1 WHERE id = 'b1'",

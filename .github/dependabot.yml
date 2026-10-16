@@ -1,0 +1,35 @@
+# Dependency update PRs, grouped so each ecosystem opens at most one PR per
+# run. Tauri crates and @tauri-apps packages are pinned with `=` on purpose and
+# must move together (see the comments in src-tauri/Cargo.toml), so they are
+# left to manual upgrades; security updates still come through.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "@tauri-apps/*"
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: "tauri*"
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
