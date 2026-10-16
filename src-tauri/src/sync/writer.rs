@@ -432,6 +432,7 @@ impl SyncWriter {
 
     /// Test/probe accessor — `true` when an `EventLog` is wired up
     /// (i.e. the post-commit flush will run, not just the queue write).
+    #[cfg(test)]
     pub fn is_sync_enabled(&self) -> bool {
         self.log.lock().map(|g| g.is_some()).unwrap_or(false)
     }

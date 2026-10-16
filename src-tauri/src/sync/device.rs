@@ -3,7 +3,7 @@
 //! and the `device` field on every emitted event.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,8 @@ impl DeviceIdentity {
         Ok(id)
     }
 
-    pub fn path(local_dir: &Path) -> PathBuf {
+    #[cfg(test)]
+    pub fn path(local_dir: &Path) -> std::path::PathBuf {
         local_dir.join(DEVICE_FILE)
     }
 }

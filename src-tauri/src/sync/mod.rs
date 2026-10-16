@@ -11,13 +11,6 @@
 //! engine, snapshot module, migration routine, and fs-notify watcher are
 //! also already implemented but not yet hooked up to the launch flow,
 //! which is Chunk 6's job.
-//!
-//! Until those chunks land, several `pub` symbols inside this module are
-//! reachable only from the `#[cfg(test)]` blocks. Rather than scatter
-//! `#[allow(dead_code)]` across them — and have to thread it back out as
-//! each call site lands — silence the lint module-wide. Removed in Chunk 7
-//! once every symbol has a non-test caller.
-#![allow(dead_code)]
 
 pub(crate) mod book_fields;
 pub(crate) mod covers;

@@ -19,7 +19,7 @@
 
 ```
 src/                    # React frontend
-  pages/                # Home, Reader
+  pages/                # Home, Reader, BookDetails, Quiz, QuizPaper, FlashcardReview (+ per-page subdirs)
   components/           # UI components
     ui/                 # Primitives: Button, Input, Select, Slider, Toggle
     settings/           # Settings modal sections (one per tab)
@@ -27,6 +27,8 @@ src/                    # React frontend
   i18n/                 # Translation JSON files
 src-tauri/              # Rust backend
   src/commands/         # Tauri command modules
+  src/sync/             # iCloud event-log sync engine
+  src/mcp/              # MCP server
   src/ai/               # AI provider implementations
   migrations/           # SQL schema files (versioned)
 docs/
@@ -54,6 +56,7 @@ docs/
 
 - `/release` — Bump version, tag, push, wait for CI, publish GitHub release with notes
 - `/feature` — Create, list, or manage feature specs (`docs/features/`) and GitHub issues
+- `/bug` — Report, list, or manage bug reports as GitHub issues
 
 ## Conventions
 
