@@ -105,6 +105,7 @@ impl EventLog {
     /// Append one event. `ts` is the caller-chosen logical timestamp
     /// (unix millis) — typically the SQL `updated_at` value so the event
     /// mirrors the row it describes.
+    #[cfg(test)]
     pub fn append(&self, body: EventBody, ts: i64) -> AppResult<Event> {
         let mut out = self.append_batch(vec![body], ts)?;
         Ok(out.pop().expect("append_batch returns one for one input"))
@@ -115,6 +116,7 @@ impl EventLog {
     /// The `Inner` mutex is held for the entire method — both ULID
     /// generation and the file write happen under it. See the module
     /// docstring for why that's required.
+    #[cfg(test)]
     pub fn append_batch(&self, bodies: Vec<EventBody>, ts: i64) -> AppResult<Vec<Event>> {
         let entries: Vec<(EventBody, i64)> = bodies.into_iter().map(|b| (b, ts)).collect();
         self.append_batch_varied(entries)
@@ -167,6 +169,7 @@ impl EventLog {
     /// Parse every event in the log. Malformed or truncated lines are
     /// skipped with a `log::warn` so a partial tail (from a crash
     /// mid-write) doesn't poison the whole read.
+    #[cfg(test)]
     pub fn read_all(&self) -> AppResult<Vec<Event>> {
         read_log_file(&self.path)
     }
@@ -177,6 +180,7 @@ impl EventLog {
     /// dominates, so string `>` is equivalent to "later than" for IDs from
     /// a single monotonic generator. Across peers we tiebreak in the replay
     /// engine by `(ts, device)`.
+    #[cfg(test)]
     pub fn read_after(&self, last_id: Option<&str>) -> AppResult<Vec<Event>> {
         read_log_file_after(&self.path, last_id)
     }
@@ -344,6 +348,7 @@ fn read_file_bounded_io(path: &Path, max_bytes: u64) -> io::Result<Vec<u8>> {
 
 /// Like `read_log_file` but skips events with `id <= last_id`. ULIDs sort
 /// lexicographically, so a string compare is equivalent to "later than".
+#[cfg(test)]
 pub fn read_log_file_after(path: &Path, last_id: Option<&str>) -> AppResult<Vec<Event>> {
     let all = read_log_file(path)?;
     match last_id {

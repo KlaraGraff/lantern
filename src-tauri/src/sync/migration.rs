@@ -241,6 +241,7 @@ pub fn set_sync_enabled(local_dir: &Path, enabled: bool) -> AppResult<()> {
     write_settings(local_dir, &settings)
 }
 
+#[cfg(test)]
 pub fn write_sync_settings(local_dir: &Path, data_dir: Option<&Path>) -> AppResult<()> {
     let data_dir =
         data_dir.ok_or_else(|| AppError::Other("SYNC_FOLDER_NOT_CONFIGURED".to_string()))?;
@@ -248,6 +249,7 @@ pub fn write_sync_settings(local_dir: &Path, data_dir: Option<&Path>) -> AppResu
     set_sync_enabled(local_dir, true)
 }
 
+#[cfg(test)]
 pub fn remove_sync_settings(local_dir: &Path) -> AppResult<()> {
     let path = sync_settings_path(local_dir);
     match fs::remove_file(&path) {

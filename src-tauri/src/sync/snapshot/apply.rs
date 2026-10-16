@@ -1,7 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use ulid::Ulid;
 
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::sync::{merge, validation};
 
@@ -25,9 +24,10 @@ impl Snapshot {
     /// `truncated_before` are set to the lexicographically largest event id
     /// seen (callers that want a more conservative truncation point can
     /// override `truncated_before` on the returned struct).
+    #[cfg(test)]
     pub fn from_events(device: &str, events: &[Event]) -> AppResult<Self> {
         let mut conn = Connection::open_in_memory()?;
-        Db::run_migrations_on(&conn)?;
+        crate::db::Db::run_migrations_on(&conn)?;
         {
             let tx = conn.transaction()?;
             for ev in events {
