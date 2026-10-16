@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ArrowDownToLine, CheckCircle2, ChevronDown, ChevronUp, Loader2, X } from "lucide-react";
 import Toast from "./ui/Toast";
-import UpdateNotes from "./UpdateNotes";
 import { platform } from "../services/platform";
 import { useUpdater } from "../hooks/useUpdater";
 import { extractLocaleNotes } from "../services/updateNotes";
+
+// Release notes go through react-markdown, which has no business in the
+// startup bundle: the toast only exists once an update has been found.
+const UpdateNotes = lazy(() => import("./UpdateNotes"));
 
 /** Where "view on GitHub" goes — the release page for the offered version. */
 const releasePageUrl = (version: string) =>
@@ -179,12 +182,14 @@ export default function UpdateToast() {
           <span className="flex-1">{headline}</span>
           {dismissButton}
         </div>
-        <UpdateNotes
-          notes={notes}
-          expanded={notesExpanded}
-          onOverflowChange={setNotesOverflow}
-          label={t("update.toast.notes.label")}
-        />
+        <Suspense fallback={null}>
+          <UpdateNotes
+            notes={notes}
+            expanded={notesExpanded}
+            onOverflowChange={setNotesOverflow}
+            label={t("update.toast.notes.label")}
+          />
+        </Suspense>
         <div className="flex items-center gap-3 border-t border-border-light py-2 pr-3 pl-4">
           {/* Only offered when the clamp actually hid something. */}
           {notesOverflow && (

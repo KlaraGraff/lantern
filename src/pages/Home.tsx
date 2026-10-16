@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X, Menu } from "lucide-react";
@@ -9,10 +9,6 @@ import Sidebar from "../components/Sidebar";
 import BookGrid from "../components/BookGrid";
 import BookList from "../components/BookList";
 import { BookSortContext } from "../components/BookSort";
-import DictionaryContent from "../components/DictionaryContent";
-import QaContent from "../components/qa/QaContent";
-import AnnotationsContent from "../components/AnnotationsContent";
-import ReadingStatsContent from "../components/ReadingStatsContent";
 import { openSettings } from "../components/settings-open";
 import { listenForSettingsChanged } from "../components/settings-events";
 import LibraryHintBanner from "../components/onboarding/LibraryHintBanner";
@@ -31,6 +27,13 @@ import {
   DRAWER_SETTLE_MS,
   type DrawerGestureState,
 } from "../hooks/useDrawerGesture";
+
+// The shelf is the first paint. The other library tabs (and the markdown
+// renderer the Q&A list pulls in) load when the reader first switches to one.
+const DictionaryContent = lazy(() => import("../components/DictionaryContent"));
+const QaContent = lazy(() => import("../components/qa/QaContent"));
+const AnnotationsContent = lazy(() => import("../components/AnnotationsContent"));
+const ReadingStatsContent = lazy(() => import("../components/ReadingStatsContent"));
 
 function formatError(err: unknown): string {
   if (typeof err === "string") return err;
@@ -605,7 +608,7 @@ export default function Home() {
     </Button>
   ) : null;
 
-  const content =
+  const tabContent =
     activeFilter === "vocab" ? (
         <DictionaryContent initialView={vocabInitialView} menuButton={menuButton} />
       ) : activeFilter === "qa" ? (
@@ -779,6 +782,7 @@ export default function Home() {
           </div>
         </main>
       );
+  const content = <Suspense fallback={null}>{tabContent}</Suspense>;
 
   return (
     // `h-dvh`, not `h-screen`: `100vh` on iOS measures the *largest* viewport,
