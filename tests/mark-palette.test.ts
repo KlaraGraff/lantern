@@ -384,6 +384,6 @@ test("no saved highlight colour can be mistaken for the note-anchor sentinel", (
   // string. A preset that happened to equal it would draw highlights as
   // hairlines.
   for (const preset of MARKER_COLOR_PRESETS) {
-    assert.notEqual(preset.color, NOTE_ANCHOR_MARK_SENTINEL);
+    assert.notEqual(preset, NOTE_ANCHOR_MARK_SENTINEL);
   }
 });

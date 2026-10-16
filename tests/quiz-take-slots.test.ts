@@ -63,7 +63,7 @@ describe("deriveSlots", () => {
         { words: [w("beta"), w("gamma")], state: "pending" },
       ],
     };
-    const session = makeSession({ articles: [{ wordCount: 1, step: "done" }, { wordCount: 2, step: "writing" }] });
+    const session = makeSession({ articles: [{ wordCount: 1, step: "done", attempt: 1 }, { wordCount: 2, step: "writing", attempt: 1 }] });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
     assert.deepEqual(slots.map((s) => s.state), ["open", "pending"]);
     assert.equal(slots[0].passage?.id, "p1");
@@ -84,10 +84,10 @@ describe("deriveSlots", () => {
     };
     const session = makeSession({
       articles: [
-        { wordCount: 1, step: "checking" },
-        { wordCount: 1, step: "regenerating" },
-        { wordCount: 1, step: "pending" },
-        { wordCount: 1, step: "done" },
+        { wordCount: 1, step: "checking", attempt: 1 },
+        { wordCount: 1, step: "regenerating", attempt: 1 },
+        { wordCount: 1, step: "pending", attempt: 1 },
+        { wordCount: 1, step: "done", attempt: 1 },
       ],
     });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
@@ -102,7 +102,7 @@ describe("deriveSlots", () => {
         { words: [w("beta")], state: "done", passageId: "p2" },
       ],
     };
-    const session = makeSession({ articles: [{ wordCount: 1, step: "writing" }, { wordCount: 1, step: "done" }] });
+    const session = makeSession({ articles: [{ wordCount: 1, step: "writing", attempt: 1 }, { wordCount: 1, step: "done", attempt: 1 }] });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
     assert.deepEqual(slots.map((s) => s.state), ["pending", "open"]);
     assert.equal(slots[1].passage?.id, "p2");
@@ -115,7 +115,7 @@ describe("deriveSlots", () => {
         { words: [w("beta")], state: "done", passageId: "p2" },
       ],
     };
-    const session = makeSession({ articles: [{ wordCount: 1, step: "failed" }, { wordCount: 1, step: "done" }] });
+    const session = makeSession({ articles: [{ wordCount: 1, step: "failed", attempt: 1 }, { wordCount: 1, step: "done", attempt: 1 }] });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
     assert.deepEqual(slots.map((s) => s.state), ["failed", "open"]);
   });
@@ -127,7 +127,7 @@ describe("deriveSlots", () => {
         { words: [w("beta")], state: "done", passageId: "p2" },
       ],
     };
-    const session = makeSession({ articles: [{ wordCount: 1, step: "checking" }, { wordCount: 1, step: "done" }] });
+    const session = makeSession({ articles: [{ wordCount: 1, step: "checking", attempt: 1 }, { wordCount: 1, step: "done", attempt: 1 }] });
     const slots = deriveSlots(makeQuiz("generating", plan), session);
     assert.deepEqual(slots.map((s) => s.state), ["pending", "open"]);
   });

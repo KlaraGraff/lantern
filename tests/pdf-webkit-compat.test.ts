@@ -87,7 +87,7 @@ const makeMinimalPdf = () => {
 
 const smokePdf = async (pdfjsLib, data, {
   expectedText,
-  expectedTitle,
+  expectedTitle = undefined as RegExp | undefined,
   textPageLimit = 1,
 }) => {
   const loadingTask = pdfjsLib.getDocument({
@@ -253,7 +253,7 @@ test("ships same-version modern and legacy main-worker pairs without legacy maps
     "legacy/pdf.mjs",
     "legacy/pdf.worker.mjs",
   ];
-  const versions = [];
+  const versions: string[] = [];
   for (const asset of assets) {
     const source = await readFile(path.join(pdfJsRoot, asset), "utf8");
     const version = source.match(/pdfjsVersion = ([^\s]+)/)?.[1];

@@ -189,6 +189,7 @@ const baseState: ReaderSettingsState = {
   showLearningMarkers: true,
   chapterEndReviewHint: true,
   bookFinishedHint: true,
+  lookupMarkersNeverFade: false,
 };
 
 test("a value set away from global writes an override row", () => {

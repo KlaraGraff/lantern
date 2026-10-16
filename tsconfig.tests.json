@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // Tests import the vendored foliate-js modules and build scripts, which
+    // are plain JS with no declarations; implicit `any` there is expected.
+    "noImplicitAny": false
+  },
+  "include": ["tests"]
+}

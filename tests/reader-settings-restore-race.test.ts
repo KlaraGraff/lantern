@@ -32,7 +32,7 @@ test("restoreBookSettingsKeys waits for an in-flight bulk write before deleting"
     calls.push("bulk");
     return bulkWrite.promise;
   };
-  const invokeDelete = (bookId: string, keys: string[]) => {
+  const invokeDelete = (_bookId: string, keys: string[]) => {
     calls.push("delete");
     return Promise.resolve(
       Object.fromEntries(keys.map((key) => [key, "some-value"])),

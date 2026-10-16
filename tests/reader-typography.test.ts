@@ -19,6 +19,7 @@ import {
 } from "../src/pages/reader/reader-typography.ts";
 
 const settings: ReaderSettingsState = {
+  lookupMarkersNeverFade: false, chapterEndReviewHint: true, bookFinishedHint: true,
   theme: "paper", customTheme: { color: "#DDE8D8", opacity: 70 }, font: "palatino",
   cjkFont: "system",
   fontSize: 26, narrowFontShrink: true, readingMode: "scrolling", pageColumns: 2,

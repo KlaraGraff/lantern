@@ -121,7 +121,7 @@ test("read-aloud, the authoring surfaces and the score estimator are NOT gated",
   // was reversed on 2026-08-06. This test exists so the flags do not come back
   // by accident — the surfaces are gated by nothing, so there is nothing to
   // assert but the absence of a gate.
-  const caps = capabilitiesFor("ios") as Record<string, unknown>;
+  const caps = capabilitiesFor("ios") as unknown as Record<string, unknown>;
   for (const gone of ["hasSpeech", "hasComposerSurfaces", "hasScoreEstimator"]) {
     assert.equal(gone in caps, false, `${gone} must not exist — those surfaces ship on every platform`);
   }

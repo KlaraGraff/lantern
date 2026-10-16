@@ -75,7 +75,7 @@ test("deflated EPUB fixture extracts through the ZIP fallback", async () => {
     assert.equal(entries[0].compressionMethod, 0);
     assert.ok(entries.slice(1).every(entry => entry.compressionMethod === 8));
 
-    const payloads = new Map(await Promise.all(entries.map(async entry => [
+    const payloads = new Map<string, string>(await Promise.all(entries.map(async entry => [
       entry.filename,
       await entry.getData(new zipModule.TextWriter()),
     ] as const)));

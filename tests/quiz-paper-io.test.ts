@@ -82,7 +82,7 @@ function makeQuiz(): Quiz {
 }
 
 /** 每组都成功、给第 0 题写入解析的测试替身。 */
-const completeOk: CompleteStructured = (opts) =>
+const completeOk = ((opts: Parameters<CompleteStructured>[0]) =>
   Promise.resolve({
     data: {
       readingExplanations: [
@@ -102,7 +102,7 @@ const completeOk: CompleteStructured = (opts) =>
     },
     requestMessage: JSON.stringify(opts.messages),
     rawResponse: "{}",
-  }) as ReturnType<CompleteStructured>;
+  })) as CompleteStructured;
 
 describe("paper-io", () => {
   it("rowToQuiz 解析三个 JSON 列并还原领域模型；quizContentJson 与 content 列互逆", () => {

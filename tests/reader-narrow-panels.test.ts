@@ -37,7 +37,7 @@ test("navigating closes the panels only where a panel is covering the page", () 
 // rendered would sit on top of the winner — later in DOM order — carrying none
 // of the back bar the winner is given. This is the pairing of the two halves.
 test("on a narrow screen only the panel that won the tiebreak paints", () => {
-  const contested = { tocOpen: true, searchOpen: false, sidePanel: "ai" as const };
+  const contested = { tocOpen: true, searchOpen: false, sidePanel: "ai" as "ai" | "traces" | null };
   const winner = narrowPanel(contested);
   assert.equal(winner, "toc");
 
