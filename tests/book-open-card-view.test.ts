@@ -50,17 +50,17 @@ function book(overrides: Partial<{ format: string; status: string }> = {}) {
 
 test("a scanned PDF is the exact failed + PDF_TEXT_LAYER_UNAVAILABLE signal, not a proxy", () => {
   const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
-  assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, scanned), true);
+  assert.equal(isScannedPdf({ format: "pdf" }, scanned), true);
   // Same status/error on a non-PDF format never counts — the error only
   // means something for the format it was raised against.
-  assert.equal(isScannedPdf({ format: "epub", title: "Some Book" }, scanned), false);
+  assert.equal(isScannedPdf({ format: "epub" }, scanned), false);
   // A short PDF that simply failed for some other reason is not scanned.
   const otherFailure = difficulty({ status: "failed", error: "SOMETHING_ELSE" });
-  assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, otherFailure), false);
+  assert.equal(isScannedPdf({ format: "pdf" }, otherFailure), false);
   // too_short is not failed — a short real-text PDF pamphlet must not be
   // mistaken for a scan.
   const short = difficulty({ status: "too_short", error: null, totalTokens: 200 });
-  assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, short), false);
+  assert.equal(isScannedPdf({ format: "pdf" }, short), false);
 });
 
 // --- openSurface ---------------------------------------------------------
@@ -93,7 +93,7 @@ test("the surface decision never consults difficulty data", () => {
 
 test("a scanned PDF classifies as scanned even though its status is literally failed", () => {
   const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
-  assert.equal(classifyOpenCardBody({ format: "pdf", title: "Some Book" }, scanned, true), "scanned");
+  assert.equal(classifyOpenCardBody({ format: "pdf" }, scanned, true), "scanned");
 });
 
 test("without OCR the same scanned PDF falls through to no conclusion", () => {
@@ -102,28 +102,28 @@ test("without OCR the same scanned PDF falls through to no conclusion", () => {
   // land somewhere honest rather than on "ready", which would put a difficulty
   // figure on a book that has no text to measure.
   const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
-  assert.equal(classifyOpenCardBody({ format: "pdf", title: "Some Book" }, scanned, true, false), "noConclusion");
+  assert.equal(classifyOpenCardBody({ format: "pdf" }, scanned, true, false), "noConclusion");
 });
 
 test("no row at all, or a pending row, both read as never computed", () => {
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, null, true), "neverComputed");
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "pending" }), true), "neverComputed");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, null, true), "neverComputed");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "pending" }), true), "neverComputed");
 });
 
 test("running reads as computing; too_short/unsupported/a plain failure read as no conclusion", () => {
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "running" }), true), "computing");
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "too_short" }), true), "noConclusion");
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "unsupported" }), true), "noConclusion");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "running" }), true), "computing");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "too_short" }), true), "noConclusion");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "unsupported" }), true), "noConclusion");
   assert.equal(
-    classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "failed", error: "BOOK_NOT_FOUND" }), true),
+    classifyOpenCardBody({ format: "epub" }, difficulty({ status: "failed", error: "BOOK_NOT_FOUND" }), true),
     "noConclusion",
   );
 });
 
 test("a done book splits on whether the reader's own pass-rate record is sufficient", () => {
   const done = difficulty({ status: "done" });
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, done, true), "ready");
-  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, done, false), "insufficientRecord");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, done, true), "ready");
+  assert.equal(classifyOpenCardBody({ format: "epub" }, done, false), "insufficientRecord");
 });
 
 // --- bandShares / weightedHardShare / roundPercent ------------------------

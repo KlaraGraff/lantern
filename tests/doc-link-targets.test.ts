@@ -4,7 +4,6 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// @ts-expect-error — plain .mjs script, no type declarations
 import { checkDocLinks, splitTarget } from "../scripts/check-doc-links.mjs";
 
 test("local links resolve absolute and relative targets and reject missing files", async () => {

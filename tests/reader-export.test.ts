@@ -1,22 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ankiFront, countExportFields, defaultExportFields, effectiveExportFields, exportCounts, exportFieldBlock, exportFieldDefaults, exportFieldKeys, exportFilename, isCustomExportFields, previewExport, sanitizeExportFilename, selectionForFormat, serializeAnkiCsv, serializeCsv, serializeMarkdown, type ExportFields, type ExportRecord } from "../src/pages/reader/reader-export.ts";
+import { ankiFront, countExportFields, defaultExportFields, effectiveExportFields, exportCounts, exportFieldBlock, exportFieldDefaults, exportFieldKeys, exportFilename, isCustomExportFields, previewExport, sanitizeExportFilename, selectionForFormat, serializeAnkiCsv, serializeCsv, serializeMarkdown, type ExportFields, type ExportHighlight, type ExportRecord, type ExportVocabulary } from "../src/pages/reader/reader-export.ts";
 
-const records: ExportRecord[] = [
-  { kind: "highlight", bookTitle: "A Book", chapter: "One", sourceText: "A, \"quote\"\nnext", note: "note", color: "yellow", cfi: "cfi", createdAt: "2026-08-04T00:00:00.000Z" },
-  { kind: "vocabulary", bookTitle: "A Book", chapter: "One", word: "Courage", definition: "bravery", context: "show courage", contextExplanation: "be brave", mastery: "new", cfi: "cfi2", createdAt: "2026-08-03T00:00:00.000Z" },
-];
+const highlight: ExportHighlight = { kind: "highlight", bookTitle: "A Book", chapter: "One", sourceText: "A, \"quote\"\nnext", note: "note", color: "yellow", cfi: "cfi", createdAt: "2026-08-04T00:00:00.000Z" };
+const vocabulary: ExportVocabulary = { kind: "vocabulary", bookTitle: "A Book", chapter: "One", word: "Courage", definition: "bravery", context: "show courage", contextExplanation: "be brave", mastery: "new", cfi: "cfi2", createdAt: "2026-08-03T00:00:00.000Z" };
+const records: ExportRecord[] = [highlight, vocabulary];
 
 describe("reader export", () => {
   it("serializes grouped markdown without empty fields", () => {
-    const text = serializeMarkdown([...records, { ...records[0], chapter: undefined, sourceText: undefined, note: undefined }], "A Book", false);
+    const text = serializeMarkdown([...records, { ...highlight, chapter: undefined, sourceText: undefined, note: undefined }], "A Book", false);
     assert.ok(text.includes("## Highlights\n\n### One"));
     assert.ok(text.includes("### Unknown chapter"));
     assert.ok(!text.includes("**Note**: undefined"));
   });
   it("escapes markdown metadata and preserves multiline quote structure", () => {
     const text = serializeMarkdown([{
-      ...records[0],
+      ...highlight,
       bookTitle: "A # Book",
       chapter: "Part *One*",
       sourceText: "first line\n# second line",
@@ -33,10 +32,10 @@ describe("reader export", () => {
     assert.ok(text.includes('"A, ""quote""\nnext"'));
   });
   it("neutralises CSV formula injection without corrupting plain text", () => {
-    const text = serializeCsv([{ ...records[0], note: "=cmd|'/c calc'!A1" }]);
+    const text = serializeCsv([{ ...highlight, note: "=cmd|'/c calc'!A1" }]);
     assert.ok(text.includes(`"'=cmd|'/c calc'!A1"`.replace(/'/g, "'")) || text.includes("'=cmd"));
     assert.ok(text.includes("'=cmd"));
-    const plain = serializeCsv([{ ...records[0], note: "regular note" }]);
+    const plain = serializeCsv([{ ...highlight, note: "regular note" }]);
     assert.ok(plain.includes('"regular note"'));
   });
   it("makes importable Anki cards and safe tags", () => {
@@ -52,10 +51,10 @@ describe("reader export", () => {
   });
   it("groups markdown records by chapter once, regardless of input order", () => {
     const shuffled: ExportRecord[] = [
-      { ...records[1], chapter: "Two", word: "second" },
-      { ...records[1], chapter: "One", word: "first" },
-      { ...records[1], chapter: "Two", word: "third" },
-      { ...records[1], chapter: "One", word: "fourth" },
+      { ...vocabulary, chapter: "Two", word: "second" },
+      { ...vocabulary, chapter: "One", word: "first" },
+      { ...vocabulary, chapter: "Two", word: "third" },
+      { ...vocabulary, chapter: "One", word: "fourth" },
     ];
     const text = serializeMarkdown(shuffled, "A Book", false);
     assert.equal((text.match(/### One/g) ?? []).length, 1);
@@ -140,7 +139,7 @@ describe("reader export fields", () => {
   it("still neutralises a formula in an optional column", () => {
     // `note` is switchable now, so the escaping has to travel with the column
     // rather than with its old fixed position in the row.
-    const text = serializeCsv([{ ...records[0], note: "=HYPERLINK(1)" }], only("note"));
+    const text = serializeCsv([{ ...highlight, note: "=HYPERLINK(1)" }], only("note"));
     assert.equal(text.split("\r\n")[1], `"highlight","A Book","'=HYPERLINK(1)"`);
   });
 

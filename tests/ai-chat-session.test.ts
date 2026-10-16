@@ -5,7 +5,6 @@ import { runInNewContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 import type { useAiChat } from "../src/hooks/useAiChat.ts";
 
-type Chat = ReturnType<typeof useAiChat>;
 type Args = Record<string, any>;
 type Handler = (args: Args) => unknown;
 

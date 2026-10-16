@@ -8,7 +8,7 @@ import {
 
 test("uses the assistant adjacent to the latest user turn", () => {
   const older = { role: "assistant" as const, route: "current_section" };
-  const latest = { role: "assistant" as const };
+  const latest: { role: "assistant"; route?: string } = { role: "assistant" };
   const result = previousAssistantBeforeLatestUser([
     { role: "user" as const },
     older,

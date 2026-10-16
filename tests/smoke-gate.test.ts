@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { collectBoundaryDiagnostic, getFaults, record } from "../harness/collectors.ts";
-// @ts-expect-error — plain .mjs driver helper, no type declarations
 import { gate } from "../harness/smoke-gate.mjs";
 
 test("a caught region render crash fails the smoke gate while the root survives", () => {

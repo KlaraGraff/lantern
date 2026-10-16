@@ -29,9 +29,9 @@ const FORMATS = "src-tauri/src/commands/books/mod.rs";
 const PACKAGE = "package.json";
 
 const packageVersion = (packageJson: string): string => {
-  const parsed = JSON.parse(packageJson) as { version?: unknown };
-  assert.equal(typeof parsed.version, "string", `${PACKAGE} must declare a string version`);
-  return parsed.version;
+  const { version } = JSON.parse(packageJson) as { version?: unknown };
+  assert.ok(typeof version === "string", `${PACKAGE} must declare a string version`);
+  return version;
 };
 
 // Types Apple ships. Anything here needs no declaration from us; anything not

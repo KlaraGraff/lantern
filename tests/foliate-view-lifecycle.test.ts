@@ -14,7 +14,7 @@ test("detaches a cancelled Foliate view before closing it after initialization",
     close: () => calls.push("close"),
   };
 
-  disposeFoliateViewAfterInitialization(view, initialization, assert.fail);
+  disposeFoliateViewAfterInitialization(view, initialization, (error) => assert.fail(String(error)));
   assert.deepEqual(calls, ["remove"]);
 
   finishInitialization();

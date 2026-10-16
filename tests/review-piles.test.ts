@@ -30,6 +30,7 @@ function word(id: string, text = id): DictionaryWord {
     mastery: "new",
     mastery_source: "manual",
     mastery_reason: null,
+    list_status: "confirmed",
     review_count: 0,
     next_review_at: null,
     review_interval_days: 0,
