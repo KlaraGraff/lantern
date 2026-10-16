@@ -1975,7 +1975,7 @@ pub(crate) fn export_vocab_backup_inner(db: &Db) -> AppResult<VocabBackup> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_vocab_backup(db: State<'_, Db>) -> AppResult<VocabBackup> {
     export_vocab_backup_inner(&db)
 }
@@ -2273,7 +2273,7 @@ pub(crate) fn do_import_vocab_backup(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_vocab_backup(
     data: String,
     format: VocabImportFormat,
