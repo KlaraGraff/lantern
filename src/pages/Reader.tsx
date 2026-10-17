@@ -117,7 +117,12 @@ import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
-import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-panel";
+import { toggleSidePanel, type TracesTab } from "./reader/side-panel";
+import { useReaderSides } from "./reader/useReaderSides";
+import { useDockTransition } from "./reader/useDockTransition";
+import { LEFT_CARD_WIDTH, reflowsBetween, slotWidth } from "./reader/reader-sides";
+import { spineSegments } from "./reader/reader-spine";
+import ReaderLeftSide from "./reader/ReaderLeftSide";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
 import type { TapZone } from "./reader/tap-zones";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
@@ -266,11 +271,23 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   // decisions below and the breakpoint-gated classes can never disagree about
   // where the reader changes shape.
   const isNarrow = useIsNarrow();
-  const [sidePanel, setSidePanel] = useState<SidePanel>(null);
+  // Both sides of the page, as the 「浮笺」 cards see them; `tocOpen`,
+  // `searchOpen` and `sidePanel` are derived from it. See `useReaderSides`.
+  const {
+    sides,
+    sidePanel,
+    tocOpen,
+    searchOpen,
+    setSidePanel,
+    setTocOpen,
+    setSearchOpen,
+    peek: peekLeftSide,
+    unpeek: endLeftPeek,
+    dismissFloating,
+    pin: pinSide,
+  } = useReaderSides();
   const [tracesTab, setTracesTab] = useState<TracesTab>("notes");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tocOpen, setTocOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   /**
    * Whether the phone's chrome is raised over the page.
@@ -365,12 +382,12 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     if (!isNarrow || !sidePanel) return;
     setTocOpen(false);
     setSearchOpen(false);
-  }, [isNarrow, sidePanel]);
+  }, [isNarrow, sidePanel, setSearchOpen, setTocOpen]);
 
   useEffect(() => {
     if (!isNarrow || (!tocOpen && !searchOpen)) return;
     setSidePanel(null);
-  }, [isNarrow, tocOpen, searchOpen]);
+  }, [isNarrow, tocOpen, searchOpen, setSidePanel]);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
@@ -634,6 +651,29 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     menuWasOpenRef.current = open;
   }, [contextMenu, clearReaderSelection]);
   const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel, !isNarrow);
+  // Pinning or unpinning a card is the one thing that changes the page's
+  // width, and it does so in one transition: hold the page still through it
+  // and reflow once at the end. Before paint, so the freeze reads the width
+  // the page had before the slot started to move.
+  const dock = useDockTransition(viewRef, viewerRef);
+  const leftOpen = sides.left.mode !== "closed";
+  const [leftCardLingering, setLeftCardLingering] = useState(false);
+  useEffect(() => {
+    if (leftOpen) {
+      setLeftCardLingering(true);
+      return;
+    }
+    // `--motion-base`, the card's slide.
+    const timer = window.setTimeout(() => setLeftCardLingering(false), 220);
+    return () => window.clearTimeout(timer);
+  }, [leftOpen]);
+  const leftSlotRef = useRef<HTMLDivElement>(null);
+  const previousSidesRef = useRef(sides);
+  useLayoutEffect(() => {
+    const previous = previousSidesRef.current;
+    previousSidesRef.current = sides;
+    if (reflowsBetween(previous, sides, isNarrow)) dock(leftSlotRef.current);
+  }, [sides, isNarrow, dock]);
   const {
     zoom,
     zoomRef,
@@ -912,7 +952,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [supportsSearch]);
+  }, [supportsSearch, setSearchOpen, setTocOpen]);
 
   // Cards and AI answers are lookup surfaces of their own: the same
   // double-click and selection gestures work inside them, one level deeper.
@@ -1202,6 +1242,26 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       setScrubberTicks([]);
     }
   }, [supportsScrubber, bookReady, chapters]);
+
+  // The left spine's chapter boundaries. Any format foliate can report section
+  // starts for; the rest get one segment for the whole book.
+  const [sectionFractions, setSectionFractions] = useState<number[]>([]);
+  useEffect(() => {
+    if (!bookReady) {
+      setSectionFractions([]);
+      return;
+    }
+    try {
+      setSectionFractions(viewRef.current?.getSectionFractions?.() ?? []);
+    } catch {
+      setSectionFractions([]);
+    }
+  }, [bookReady, chapters]);
+  const spine = useMemo(
+    () => spineSegments(chapters, sectionFractions, progress),
+    [chapters, sectionFractions, progress],
+  );
+  const topLevelChapterCount = useMemo(() => chapters.filter((chapter) => chapter.depth === 0).length, [chapters]);
 
 
   const currentScope = useMemo(() => {
@@ -1645,6 +1705,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     speakSelection,
     supportsWordMarkers,
     t,
+    setSidePanel,
   ]);
   const handleOpenSearch = useCallback(() => {
     if (!supportsSearch) return;
@@ -1652,7 +1713,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setTocOpen(false);
     setSettingsOpen(false);
     setSearchFocusToken((token) => token + 1);
-  }, [supportsSearch]);
+  }, [supportsSearch, setSearchOpen, setTocOpen]);
   const installDocumentInteractions = useReaderInteractions({
     supportsSelection,
     pendingSelectionMenuRef,
@@ -1841,7 +1902,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     if (!isNarrowNow()) setSidePanel("ai");
     if (chatId) setInitialChatId(chatId);
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
-  }, [arrivalQuery, bookReady, location.state, location.pathname, navigate]);
+  }, [arrivalQuery, bookReady, location.state, location.pathname, navigate, setSidePanel]);
 
   // Arriving from an example sentence in another book's chat. The jump is kept
   // in component state because the router state is cleared immediately below —
@@ -1902,6 +1963,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     pushJump,
     supportsCfiNavigation,
     viewRef,
+    setSidePanel,
   ]);
 
   // The three panels below (TOC, settings, AI) stay mounted while closed —
@@ -1926,7 +1988,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setTocOpen(false);
     setSearchOpen(false);
     setSidePanel(null);
-  }, []);
+  }, [setSearchOpen, setSidePanel, setTocOpen]);
 
   // Left-edge swipe on whichever panel is covering the page — the touch
   // spelling of the ⟨ in the panel's own bar, one level, never the book. The
@@ -1952,7 +2014,9 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     if (isTextBook ? !textReaderNavigateRef.current : !viewRef.current) return;
     navigateToChapter(chapter.targetHref);
     closeNarrowPanels();
-  }, [chapters, closeNarrowPanels, isTextBook, navigateToChapter]);
+    // A card that was only floating has done its job; a pinned one stays.
+    if (!isNarrowNow()) dismissFloating("left");
+  }, [chapters, closeNarrowPanels, dismissFloating, isTextBook, navigateToChapter]);
 
   const closeReaderSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -2265,6 +2329,67 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setSearchOpen(false);
     setSidePanel(null);
   };
+
+  /**
+   * The TOC card's 「当前位置」: the chapter, how far through it, and pages
+   * left where the paginator counts them (an EPUB's pages are per section,
+   * which is the chapter the reader is in; a PDF's are the whole book's).
+   */
+  const pagesLeft = supportsScrubber && pageInfo
+    ? Math.max(0, pageInfo.total - (pageInfo.visibleEnd ?? pageInfo.current))
+    : null;
+  const tocPositionCard = currentChapterTitle ? (
+    <div className="mx-2 mb-2 rounded-[10px] bg-accent-bg px-3 py-2.5">
+      <p className="text-[11px] font-medium leading-4 text-text-muted">{t("reader.side.position")}</p>
+      <p className="mt-0.5 truncate text-[13px] font-semibold leading-5 text-text-primary" title={currentChapterTitle}>
+        {currentChapterTitle}
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-border">
+          <div className="h-full rounded-full bg-accent" style={{ width: `${chapterProgress}%` }} />
+        </div>
+        <span className="shrink-0 text-[11px] tabular-nums leading-4 text-text-muted">
+          {pagesLeft !== null
+            ? t("reader.side.pagesLeft", { count: pagesLeft })
+            : t("reader.side.chapterPercent", { progress: chapterProgress })}
+        </span>
+      </div>
+    </div>
+  ) : null;
+
+  // A card that is closing keeps its content until it has slid away, or it
+  // would leave as an empty frame.
+  const tocCardOpen = !isNarrow && sides.left.view === "toc" && (tocOpen || leftCardLingering);
+  const searchCardOpen = !isNarrow && sides.left.view === "search" && (searchOpen || leftCardLingering);
+
+  const tocPanel = (variant: "column" | "card") => (
+    <TableOfContents
+      open={variant === "card" ? tocCardOpen : tocOpen}
+      chapters={tocChapters}
+      currentPage={currentChapterIndex + 1}
+      onNavigate={handleTocNavigate}
+      bookId={bookId}
+      savedState={tocSavedState}
+      variant={variant}
+      lead={variant === "card" ? tocPositionCard : undefined}
+    />
+  );
+
+  const searchPanel = (variant: "column" | "card", id: string) => (
+    <BookSearchPanel
+      open={variant === "card" ? searchCardOpen : searchOpen}
+      onClose={() => setSearchOpen(false)}
+      bookId={id}
+      viewRef={viewRef}
+      focusToken={searchFocusToken}
+      variant={variant}
+      onNavigateToCfi={(cfi) => {
+        if (closesOnNavigate(isNarrowNow())) searchNavigationClosingRef.current = true;
+        navigateToCfi(cfi);
+        closeNarrowPanels();
+      }}
+    />
+  );
 
   /**
    * Where a panel sits.
@@ -2847,45 +2972,53 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         className="relative flex flex-1 overflow-hidden"
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
-        <div
-          className={panelShellClass(tocOpen, "md:w-80", coveringPanel === "toc")}
-          ref={coveringPanel === "toc" ? panelSwipeRef : undefined}
-          {...(coveringPanel === "toc" ? panelSwipeHandlers : undefined)}
-        >
-          {coveringPanel === "toc" && coveringPanelBar("toc")}
-          <div className="min-h-0 flex-1">
-            <TableOfContents
-              open={tocOpen}
-              chapters={tocChapters}
-              currentPage={currentChapterIndex + 1}
-              onNavigate={handleTocNavigate}
-              bookId={bookId}
-              savedState={tocSavedState}
-            />
-          </div>
-        </div>
-        {supportsSearch && bookId && (
-          <div
-            className={panelShellClass(searchOpen, "md:w-80", coveringPanel === "search")}
-            ref={coveringPanel === "search" ? panelSwipeRef : undefined}
-            {...(coveringPanel === "search" ? panelSwipeHandlers : undefined)}
-          >
-            {coveringPanel === "search" && coveringPanelBar("search")}
-            <div className="min-h-0 flex-1">
-              <BookSearchPanel
-                open={searchOpen}
-                onClose={() => setSearchOpen(false)}
-                bookId={bookId}
-                viewRef={viewRef}
-                focusToken={searchFocusToken}
-                onNavigateToCfi={(cfi) => {
-                  if (closesOnNavigate(isNarrowNow())) searchNavigationClosingRef.current = true;
-                  navigateToCfi(cfi);
-                  closeNarrowPanels();
-                }}
-              />
+        {isNarrow ? (
+          <>
+            <div
+              className={panelShellClass(tocOpen, "md:w-80", coveringPanel === "toc")}
+              ref={coveringPanel === "toc" ? panelSwipeRef : undefined}
+              {...(coveringPanel === "toc" ? panelSwipeHandlers : undefined)}
+            >
+              {coveringPanel === "toc" && coveringPanelBar("toc")}
+              <div className="min-h-0 flex-1">{tocPanel("column")}</div>
             </div>
-          </div>
+            {supportsSearch && bookId && (
+              <div
+                className={panelShellClass(searchOpen, "md:w-80", coveringPanel === "search")}
+                ref={coveringPanel === "search" ? panelSwipeRef : undefined}
+                {...(coveringPanel === "search" ? panelSwipeHandlers : undefined)}
+              >
+                {coveringPanel === "search" && coveringPanelBar("search")}
+                <div className="min-h-0 flex-1">{searchPanel("column", bookId)}</div>
+              </div>
+            )}
+          </>
+        ) : (
+          <ReaderLeftSide
+            side={sides.left}
+            segments={spine}
+            slotWidth={slotWidth(sides.left, LEFT_CARD_WIDTH, false)}
+            slotRef={leftSlotRef}
+            chapterCount={topLevelChapterCount}
+            canSearch={Boolean(supportsSearch && bookId)}
+            onPeek={peekLeftSide}
+            onEndPeek={endLeftPeek}
+            onPin={() => pinSide("left")}
+            onShowView={(view) => {
+              if (view === "toc") {
+                setTocOpen(true);
+                return;
+              }
+              setSearchOpen(true);
+              setSearchFocusToken((token) => token + 1);
+            }}
+          >
+            {/* Both stay mounted, so a search survives a look at the TOC. */}
+            <div className={tocCardOpen ? "h-full" : "hidden"}>{tocPanel("card")}</div>
+            {supportsSearch && bookId && (
+              <div className={searchCardOpen ? "h-full" : "hidden"}>{searchPanel("card", bookId)}</div>
+            )}
+          </ReaderLeftSide>
         )}
         <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}>
           <main

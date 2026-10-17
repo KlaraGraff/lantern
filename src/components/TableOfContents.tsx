@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronRight } from "lucide-react";
@@ -26,6 +26,14 @@ interface TableOfContentsProps {
   bookId?: string;
   /** Restored state for `bookId`, once its per-book settings have loaded. */
   savedState?: TocSavedState;
+  /**
+   * `column` is the panel beside the page (and the phone's full-screen sheet).
+   * `card` is the 「浮笺」 card on a wide reader: the card draws the surface and
+   * its header, and chapters sit on a reading timeline.
+   */
+  variant?: "column" | "card";
+  /** Above the chapters, inside the scroll: the card's current-position summary. */
+  lead?: ReactNode;
 }
 
 interface TocRow extends Chapter {
@@ -46,6 +54,8 @@ function TableOfContents({
   onNavigate,
   bookId,
   savedState,
+  variant = "column",
+  lead,
 }: TableOfContentsProps) {
   const { t } = useTranslation();
   const activeRef = useRef<HTMLButtonElement>(null);
@@ -182,6 +192,7 @@ function TableOfContents({
   }, [bookId, flushTocStateSave]);
 
   if (!open) return null;
+  const card = variant === "card";
 
   const toggleRow = (page: number) => {
     const next = new Set(expandedPages);
@@ -205,22 +216,28 @@ function TableOfContents({
     // beside it it is just a line down the edge of the screen.
     <aside
       aria-label={t("reader.tocTitle")}
-      className="flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"
+      className={card
+        ? "flex h-full min-h-0 w-full flex-col"
+        : "flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"}
     >
-      <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface">
+      {!card && <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface">
         {/* Below the breakpoint this panel covers the screen and wears the
             reader's nav bar, which already names it — see `coveringPanelBar`.
             Two identical titles stacked one on the other read as a bug. */}
         <h2 className="hidden md:block text-[15px] font-semibold text-text-primary leading-5">
           {t("reader.tocTitle")}
         </h2>
-      </div>
+      </div>}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-3"
+        className={card ? "flex-1 min-h-0 overflow-y-auto px-2 pb-3" : "flex-1 min-h-0 overflow-y-auto px-3 py-3"}
       >
-        <div className="flex flex-col gap-1">
+        {lead}
+        {/* The card's timeline: one hairline behind every row's dot. */}
+        <div className={card
+          ? "relative flex flex-col gap-0.5 before:absolute before:left-[11.5px] before:top-4 before:bottom-4 before:w-px before:bg-border"
+          : "flex flex-col gap-1"}>
           {visibleRows.map((chapter) => {
             const isActive = currentPage === chapter.page;
             const isExpanded = expandedPages.has(chapter.page);
@@ -241,10 +258,23 @@ function TableOfContents({
             return (
               <div
                 key={chapter.page + "-" + chapter.title}
-                style={{ paddingLeft: 4 + chapter.depth * 16 }}
+                style={{ paddingLeft: (card ? 20 : 4) + chapter.depth * 16 }}
                 className={rowClassName}
               >
-                {isActive && (
+                {card ? (
+                  // Read filled, current ringed, ahead hollow. "Read" is "behind
+                  // the reader", the same approximation the spine makes.
+                  <span
+                    aria-hidden
+                    className={`absolute left-[9px] top-[13px] size-1.5 rounded-full ${
+                      isActive
+                        ? "bg-bg-surface ring-2 ring-accent"
+                        : chapter.page < currentPage
+                          ? "bg-accent"
+                          : "border border-text-muted/60 bg-bg-surface"
+                    }`}
+                  />
+                ) : isActive && (
                   <span className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-accent" />
                 )}
                 {chapter.hasChildren ? (

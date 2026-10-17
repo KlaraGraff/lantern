@@ -1,6 +1,6 @@
 # UI redesign v2: the reader opens in the library window
 
-Status: in progress.
+Status: shipped (PR #24).
 Decision: maple chose the single-window reader on 2026-10-17 (the design thread's recommendation, §7 item 3 of `design/lantern-ui-redesign-2026-10-16.md` in the project's shared folder). Previous steps: [`ui-redesign-shell.md`](ui-redesign-shell.md), [`ui-redesign-home.md`](ui-redesign-home.md).
 
 ## Why
