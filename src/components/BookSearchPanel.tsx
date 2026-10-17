@@ -24,6 +24,8 @@ interface BookSearchPanelProps {
   /** Bumped by the reader on every ⌘F, even while already open, so the input re-focuses/re-selects. */
   focusToken: number;
   onNavigateToCfi: (cfi: string) => void;
+  /** `card`: inside the reader's 「浮笺」 card, which draws the surface and the title. See `TableOfContents`. */
+  variant?: "column" | "card";
 }
 
 /** How long typing pauses before a query actually runs — searching a whole book is expensive. */
@@ -38,6 +40,7 @@ export default function BookSearchPanel({
   viewRef,
   focusToken,
   onNavigateToCfi,
+  variant = "column",
 }: BookSearchPanelProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -188,13 +191,17 @@ export default function BookSearchPanel({
     // `TableOfContents`.
     <aside
       aria-label={t("reader.search.title")}
-      className="flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"
+      className={variant === "card"
+        ? "flex h-full min-h-0 w-full flex-col"
+        : "flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"}
     >
-      <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface flex flex-col gap-2">
+      <div className={variant === "card"
+        ? "shrink-0 px-4 pb-2 flex flex-col gap-2"
+        : "shrink-0 border-b border-border px-5 py-3 bg-bg-surface flex flex-col gap-2"}>
         {/* Below the breakpoint this panel covers the screen and wears the
             reader's nav bar, which already names it — see `coveringPanelBar`.
             Two identical titles stacked one on the other read as a bug. */}
-        <h2 className="hidden md:block text-[15px] font-semibold text-text-primary leading-5">
+        <h2 className={variant === "card" ? "sr-only" : "hidden md:block text-[15px] font-semibold text-text-primary leading-5"}>
           {t("reader.search.title")}
         </h2>
         <div className="flex items-center gap-1.5 h-[30px] touch:h-11 px-2 rounded-lg bg-bg-input border border-border">

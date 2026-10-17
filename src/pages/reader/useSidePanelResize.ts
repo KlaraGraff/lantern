@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
+import { freezeReader, type ShadowHost } from "./reader-freeze";
 
 const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 700;
@@ -46,10 +47,6 @@ export type ResizableSidePanel = "ai" | "traces";
 // Lists, not prose — no measure to satisfy, only "a word, its gloss and its
 // metadata fit on one row". Scaled down by the same proportion as the AI panel.
 const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { traces: 400 };
-
-interface ShadowHost {
-  shadowRoot: ShadowRoot | null;
-}
 
 /**
  * `resizable` is false on a viewport too narrow to split, where the panel
@@ -111,19 +108,9 @@ export function useSidePanelResize<T extends ShadowHost>(
     let latestWidth = startWidth;
     let finished = false;
 
-    const renderer = viewRef.current?.shadowRoot
-      ?.querySelector("foliate-paginator, foliate-fxl, foliate-pdf-scroll");
-    renderer?.setAttribute("resize-dragging", "");
-
-    // Freeze the reader viewport at its current pixel width for the duration of
-    // the drag. Reflow is suppressed while dragging, so if we let the viewer
-    // shrink live with the flex layout, Foliate's frozen columnization no longer
-    // matches the container and the current page renders horizontally clipped
-    // until release. Pinning the width keeps the columnization valid; the
-    // growing panel simply covers the viewer's right edge (main is
-    // overflow-hidden). Restored in cleanup, just before the drag-end reflow.
-    const viewer = viewerRef.current;
-    if (viewer) viewer.style.width = `${viewer.clientWidth}px`;
+    // Held at its current width for the drag; see `freezeReader`. Released in
+    // cleanup, just before the drag-end reflow.
+    const release = freezeReader(viewRef.current, viewerRef.current);
 
     const widthFromClientX = (clientX: number) => {
       const delta = startX - clientX;
@@ -157,11 +144,7 @@ export function useSidePanelResize<T extends ShadowHost>(
       } catch { /* pointer capture can already be gone */ }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      // Release the frozen width first so the viewer flexes to its final size,
-      // then drop `resize-dragging` — the drag-end reflow that fires on removal
-      // reads the correct final width in one shot.
-      if (viewer) viewer.style.width = "";
-      renderer?.removeAttribute("resize-dragging");
+      release();
     };
 
     const finishDrag = (clientX?: number) => {
