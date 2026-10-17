@@ -85,7 +85,8 @@ pub(super) fn detect_import_format(path: &Path) -> AppResult<ImportFormat> {
         let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
         let entries = archive
             .file_names()
-            .map(str::to_ascii_lowercase)
+            .filter_map(Result::ok)
+            .map(|name| name.to_ascii_lowercase())
             .collect::<Vec<_>>();
         if ext.eq_ignore_ascii_case("fbz") && entries.iter().any(|name| name.ends_with(".fb2")) {
             return Ok(ImportFormat::Fbz);
