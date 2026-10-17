@@ -26,7 +26,7 @@
 
 @font-face {
   font-family: "Lantern UI Latin";
-  src: local("Inter");
+  src: local("IBM Plex Sans"), local("IBMPlexSans");
   font-display: swap;
   unicode-range: U+0000-024F;
 }
@@ -50,56 +50,70 @@
 }
 
 @theme {
-  --font-sans: "Lantern UI Latin", "Lantern UI CJK", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Lantern UI Latin", "Lantern UI CJK", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-serif: "Lantern Review Latin", "Lantern Review CJK", Georgia, "Libre Baskerville", "Songti SC", "Lantern Enhanced Chinese Serif", serif;
 
-  /* ── Colors ── */
-  --color-bg-page: #f4f4f5;
-  --color-bg-surface: #ffffff;
-  --color-bg-muted: #fafafa;
-  --color-bg-input: #f3f3f5;
+  /* ── Colors: 「纸灯」 ──
+     The interface is paper, not glass. Four warm greys do the layering that
+     borders and shadows used to do: page (the ground), muted (the sidebar and
+     any tonal panel), surface (cards, the content pane), input (fields and
+     segmented controls). Text is ink, warm rather than blue-black, so it sits
+     on the paper instead of floating over it. docs/impls/ui-redesign-paper-lantern.md
+     has the rationale; design/lantern-desktop.pen predates this palette. */
+  --color-bg-page: #f5f1e8;
+  --color-bg-surface: #fdfbf7;
+  --color-bg-muted: #f3eee4;
+  --color-bg-input: #ede7db;
 
-  --color-text-primary: #18181b;
-  --color-text-body: #0a0a0a;
-  --color-text-secondary: #52525c;
-  --color-text-muted: #71717b;
-  --color-text-placeholder: #717182;
+  --color-text-primary: #1f1b16;
+  --color-text-body: #26211b;
+  --color-text-secondary: #4a433a;
+  --color-text-muted: #7a7064;
+  --color-text-placeholder: #9a9084;
 
-  --color-border: #e4e4e7;
-  --color-border-light: #f4f4f5;
+  --color-border: #e2dacb;
+  --color-border-light: #efe8da;
 
-  /* ── Brand Palette (from Figma design system) ── */
-  --color-accent: #7c3aed;         /* Deep Purple */
-  --color-accent-bg: #f3e8ff;      /* Mist */
-  --color-accent-text: #7c3aed;    /* Deep Purple */
+  /* ── Brand: one accent, for actions and progress only ──
+     Lantern amber. `accent-text` is a step darker than `accent` so 13px text
+     in it clears 4.5:1 on every surface above; the fill itself only ever
+     carries white text or a progress bar. */
+  --color-accent: #b4561f;
+  --color-accent-bg: #f6e5d6;
+  --color-accent-text: #a04c19;
 
-  --color-deep-purple: #7c3aed;
-  --color-purple: #a855f7;
-  --color-lavender: #c084fc;
-  --color-soft-lilac: #d8b4fe;
-  --color-mist: #f3e8ff;
+  /* The violet family is data, not brand: word-frequency bands, mastery
+     tiers, quoted passages in cards. Desaturated a step from the old brand
+     purple so it reads as a category colour next to the amber, not as a
+     second accent competing with it. */
+  --color-deep-purple: #6d4fc2;
+  --color-purple: #8b6fd6;
+  --color-lavender: #b39fe6;
+  --color-soft-lilac: #d3c7f2;
+  --color-mist: #efeafa;
 
-  --color-dark: #030213;
+  --color-dark: #1f1b16;
 
-  --color-success: #00c950;
-  --color-success-text: #00a63e;
+  --color-success: #3b7d4f;
+  --color-success-text: #2f6b42;
 
-  --color-danger: #e7000b;
-  --color-danger-hover: #c00009;
-  --color-danger-bg: #fef2f2;
-  --color-danger-border: #ffc9c9;
-  --color-danger-text: #e7000b;
+  --color-danger: #b33a2e;
+  --color-danger-hover: #962f25;
+  --color-danger-bg: #fbeeeb;
+  --color-danger-border: #efc3bc;
+  --color-danger-text: #a8362b;
 
-  /* Amber. For things the reader should read before they scroll past —
+  /* Amber-gold. For things the reader should read before they scroll past —
      what an unattended job sends off this device — where red would claim
-     something is wrong and grey would let it be skipped. */
-  --color-warning: #b8791c;
+     something is wrong and grey would let it be skipped. Yellower than the
+     accent on purpose, so a warning never looks like a button. */
+  --color-warning: #a2731c;
 
-  --color-link: #155dfc;
-  --color-link-light: #2b7fff;
+  --color-link: #1f5fa8;
+  --color-link-light: #3b7bc7;
 
-  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-overlay: rgba(31, 27, 22, 0.45);
 
   --color-reader-original-bg: #ffffff;
   --color-reader-original-border: #d4d4d8;
@@ -117,12 +131,15 @@
   --radius-full: 9999px;
 
   /* ── Shadows ── */
-  --shadow-card: 0px 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0px 2px 4px -2px rgba(0, 0, 0, 0.1);
-  --shadow-popover: 0px 10px 15px 0px rgba(0, 0, 0, 0.1),
-    0px 4px 6px 0px rgba(0, 0, 0, 0.1);
-  --shadow-context: 0px 20px 25px 0px rgba(0, 0, 0, 0.15),
-    0px 8px 10px 0px rgba(0, 0, 0, 0.15);
+  /* Warm brown at low alpha, never neutral black: a grey shadow on cream
+     paper reads as dirt. Two real levels (card, popover) plus the context
+     menu, which needs to sit above everything. */
+  --shadow-card: 0px 1px 2px rgba(60, 45, 20, 0.08),
+    0px 8px 20px -10px rgba(60, 45, 20, 0.28);
+  --shadow-popover: 0px 1px 2px rgba(60, 45, 20, 0.08),
+    0px 14px 30px -12px rgba(60, 45, 20, 0.35);
+  --shadow-context: 0px 2px 4px rgba(31, 27, 22, 0.12),
+    0px 24px 48px -16px rgba(31, 27, 22, 0.4);
 
   /* ── Spacing ── */
   --spacing-page: 24px;
@@ -223,25 +240,28 @@
   --color-mastery-familiar: #b8a6fd;
   --color-mastery-mastered: #f0ebff;
 
-  --color-bg-page: #151518;
-  --color-bg-surface: #18191d;
-  --color-bg-muted: #1f2023;
-  --color-bg-input: #25262c;
+  /* Dark is a second sheet of paper, not the light sheet inverted: the same
+     warm cast, the same four-step layering, with `muted` now the darkest so
+     the sidebar recedes and the content pane comes forward. */
+  --color-bg-page: #151311;
+  --color-bg-surface: #1d1a17;
+  --color-bg-muted: #100e0c;
+  --color-bg-input: #2a2521;
 
-  --color-text-primary: #f4f4f5;
-  --color-text-body: #e7e7ea;
-  --color-text-secondary: #c9c9d1;
-  --color-text-muted: #9a9aa4;
-  --color-text-placeholder: #85858f;
+  --color-text-primary: #f1ebe0;
+  --color-text-body: #e6dfd2;
+  --color-text-secondary: #cfc6b8;
+  --color-text-muted: #9a8f80;
+  --color-text-placeholder: #857a6c;
 
-  --color-border: #34343d;
-  --color-border-light: #2a2b31;
+  --color-border: #2e2823;
+  --color-border-light: #262220;
 
-  --color-accent: #8b5cf6;
-  --color-accent-bg: #302647;
-  --color-accent-text: #a78bfa;
+  --color-accent: #e08a4e;
+  --color-accent-bg: #3a2718;
+  --color-accent-text: #efa068;
 
-  --color-deep-purple: #8b5cf6;
+  --color-deep-purple: #8b6fd6;
   --color-purple: #a78bfa;
   --color-lavender: #c4b5fd;
   /* Its one consumer is a resting border (the profile page's 你写的 box), so
@@ -251,23 +271,23 @@
   --color-soft-lilac: #4a3f68;
   --color-mist: #302647;
 
-  --color-dark: #fafafa;
+  --color-dark: #f5f1e8;
 
-  --color-success: #22c55e;
-  --color-success-text: #4ade80;
+  --color-success: #4fa66a;
+  --color-success-text: #7cc892;
 
-  --color-danger: #e7000b;
-  --color-danger-hover: #c00009;
-  --color-danger-bg: #450a0a4d;
-  --color-danger-border: #991b1b;
-  --color-danger-text: #f87171;
+  --color-danger: #e25b4c;
+  --color-danger-hover: #c94a3c;
+  --color-danger-bg: #3a1c19;
+  --color-danger-border: #7a2e27;
+  --color-danger-text: #f08a7c;
 
   --color-warning: #e0a75a;
 
-  --color-link: #60a5fa;
-  --color-link-light: #93bbfd;
+  --color-link: #7fb2f0;
+  --color-link-light: #a6c8f5;
 
-  --color-overlay: rgba(21, 21, 24, 0.72);
+  --color-overlay: rgba(15, 12, 10, 0.72);
 }
 
 /* Both rules below sit in `@layer base` rather than loose at the end of the
@@ -388,7 +408,7 @@ body {
 
 .text-book-reader::selection,
 .text-book-reader *::selection {
-  background: rgba(124, 58, 237, 0.24);
+  background: rgba(180, 86, 31, 0.26);
   color: inherit;
 }
 .text-book-reader[data-reader-theme="paper"]::selection,
@@ -401,7 +421,7 @@ body {
 }
 .text-book-reader[data-reader-theme="dark"]::selection,
 .text-book-reader[data-reader-theme="dark"] *::selection {
-  background: rgba(167, 139, 250, 0.38);
+  background: rgba(224, 138, 78, 0.38);
 }
 
 .reader-page-viewport {
