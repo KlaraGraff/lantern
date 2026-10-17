@@ -94,9 +94,9 @@ export function getReaderThemeVars(theme: string, customTheme?: ReaderCustomThem
       "--color-text-placeholder": "#a1a1aa",
       "--color-border": "#e4e4e7",
       "--color-border-light": "#f4f4f5",
-      "--color-accent": "#7c3aed",
-      "--color-accent-text": "#7c3aed",
-      "--color-accent-bg": "#f3e8ff",
+      "--color-accent": "#b4561f",
+      "--color-accent-text": "#a04c19",
+      "--color-accent-bg": "#f6e5d6",
     };
     case "paper": return {
       "--color-bg-page": "#EBE1CB",
