@@ -36,6 +36,8 @@ interface AiPanelProps {
   /** Answers are lookup surfaces too: double-click a word, or select a phrase. */
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
   onSelectText?: (source: PanelSelectionSource) => void;
+  /** Whether an answer is being written — the reader's bookmark ear keeps it in reach while the card is shut. */
+  onStreamingChange?: (streaming: boolean) => void;
 }
 
 const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
@@ -148,7 +150,7 @@ function quoteIdentity(quote: ComposerQuote): string {
   return quote.cfi ? `passage:${quote.cfi}` : `${quote.kind ?? "passage"}:${quote.text}`;
 }
 
-function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onLookupWord, onSelectText }: AiPanelProps) {
+function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onLookupWord, onSelectText, onStreamingChange }: AiPanelProps) {
   const { t } = useTranslation();
   const coarsePointer = useCoarsePointer();
 
@@ -172,6 +174,9 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
     scopeAmbiguous: currentScopeAmbiguous,
     getViewportText,
   });
+  useEffect(() => {
+    onStreamingChange?.(streaming);
+  }, [streaming, onStreamingChange]);
 
   const [input, setInput] = useState("");
   // Manual scope chip. Sticky within this panel; switching books resets it

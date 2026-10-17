@@ -126,6 +126,7 @@ import { useLingering } from "./reader/useLingering";
 import ReaderRightSide from "./reader/ReaderRightSide";
 import { spineSegments } from "./reader/reader-spine";
 import ReaderLeftSide from "./reader/ReaderLeftSide";
+import ReaderBookmarkEar from "./reader/ReaderBookmarkEar";
 import { escapeStep } from "./reader/reader-escape";
 import { useChromeFade } from "./reader/useChromeFade";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
@@ -436,6 +437,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   const [readerRect, setReaderRect] = useState<SerializableRect | null>(null);
   const [aiContext, setAiContext] = useState<{ text: string; cfi?: string; analysis?: string; focusWord?: string } | undefined>();
   const [initialChatId, setInitialChatId] = useState<string | undefined>();
+  const [aiStreaming, setAiStreaming] = useState(false);
   const [activeVocabCfi, setActiveVocabCfi] = useState<string | null>(null);
   const [translation, setTranslation] = useState<{
     x: number;
@@ -3117,6 +3119,9 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         className="relative flex flex-1 overflow-hidden"
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
+        {!isNarrow && aiStreaming && sidePanel !== "ai" && (
+          <ReaderBookmarkEar onOpen={() => setSidePanel("ai")} />
+        )}
         {isNarrow ? (
           <>
             <div
@@ -3515,6 +3520,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
                   onNavigateToQuote={navigateToQuotedSource}
                   onLookupWord={lookupWordInPanel}
                   onSelectText={openPanelSelectionMenu}
+                  onStreamingChange={setAiStreaming}
                 />
               </div>
             </div>

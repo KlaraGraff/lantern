@@ -141,6 +141,7 @@ export default function LearningCardController({
    */
   const [partial, setPartial] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+  const [model, setModel] = useState<string | null>(null);
   const [notes, setNotes] = useState<LearningCardNote[]>([]);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
@@ -181,6 +182,7 @@ export default function LearningCardController({
     setAiErrorCode(null);
     setPartial(false);
     setFromCache(false);
+    setModel(null);
     const requestId = createUuid();
     const card = config.cards[interaction.kind];
     const cacheSignature = learningCardCacheSignature(card);
@@ -288,6 +290,7 @@ export default function LearningCardController({
         });
         if (!active) return;
         setResult(response);
+        setModel(response.provenance?.model || null);
         setLoading(false);
         setThinking(false);
         if (interaction.kind === "word") onLookupSuccess?.(interaction);
@@ -605,6 +608,7 @@ export default function LearningCardController({
       // A cached card was written before this record was read, so claiming
       // the record shaped it would be a guess. Only a fresh answer earns it.
       memoryHint={fromCache ? null : memoryHint}
+      receipt={{ model, cached: fromCache, withBook: Boolean(bookTitle) }}
       onLookupWord={onLookupWord}
       onSelectText={onSelectText}
       onNoteDraftChange={setNoteDraft}

@@ -15,6 +15,7 @@ import LearningCardActions from "./LearningCardActions";
 import LearningCardModules from "./LearningCardModules";
 import LearningCardNotes from "./LearningCardNotes";
 import PronounceButton from "../speech/PronounceButton";
+import { receiptParts, type LearningCardReceipt } from "./receipt";
 import type {
   CardDesignConfigV1,
   LearningCardActionId,
@@ -78,7 +79,10 @@ interface LearningCardViewProps {
   onNoteScopeChange?: (scope: "book" | "global") => void;
   /** The reader's own record for this word, when it shaped the answer below. */
   memoryHint?: WordMemoryHint | null;
+  /** What this answer was made from (design §12's receipt line); the reader's card only. */
+  receipt?: LearningCardReceipt | null;
 }
+
 
 /**
  * One line, or nothing. Only states the card can actually back up: the prompt
@@ -136,6 +140,7 @@ export default function LearningCardView({
   animateModuleChanges = false,
   onNoteScopeChange,
   memoryHint = null,
+  receipt = null,
 }: LearningCardViewProps) {
   const { t } = useTranslation();
   const titleId = useId();
@@ -173,6 +178,10 @@ export default function LearningCardView({
     ? result.sourceText
     : t(`learningCard.title.${result.kind}`);
   const memoryLine = memoryHintKey(memoryHint);
+  const receiptLineParts = receipt && !(error && !partial) ? receiptParts(receipt, result.kind) : null;
+  const receiptLine = receiptLineParts
+    ? [receiptLineParts.model, receiptLineParts.keys.map((key) => t(key)).join("")].filter(Boolean).join(" · ")
+    : null;
 
   return (
     <div
@@ -228,6 +237,16 @@ export default function LearningCardView({
           </button>
         )}
       </header>
+
+      {receiptLine && (
+        <p
+          aria-label={t("learningCard.receipt.label")}
+          className="flex shrink-0 items-start gap-1.5 border-b border-border/60 bg-bg-surface px-4 py-1.5 text-[11px] leading-4 text-text-muted"
+        >
+          <span aria-hidden="true" className="mt-[5px] size-1.5 shrink-0 rounded-full bg-accent" />
+          <span className="min-w-0 break-words">{receiptLine}</span>
+        </p>
+      )}
 
       {memoryLine && !error && (
         <p className="flex shrink-0 items-center gap-1.5 border-b border-border/60 bg-bg-muted px-4 py-1.5 text-[11px] leading-4 text-text-muted">
