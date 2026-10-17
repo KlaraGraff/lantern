@@ -282,6 +282,7 @@
   "reader.fileUnreadable": "书籍文件还在原处，但读不出内容。如果它放在外置硬盘或网络驱动器上，请确认驱动器仍然连着。",
   "reader.retry": "重试",
   "reader.returnToLibrary": "返回书架",
+  "reader.backToShelf": "书架",
   "reader.downloadingFromICloud": "正在从 iCloud 下载...",
   "reader.downloadingFromICloudPercent": "正在从 iCloud 下载... {{percent}}%",
   "reader.downloadFailed": "这次没下完。书还在 iCloud 里，联网后再试一次。",
