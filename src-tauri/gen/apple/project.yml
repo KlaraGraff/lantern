@@ -63,8 +63,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 2.18.15
-        CFBundleVersion: "2.18.15"
+        CFBundleShortVersionString: 3.0.0
+        CFBundleVersion: "3.0.0"
         CFBundleDocumentTypes:
           - CFBundleTypeName: epub
             CFBundleTypeExtensions: [epub]
