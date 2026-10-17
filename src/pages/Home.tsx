@@ -631,7 +631,7 @@ export default function Home() {
               {menuButton}
               {/* `md:flex-initial` is the CSS initial value, so the desktop row
                   is the two-item `justify-between` it has always been. */}
-              <h1 className="flex-1 md:flex-initial text-[21px] md:text-[24px] font-semibold text-text-primary tracking-[0.07px]">
+              <h1 className="flex-1 md:flex-initial font-serif text-[22px] md:text-[26px] font-semibold text-text-primary tracking-[0.01em]">
                 {title}
               </h1>
               <div data-tauri-drag-region className="flex items-center gap-0">

@@ -510,7 +510,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   const searchNavigationClosingRef = useRef(false);
   useEffect(() => {
     if (!supportsSearch || !bookReady) return;
-    const accent = getReaderThemeVars(readerSettings.theme, readerSettings.customTheme)?.["--color-accent"] ?? "#7c3aed";
+    const accent = getReaderThemeVars(readerSettings.theme, readerSettings.customTheme)?.["--color-accent"] ?? "#b4561f";
     viewRef.current?.setSearchAccent(accent);
   }, [bookReady, readerSettings.theme, readerSettings.customTheme, supportsSearch]);
   useEffect(() => {

@@ -269,7 +269,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         <div className="size-[26px] shrink-0 overflow-hidden rounded-[7px] border border-border">
           <LanternLogo size={26} className="block object-cover" />
         </div>
-        <span className="text-[18px] font-semibold tracking-[0.5px] text-text-primary">
+        <span className="font-serif text-[18px] font-semibold tracking-[0.02em] text-text-primary">
           Lantern
         </span>
         {syncProgress ? (
