@@ -1,6 +1,6 @@
 # UI redesign v2, step 2: home and learn
 
-Status: in progress.
+Status: shipped (PR #23). Next: [`ui-redesign-single-window.md`](ui-redesign-single-window.md).
 Design source: canvas boards 「v2 首页」 and 「v2 学习」 (<https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM>) and §5 / §8 of the written proposal (`design/lantern-ui-redesign-2026-10-16.md` in the project's shared folder). Step 1 (rail, chips, ⌘K, toasts) is [`ui-redesign-shell.md`](ui-redesign-shell.md).
 
 ## Why

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -19,7 +19,8 @@ import { UpdaterProvider } from "./hooks/useUpdater";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import { useIsNarrow } from "./hooks/useIsNarrow";
-import { openReaderWindow } from "./utils/openReaderWindow";
+import { useOpenBook } from "./hooks/useOpenBook";
+import { BOOK_TRANSITION_TARGET, readerRouteCommitted } from "./utils/book-transition";
 import {
   installCustomFontFaces,
   loadCustomFonts,
@@ -47,7 +48,12 @@ const FlashcardReview = lazy(() => import("./pages/FlashcardReview"));
 // for less than a frame. It exists only so that frame is a plain rect in the
 // destination page's own background rather than a flash of whatever sits
 // behind the router — same colour each route already paints once it mounts.
-const ReaderFallback = () => <div className="h-screen bg-bg-page" />;
+// The reader's one also ends the cover → reader transition when it is the
+// first thing the route paints (`utils/book-transition.ts`).
+function ReaderFallback() {
+  useLayoutEffect(() => { readerRouteCommitted(); }, []);
+  return <div className="h-screen bg-bg-page" style={BOOK_TRANSITION_TARGET} />;
+}
 const BookDetailsFallback = () => <div className="h-screen bg-bg-page" />;
 const StudyPageFallback = () => <div className="h-screen bg-bg-page" />;
 
@@ -90,12 +96,6 @@ export default function App() {
     const unlistenFonts = listen<CustomFontRecord[]>("custom-fonts-changed", (event) => {
       installCustomFontFaces(event.payload);
     });
-    const unlistenMcpOpen = isMainWindow
-      ? listen<{ id?: string; cfi?: string | null }>("mcp:open-reader", (event) => {
-        if (!event.payload.id) return;
-        void openReaderWindow(event.payload.id, { cfi: event.payload.cfi ?? undefined });
-      })
-      : undefined;
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
@@ -107,7 +107,6 @@ export default function App() {
     return () => {
       mq.removeEventListener("change", handler);
       unlistenFonts.then((stop) => stop()).catch(() => {});
-      unlistenMcpOpen?.then((stop) => stop()).catch(() => {});
     };
   }, []);
 
@@ -132,6 +131,18 @@ function AppContent() {
   // window (a single-window platform), its own chrome owns those keys and
   // that corner.
   const libraryLayer = isMainWindow && !location.pathname.startsWith("/reader");
+
+  // An MCP client asking for a book opens it the way a click would: in this
+  // window. Needs the router, so it lives here rather than in `App`.
+  const openBook = useOpenBook();
+  useEffect(() => {
+    if (!isMainWindow) return;
+    const unlisten = listen<{ id?: string; cfi?: string | null }>("mcp:open-reader", (event) => {
+      if (!event.payload.id) return;
+      openBook(event.payload.id, { cfi: event.payload.cfi ?? undefined });
+    });
+    return () => { unlisten.then((stop) => stop()).catch(() => {}); };
+  }, [openBook]);
 
   return (
     <ToastStackProvider enabled={libraryLayer && !isNarrow}>

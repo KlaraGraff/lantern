@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { invoke } from "@tauri-apps/api/core";
@@ -10,6 +10,7 @@ import { useReadingPace } from "../../hooks/useOpenCardData";
 import { useBookDifficulty } from "../../hooks/useBookDifficulty";
 import { openCommandPalette } from "../../components/library-actions";
 import { platform } from "../../services/platform";
+import { nameBookCover } from "../../utils/book-transition";
 import {
   greetingFor,
   lastReadOf,
@@ -189,7 +190,11 @@ function ContinueCard({ book, now }: { book: Book; now: Date }) {
   const lastReadLabel = lastRead.kind === "daysAgo"
     ? t("home.continue.daysAgo", { count: lastRead.days })
     : t(`home.continue.${lastRead.kind}`);
-  const resume = () => openInReader(book.id, { cfi: book.current_cfi });
+  const coverRef = useRef<HTMLButtonElement>(null);
+  const resume = () => {
+    nameBookCover(coverRef.current);
+    openInReader(book.id, { cfi: book.current_cfi });
+  };
 
   return (
     <section
@@ -199,6 +204,7 @@ function ContinueCard({ book, now }: { book: Book; now: Date }) {
       <div className="flex min-w-0 flex-1 items-center gap-5 px-6 py-5">
         <button
           type="button"
+          ref={coverRef}
           onClick={resume}
           aria-label={t("home.continue.resumeBook", { title: book.title })}
           className="book-cover relative h-[134px] w-[96px] shrink-0 cursor-pointer overflow-hidden rounded-[3px_8px_8px_3px] bg-bg-muted shadow-card"

@@ -996,3 +996,34 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
     -webkit-touch-callout: default;
   }
 }
+
+/* Cover → reader (design v2 §6): the cover named `book` grows into the
+   reader's first frame over --motion-travel; the rest of the page cross-fades
+   under it. Started from `utils/book-transition.ts`. */
+::view-transition-group(book) {
+  animation-duration: var(--motion-travel);
+  animation-timing-function: var(--ease-out-soft);
+}
+::view-transition-old(book),
+::view-transition-new(book) {
+  animation-duration: var(--motion-travel);
+  animation-timing-function: var(--ease-out-soft);
+  /* A cover and a page are different shapes: crop rather than squash. */
+  height: 100%;
+  object-fit: cover;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-travel);
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(book) {
+    animation: none;
+  }
+  ::view-transition-old(book),
+  ::view-transition-new(book),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: calc(var(--motion-travel) / 2);
+  }
+}

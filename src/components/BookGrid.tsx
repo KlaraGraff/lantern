@@ -13,6 +13,9 @@ import IndexManagerModal from "./IndexManagerModal";
 import { useShelfCoverage } from "../hooks/useShelfCoverage";
 import { useLongPress } from "../hooks/useLongPress";
 import { SortableBookItem } from "./BookSort";
+import { platform } from "../services/platform";
+import { wantsNewWindow } from "../utils/reader-open-mode";
+import { nameBookCover } from "../utils/book-transition";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -125,13 +128,21 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
 
   // An unavailable book still opens: the reader owns the iCloud download and
   // shows the waiting screen. Refusing the click here left evicted books dead.
-  const openBook = async (book: Book) => {
+  const openBook = async (book: Book, newWindow = false) => {
     if (needsPreparation(book) && book.preparation_state === "failed") {
       await retryPreparation(book);
       onBooksChanged?.();
       return;
     }
-    if (!isPendingPreparation(book)) requestOpen(book);
+    if (!isPendingPreparation(book)) requestOpen(book, newWindow ? { newWindow: true } : undefined);
+  };
+
+  // ⌘/Ctrl-click asks for a window of its own; a plain click grows this cover
+  // into the reader (`utils/book-transition.ts`).
+  const clickBook = (event: React.MouseEvent<HTMLElement>, book: Book) => {
+    const newWindow = platform.hasWindow && wantsNewWindow(event, platform.id === "macos");
+    if (!newWindow) nameBookCover(event.currentTarget.querySelector<HTMLElement>("[data-book-cover]"));
+    openBook(book, newWindow).catch(() => {});
   };
 
   const gridClass =
@@ -166,14 +177,14 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
         {books.map((book, index) => (
           <SortableBookItem key={book.id} id={book.id} enabled={sortable} list={false}>
           <button
-            onClick={() => { openBook(book).catch(() => {}); }}
+            onClick={(event) => clickBook(event, book)}
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
             onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
             className={`block w-full min-w-0 text-left group ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
             style={staggerEntrance ? ({ "--motion-stagger-index": Math.min(index, STAGGER_CAP) } as React.CSSProperties) : undefined}
           >
-            <div className={`relative bg-border overflow-hidden shadow-card aspect-[3/4] ${paper ? "rounded-[4px_8px_8px_4px] transition-transform duration-[var(--motion-instant)] ease-[var(--ease-out-soft)] group-hover:-translate-y-[3px] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0" : "rounded-lg"}`}>
+            <div data-book-cover className={`relative bg-border overflow-hidden shadow-card aspect-[3/4] ${paper ? "rounded-[4px_8px_8px_4px] transition-transform duration-[var(--motion-instant)] ease-[var(--ease-out-soft)] group-hover:-translate-y-[3px] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0" : "rounded-lg"}`}>
               {book.cover_data ? (
                 <CoverImage src={book.cover_data} alt={book.title} title={book.title} />
               ) : (
@@ -247,6 +258,11 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
           bookStatus={contextMenu.book.status}
           activeCollectionId={activeCollectionId}
           onClose={() => setContextMenu(null)}
+          onOpenInNewWindow={() => {
+            const book = contextMenu.book;
+            setContextMenu(null);
+            openBook(book, true).catch(() => {});
+          }}
           onViewDetails={() => {
             const id = contextMenu.book.id;
             setContextMenu(null);

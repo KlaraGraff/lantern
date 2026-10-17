@@ -326,15 +326,20 @@ export default function Home() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // The reader sends readers here to review with a navigation intent rather
-  // than a global event, so it survives Home not being mounted yet. Cleared
+  // The reader sends readers here to review (or to a section, such as all
+  // notes) with a navigation intent rather than a global event, so it survives Home not being mounted yet. Cleared
   // right after acting on it, same as Reader.tsx's openVocab handler, so a
   // later back/forward through history doesn't replay it.
   useEffect(() => {
-    const state = location.state as { openReview?: boolean } | null;
-    if (!state?.openReview) return;
-    setVocabInitialView("review");
-    setActiveFilter("vocab");
+    const state = location.state as { openReview?: boolean; openFilter?: string } | null;
+    if (state?.openReview) {
+      setVocabInitialView("review");
+      setActiveFilter("vocab");
+    } else if (state?.openFilter) {
+      setActiveFilter(state.openFilter);
+    } else {
+      return;
+    }
     navigate(location.pathname, { replace: true });
   }, [location.state, location.pathname, navigate]);
 
