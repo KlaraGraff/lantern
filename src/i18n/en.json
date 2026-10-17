@@ -1666,6 +1666,8 @@
   "settings.layout.pageTurnAnimationHint": "Animation used for horizontal page turns",
   "settings.layout.oneHandMode": "One-handed mode",
   "settings.layout.oneHandModeHint": "Tapping either side turns to the next page; swipe to go back",
+  "settings.layout.edgePeek": "Peek the contents from the left edge",
+  "settings.layout.edgePeekHint": "Rest the mouse on the reader's left edge to show the table of contents",
   "settings.layout.progressDisplay": "Progress display",
   "settings.layout.progressDisplayHint": "Choose which reading progress indicators to display",
   "settings.layout.previousPageBinding": "Previous-page control",

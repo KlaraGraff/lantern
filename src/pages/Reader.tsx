@@ -320,6 +320,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   const autoSaveRevisionRef = useRef(0);
   const oneHandModeRef = useRef(false);
   const [oneHandMode, setOneHandMode] = useState(false);
+  const [edgePeek, setEdgePeek] = useState(true);
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -334,6 +335,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         oneHandModeRef.current = values.one_hand_mode === "true";
         setOneHandMode(values.one_hand_mode === "true");
       }
+      if (values.reader_edge_peek !== undefined) setEdgePeek(values.reader_edge_peek !== "false");
     }).then((stop) => {
       if (disposed) stop();
       else unlisten = stop;
@@ -1631,6 +1633,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       const g = globalSettings;
       oneHandModeRef.current = g.one_hand_mode === "true";
       setOneHandMode(g.one_hand_mode === "true");
+      setEdgePeek(g.reader_edge_peek !== "false");
       setZoneGuideShownFlag(g[ZONE_GUIDE_SHOWN_KEY]);
       adoptReadingAssistanceSettings(g);
       loadReaderSettingsSources(g, perBookSettings);
@@ -3151,6 +3154,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
             slotRef={leftSlotRef}
             chapterCount={topLevelChapterCount}
             canSearch={Boolean(supportsSearch && bookId)}
+            peekOnHover={edgePeek}
             onPeek={peekLeftSide}
             onEndPeek={endLeftPeek}
             onPin={() => pinSide("left")}

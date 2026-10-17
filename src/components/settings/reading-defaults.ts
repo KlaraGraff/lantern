@@ -42,6 +42,7 @@ export const READING_DEFAULT_SETTING_KEYS = [
   "page_columns",
   "page_turn_animation",
   "one_hand_mode",
+  "reader_edge_peek",
   "show_chapter_progress",
   "show_book_progress",
   "show_page_numbers",
@@ -82,6 +83,9 @@ export function buildReadingDefaultSettings(
     // `createDefaultReaderSettings()` field. Off is the shipped arrangement —
     // the outer thirds page in opposite directions.
     one_hand_mode: "false",
+    // App-level too: resting the mouse on the reader's left edge peeks the
+    // contents card (「浮笺」). On is the designed behaviour.
+    reader_edge_peek: "true",
     show_chapter_progress: String(defaults.showChapterProgress),
     show_book_progress: String(defaults.showBookProgress),
     show_page_numbers: String(defaults.showPageNumbers),

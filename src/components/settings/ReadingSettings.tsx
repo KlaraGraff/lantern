@@ -192,6 +192,7 @@ export default function ReadingSettings({
   const [pageLayout, setPageLayout] = useState<"1" | "2">("2");
   const [pageTurnAnimation, setPageTurnAnimation] = useState<PageTurnAnimation>("slide");
   const [oneHandMode, setOneHandMode] = useState(false);
+  const [edgePeek, setEdgePeek] = useState(true);
   const [showChapterProgress, setShowChapterProgress] = useState(true);
   const [showBookProgress, setShowBookProgress] = useState(false);
   const [showPageNumbers, setShowPageNumbers] = useState(false);
@@ -300,6 +301,9 @@ export default function ReadingSettings({
           if (values.one_hand_mode !== undefined) {
             setOneHandMode(values.one_hand_mode === "true");
           }
+          break;
+        case "edgePeek":
+          setEdgePeek(values.reader_edge_peek !== "false");
           break;
         case "progress":
           if (values.show_chapter_progress !== undefined) {
@@ -886,6 +890,24 @@ export default function ReadingSettings({
             onChange={(v) => {
               setOneHandMode(v);
               void persist({ one_hand_mode: String(v) }, { toast: true });
+            }}
+          />
+        </div>
+      )}
+      {/* Peek the contents from the left edge — a mouse gesture, so the row
+          is shown only where there is a mouse to rest. */}
+      {!coarsePointer && (
+        <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+          <div className="min-w-0">
+            <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.edgePeek")}</p>
+            <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.edgePeekHint")}</p>
+          </div>
+          <Toggle
+            label={t("settings.layout.edgePeek")}
+            checked={edgePeek}
+            onChange={(v) => {
+              setEdgePeek(v);
+              void persist({ reader_edge_peek: String(v) }, { toast: true });
             }}
           />
         </div>
