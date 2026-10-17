@@ -14,7 +14,7 @@ interface ReaderRightSideProps {
   slotWidth: number;
   slotRef: Ref<HTMLDivElement>;
   cardRef: Ref<HTMLDivElement>;
-  /** Whether the 「划线笔记」 view exists for this format. */
+  /** Whether the 「本章」 view exists for this format. */
   canShowTraces: boolean;
   onShowView: (view: RightView) => void;
   onPin: () => void;
@@ -93,7 +93,7 @@ export default function ReaderRightSide({
         <div className="flex h-11 shrink-0 items-stretch gap-4 border-b border-border bg-bg-surface pl-4 pr-1.5">
           <div role="tablist" aria-label={t("reader.side.rightViews")} className="flex items-stretch gap-4">
             {segment("ai", t("reader.side.conversation"))}
-            {canShowTraces && segment("traces", t("reader.traces.title"))}
+            {canShowTraces && segment("traces", t("reader.side.chapter"))}
           </div>
           <div className="ml-auto flex items-center gap-0.5">
             <Button
