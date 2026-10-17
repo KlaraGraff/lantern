@@ -18,6 +18,8 @@ export interface ReaderTarget {
   chatId?: string;
   cfi?: string | null;
   page?: number;
+  /** Open in a window of its own rather than in this one. Not part of the address. */
+  newWindow?: boolean;
 }
 
 /**

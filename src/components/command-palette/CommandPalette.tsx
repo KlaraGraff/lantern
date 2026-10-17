@@ -22,6 +22,7 @@ import { applyThemePreference } from "../settings/theme-preference";
 import { SETTINGS_SECTION_ORDER, SETTINGS_SECTIONS } from "../settings/settings-sections";
 import type { SettingsSection } from "../settings-destination";
 import { platform } from "../../services/platform";
+import { wantsNewWindow } from "../../utils/reader-open-mode";
 import { OPEN_PALETTE_EVENT, requestLibraryAction } from "../library-actions";
 import {
   GROUP_LIMIT,
@@ -53,6 +54,8 @@ interface Row {
   highlight: boolean;
   subtitle?: string;
   run: () => void;
+  /** ⌘↵ / ⌘-click: the same thing in a window of its own. Books only, and only where windows exist. */
+  runInNewWindow?: () => void;
 }
 
 const WORKSPACE_LABEL_KEYS: Record<WorkspaceFilter, string> = {
@@ -228,6 +231,7 @@ export default function CommandPalette() {
       highlight: true,
       subtitle: [book.author, book.progress > 0 ? `${Math.round(book.progress)}%` : null].filter(Boolean).join(" · "),
       run: () => requestOpen(book),
+      runInNewWindow: platform.hasWindow ? () => requestOpen(book, { newWindow: true }) : undefined,
     }));
     const noteRows: Row[] = notes.map((note) => ({
       id: `note:${note.id}`,
@@ -274,10 +278,11 @@ export default function CommandPalette() {
     listRef.current?.querySelector<HTMLElement>(`[data-index="${selected}"]`)?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
-  const runRow = (row: Row | undefined) => {
+  const runRow = (row: Row | undefined, newWindow = false) => {
     if (!row) return;
     close();
-    row.run();
+    if (newWindow && row.runInNewWindow) row.runInNewWindow();
+    else row.run();
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -286,7 +291,7 @@ export default function CommandPalette() {
       setSelected((index) => wrapIndex(index, event.key === "ArrowDown" ? 1 : -1, rows.length));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      runRow(rows[selected]);
+      runRow(rows[selected], event.metaKey || event.ctrlKey);
     } else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -352,7 +357,7 @@ export default function CommandPalette() {
                     role="option"
                     aria-selected={isSelected}
                     onPointerMove={() => { if (!isSelected) setSelected(index); }}
-                    onClick={() => runRow(row)}
+                    onClick={(event) => runRow(row, wantsNewWindow(event, platform.id === "macos"))}
                     className={`flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 ${isSelected ? "bg-accent-bg" : ""}`}
                   >
                     <span className={`flex size-7 shrink-0 items-center justify-center rounded-[7px] ${isSelected ? "bg-bg-surface text-accent-text" : "bg-bg-muted text-text-muted"}`}>
@@ -378,6 +383,9 @@ export default function CommandPalette() {
           <span className="flex gap-3">
             <span>↑ ↓ {t("palette.hint.move")}</span>
             <span>↵ {t("palette.hint.open")}</span>
+            {rows[selected]?.runInNewWindow && (
+              <span>{platform.id === "macos" ? "⌘↵" : "Ctrl ↵"} {t("palette.hint.newWindow")}</span>
+            )}
           </span>
           <span className="truncate">{t("palette.localOnly")}</span>
         </div>

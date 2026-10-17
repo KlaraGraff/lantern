@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  AppWindow,
   BookOpen,
   CheckCircle2,
   CircleDashed,
@@ -34,6 +35,8 @@ interface BookContextMenuProps {
   bookStatus: string;
   activeCollectionId?: string;
   onClose: () => void;
+  /** Shown only where a second window can exist. */
+  onOpenInNewWindow?: () => void;
   onViewDetails: () => void;
   onMarkFinished: () => void;
   onMarkReading: () => void;
@@ -51,6 +54,7 @@ export default function BookContextMenu({
   bookStatus,
   activeCollectionId,
   onClose,
+  onOpenInNewWindow,
   onViewDetails,
   onMarkFinished,
   onMarkReading,
@@ -225,6 +229,19 @@ export default function BookContextMenu({
             opens something rather than changing something — and because the
             left click on a book goes straight to the reader, which leaves the
             right click as the only way in. */}
+        {/* The reader opens in this window; a window of its own is the
+            exception, asked for here or with ⌘/Ctrl-click. */}
+        {platform.hasWindow && onOpenInNewWindow && (
+          <button
+            onClick={onOpenInNewWindow}
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+          >
+            <AppWindow size={16} className="text-text-muted" />
+            <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
+              {t("bookMenu.openInNewWindow")}
+            </span>
+          </button>
+        )}
         <button
           onClick={onViewDetails}
           className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"

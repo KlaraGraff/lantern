@@ -13,6 +13,9 @@ import { useShelfCoverage } from "../hooks/useShelfCoverage";
 import { useLongPress } from "../hooks/useLongPress";
 import { toPlainText } from "../utils/plain-text";
 import { SortableBookItem } from "./BookSort";
+import { platform } from "../services/platform";
+import { wantsNewWindow } from "../utils/reader-open-mode";
+import { nameBookCover } from "../utils/book-transition";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -72,13 +75,20 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
 
   // An unavailable book still opens: the reader owns the iCloud download and
   // shows the waiting screen. Refusing the click here left evicted books dead.
-  const openBook = async (book: Book) => {
+  const openBook = async (book: Book, newWindow = false) => {
     if (needsPreparation(book) && book.preparation_state === "failed") {
       await retryPreparation(book);
       onBooksChanged?.();
       return;
     }
-    if (!isPendingPreparation(book)) requestOpen(book);
+    if (!isPendingPreparation(book)) requestOpen(book, newWindow ? { newWindow: true } : undefined);
+  };
+
+  // Same gestures as `BookGrid`: ⌘/Ctrl-click for a window of its own.
+  const clickBook = (event: React.MouseEvent<HTMLElement>, book: Book) => {
+    const newWindow = platform.hasWindow && wantsNewWindow(event, platform.id === "macos");
+    if (!newWindow) nameBookCover(event.currentTarget.querySelector<HTMLElement>("[data-book-cover]"));
+    openBook(book, newWindow).catch(() => {});
   };
 
   return (
@@ -87,14 +97,14 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
         {books.map((book) => (
           <SortableBookItem key={book.id} id={book.id} enabled={sortable} list>
           <button
-            onClick={() => { openBook(book).catch(() => {}); }}
+            onClick={(event) => clickBook(event, book)}
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
             onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
             className={`flex items-start gap-4 p-4 border border-border rounded-lg text-left hover:bg-bg-muted transition-colors ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
           >
             {/* Cover */}
-            <div className="relative w-[96px] h-[144px] shrink-0 rounded-lg overflow-hidden bg-border shadow-card">
+            <div data-book-cover className="relative w-[96px] h-[144px] shrink-0 rounded-lg overflow-hidden bg-border shadow-card">
               {book.cover_data ? (
                 <CoverImage src={book.cover_data} alt={book.title} title={book.title} />
               ) : (
@@ -191,6 +201,11 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
           bookStatus={contextMenu.book.status}
           activeCollectionId={activeCollectionId}
           onClose={() => setContextMenu(null)}
+          onOpenInNewWindow={() => {
+            const book = contextMenu.book;
+            setContextMenu(null);
+            openBook(book, true).catch(() => {});
+          }}
           onViewDetails={() => {
             const id = contextMenu.book.id;
             setContextMenu(null);

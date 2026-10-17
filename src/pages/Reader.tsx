@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, lazy, Suspense } from "react";
+import { BOOK_TRANSITION_TARGET, readerRouteCommitted } from "../utils/book-transition";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -193,6 +194,8 @@ export default function Reader() {
 // A route change must replace every transient interaction before children can
 // observe the destination book, including cards whose effects write notes.
 function ReaderSession({ bookId }: { bookId?: string }) {
+  // The cover → reader transition captures whatever this first commit paints.
+  useLayoutEffect(() => { readerRouteCommitted(); }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
@@ -2036,7 +2039,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
 
   if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-3">
+      <div className="flex flex-col items-center justify-center h-screen gap-3" style={BOOK_TRANSITION_TARGET}>
         <Loader2 size={24} className="animate-spin text-text-muted" />
         <p className="text-text-muted text-[14px]">{t("reader.loading")}</p>
       </div>
@@ -3649,7 +3652,10 @@ function ReaderSession({ bookId }: { bookId?: string }) {
             openAiChat();
           }}
           onViewAllNotes={() => {
-            invoke("open_library_on_main", { filter: "notes" }).catch(() => {});
+            // Only a standalone reader has a library window to hand off to;
+            // in the library's own window the library is a route away.
+            if (isStandaloneWindow) invoke("open_library_on_main", { filter: "notes" }).catch(() => {});
+            else void navigate("/", { state: { openFilter: "notes" } });
           }}
           onLookupSuccess={handleLookupSuccess}
         />
