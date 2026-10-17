@@ -5,8 +5,10 @@ import {
   FONT_SIZE_MIN,
   MEASURE_EM_CAP,
   MEASURE_EM_MIN,
+  MIN_TWO_COLUMN_SLOT,
   capMeasureWidth,
   getEffectiveFontSize,
+  getEffectivePageColumns,
   getReaderMeasure,
   getTextReaderMeasure,
 } from "../src/components/reader-settings.ts";
@@ -50,6 +52,16 @@ test("two columns each get the cap, not the pair", () => {
   assert.equal(measure.columnWidth, MEASURE_EM_CAP * 26);
   // Portrait falls back to one column, and the cap still applies.
   assert.equal(getReaderMeasure(settings, 900, 1400).columns, 1);
+});
+
+test("two columns step down to one when either would be narrower than a readable column", () => {
+  const settings = { ...base, readingMode: "paginated" as const, pageColumns: 2 as const };
+  // A 1280px window with a pinned card leaves about 984px: still two.
+  assert.equal(getEffectivePageColumns(settings, 984, 700), 2);
+  assert.equal(getEffectivePageColumns(settings, MIN_TWO_COLUMN_SLOT * 2, 700), 2);
+  assert.equal(getEffectivePageColumns(settings, MIN_TWO_COLUMN_SLOT * 2 - 1, 600), 1);
+  // Landscape alone used to be enough for two.
+  assert.equal(getEffectivePageColumns(settings, 900, 600), 1);
 });
 
 test("the shrink threshold is high enough to actually fire on a phone-width column", () => {

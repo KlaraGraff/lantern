@@ -139,13 +139,22 @@ export interface ReaderCapabilities {
   supportsZoom: boolean;
 }
 
+/**
+ * Below this, half the page is too narrow to read as a column (design §11):
+ * a pinned card beside two columns would leave each one cramped, so the page
+ * steps down to one instead.
+ */
+export const MIN_TWO_COLUMN_SLOT = 480;
+
 export function getEffectivePageColumns(
   settings: Pick<ReaderSettingsState, "readingMode" | "pageColumns">,
   viewportWidth: number,
   viewportHeight: number,
 ): PageColumns {
   if (settings.readingMode !== "paginated" || settings.pageColumns !== 2) return 1;
-  return Math.max(1, viewportWidth) > Math.max(1, viewportHeight) ? 2 : 1;
+  const width = Math.max(1, viewportWidth);
+  if (width / 2 < MIN_TWO_COLUMN_SLOT) return 1;
+  return width > Math.max(1, viewportHeight) ? 2 : 1;
 }
 
 export interface ReaderMeasure {

@@ -1,6 +1,6 @@
 # UI redesign v3: the reader 「浮笺」
 
-Status: in progress (3a).
+Status: in progress. 3a shipped (PR #25); 3c in review; 3b next.
 Design source: §§9–12 of `design/lantern-ui-redesign-2026-10-16.md` and the canvas row ⑧ boards (`ReaderProto`, `ReaderToc`, `ReaderExplain`, `ReaderPinnedNight`) in the project's shared folder; rendered at <https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM>. The reader now opens in the library window: [`ui-redesign-single-window.md`](ui-redesign-single-window.md).
 
 ## Why
@@ -29,7 +29,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 
 ## Pull requests
 
-**3a: the model and the left side (this one).**
+**3a: the model and the left side (shipped, PR #25).**
 - `reader-sides.ts` and its tests. Reader state moves onto it behind the legacy setters.
 - `useDockTransition`. `useSidePanelResize` uses the same freeze for its drag.
 - The left side on a wide screen. A 3px spine runs down the left edge: one segment per top-level chapter, filled by the book's progress. Resting within 24px of the edge for 120ms peeks the TOC card; leaving the edge and the card for 180ms ends the peek, and a press on the edge cancels it. The card is 272px, inset 12px from the window, radius 14, opaque, with a far shadow. Its header names the view, switches between TOC and search, and holds the pin. A 「当前位置」 card shows the chapter, pages left and a progress bar. Chapter rows carry timeline dots: read filled, current ringed, unread hollow. Pinned, the card keeps its place, changes to a seated shadow with a hairline, and the page gives it 296px.
@@ -45,7 +45,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - An Esc dispatcher closes things in stack order: popover → card → slide card → paper.
 - A 「← 书架」 label replaces the bare back arrow, and Esc on the bare page goes back.
 
-**3c (small).** `getEffectivePageColumns` drops to one column when a column would be narrower than 480px, so the pinned-plus-two-columns state is not cramped.
+**3c (small).** `getEffectivePageColumns` drops to one column when half the page would be narrower than 480px (`MIN_TWO_COLUMN_SLOT`), so the pinned-plus-two-columns state is not cramped. Landscape alone no longer earns two columns. It ships before 3b, which needs it for the right card's pinned state.
 
 ## Decisions (3a)
 
@@ -59,6 +59,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 
 - `tests/reader-sides.test.ts`: derivation to the legacy flags, opening modes, peek and its end, pin toggling, slot widths, and which transitions reflow.
 - `tests/reader-spine.test.ts`: spine segments from chapters, section fractions and progress.
+- `tests/reader-measure.test.ts`: the two-column step-down.
 
 ## Figma prompt
 
