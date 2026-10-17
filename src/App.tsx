@@ -13,9 +13,12 @@ import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
 import QuizReadyBanner from "./components/QuizReadyBanner";
+import CommandPalette from "./components/command-palette/CommandPalette";
+import { ToastStackProvider } from "./components/toast-stack";
 import { UpdaterProvider } from "./hooks/useUpdater";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
+import { useIsNarrow } from "./hooks/useIsNarrow";
 import { openReaderWindow } from "./utils/openReaderWindow";
 import {
   installCustomFontFaces,
@@ -123,76 +126,89 @@ export default function App() {
 function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
+  const isNarrow = useIsNarrow();
+  // The library window's global layer (design v2 §5): ⌘K and the bottom-right
+  // toast stack. Not on the reader route — where the reader runs inside this
+  // window (a single-window platform), its own chrome owns those keys and
+  // that corner.
+  const libraryLayer = isMainWindow && !location.pathname.startsWith("/reader");
 
   return (
-    // Wraps every route, not just Home: the card can be triggered from the
-    // shelf (BookGrid/BookList) or from a book's own details page, and both
-    // need to share the same session-dismiss list and undo toast rather than
-    // each carrying a copy.
-    <BookOpenGateProvider>
-      {/* One page failing should cost that page, not the window. Keyed by the
-          path, so navigating anywhere else clears the failure on its own — and
-          "back to library" is therefore a real recovery, not a re-render of the
-          same broken route. Everything below this line keeps rendering. */}
-      <ErrorBoundary
-        scope="page"
-        resetKey={location.pathname}
-        isMainWindow={isMainWindow}
-        atHome={location.pathname === "/"}
-        onGoHome={() => navigate("/")}
-      >
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route
-            path="/reader/:bookId"
-            element={<Suspense fallback={<ReaderFallback />}><Reader /></Suspense>}
-          />
-          <Route
-            path="/book/:id"
-            element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
-          />
-          <Route
-            path="/quiz"
-            element={<Suspense fallback={<StudyPageFallback />}><Quiz /></Suspense>}
-          />
-          <Route
-            path="/quiz/paper/:paperId"
-            element={<Suspense fallback={<StudyPageFallback />}><QuizPaper /></Suspense>}
-          />
-          <Route
-            path="/flashcards"
-            element={<Suspense fallback={<StudyPageFallback />}><FlashcardReview /></Suspense>}
-          />
-        </Routes>
-      </ErrorBoundary>
-      {/* Passive notices fail silently: a garnish that breaks should disappear,
-          not seize the screen to announce itself. Same principle already
-          applied to the footnote module — a garnish must never be able to stop
-          a book from opening. The error still reaches the console and the
-          on-disk log. */}
-      <ErrorBoundary scope="silent">
-        <ReasoningEffortNotice />
-        <AiRouteFallbackNotice />
-        <QuizReadyBanner />
-      </ErrorBoundary>
-      {/* Wraps exactly the two surfaces that show an update — the toast and
-          the Settings → About row — so they share one lifecycle instead of
-          each running its own check. A download begun in Settings therefore
-          survives closing the modal, progress and all. Inactive outside the
-          main window: one window checks, one window announces. */}
-      <UpdaterProvider active={isMainWindow}>
-        {/* Settings belong to the window that owns the library, not to a page.
-            A desktop reader window forwards to this one by label instead of
-            mounting a second modal of its own. */}
-        {isMainWindow && <SettingsHost />}
-        {isMainWindow && <McpApprovalDialog />}
-        {isMainWindow && <OnboardingCard />}
-        {isMainWindow && (
+    <ToastStackProvider enabled={libraryLayer && !isNarrow}>
+      {/* Wraps every route, not just Home: the card can be triggered from the
+          shelf (BookGrid/BookList) or from a book's own details page, and both
+          need to share the same session-dismiss list and undo toast rather than
+          each carrying a copy. */}
+      <BookOpenGateProvider>
+        {/* One page failing should cost that page, not the window. Keyed by the
+            path, so navigating anywhere else clears the failure on its own — and
+            "back to library" is therefore a real recovery, not a re-render of the
+            same broken route. Everything below this line keeps rendering. */}
+        <ErrorBoundary
+          scope="page"
+          resetKey={location.pathname}
+          isMainWindow={isMainWindow}
+          atHome={location.pathname === "/"}
+          onGoHome={() => navigate("/")}
+        >
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route
+              path="/reader/:bookId"
+              element={<Suspense fallback={<ReaderFallback />}><Reader /></Suspense>}
+            />
+            <Route
+              path="/book/:id"
+              element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
+            />
+            <Route
+              path="/quiz"
+              element={<Suspense fallback={<StudyPageFallback />}><Quiz /></Suspense>}
+            />
+            <Route
+              path="/quiz/paper/:paperId"
+              element={<Suspense fallback={<StudyPageFallback />}><QuizPaper /></Suspense>}
+            />
+            <Route
+              path="/flashcards"
+              element={<Suspense fallback={<StudyPageFallback />}><FlashcardReview /></Suspense>}
+            />
+          </Routes>
+        </ErrorBoundary>
+        {/* Passive notices fail silently: a garnish that breaks should disappear,
+            not seize the screen to announce itself. Same principle already
+            applied to the footnote module — a garnish must never be able to stop
+            a book from opening. The error still reaches the console and the
+            on-disk log. */}
+        <ErrorBoundary scope="silent">
+          <ReasoningEffortNotice />
+          <AiRouteFallbackNotice />
+          <QuizReadyBanner />
+        </ErrorBoundary>
+        {/* Wraps exactly the two surfaces that show an update — the toast and
+            the Settings → About row — so they share one lifecycle instead of
+            each running its own check. A download begun in Settings therefore
+            survives closing the modal, progress and all. Inactive outside the
+            main window: one window checks, one window announces. */}
+        <UpdaterProvider active={isMainWindow}>
+          {/* Settings belong to the window that owns the library, not to a page.
+              A desktop reader window forwards to this one by label instead of
+              mounting a second modal of its own. */}
+          {isMainWindow && <SettingsHost />}
+          {isMainWindow && <McpApprovalDialog />}
+          {isMainWindow && <OnboardingCard />}
+          {isMainWindow && (
+            <ErrorBoundary scope="silent">
+              <UpdateToast />
+            </ErrorBoundary>
+          )}
+        </UpdaterProvider>
+        {libraryLayer && (
           <ErrorBoundary scope="silent">
-            <UpdateToast />
+            <CommandPalette />
           </ErrorBoundary>
         )}
-      </UpdaterProvider>
-    </BookOpenGateProvider>
+      </BookOpenGateProvider>
+    </ToastStackProvider>
   );
 }

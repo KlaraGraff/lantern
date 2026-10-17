@@ -577,8 +577,12 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
   --motion-fast: 140ms;
   /* Height changes, modals, toasts — things that move a distance. */
   --motion-base: 220ms;
-  /* Deliberately absent: a "slow" step. Nothing in a reading app should take
-     longer than this to get out of the reader's way. */
+  /* Crossing screens: a cover growing into the reader, a card docking into a
+     panel. The one place something travels far enough to need it; nothing
+     that sits inside a single screen uses this. */
+  --motion-travel: 260ms;
+  /* Still deliberately absent: a "slow" step. Nothing in a reading app should
+     take longer than this to get out of the reader's way. */
 
   /* Entrances. Nearly all of the distance is covered in the first third, so
      the element reads as already-arrived while it is still settling. */
@@ -742,6 +746,55 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
 @keyframes motion-drop-in {
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: none; }
+}
+
+/*
+ * Switching workspace from the rail. The old page is simply gone (it unmounts),
+ * so only the arrival animates: a short rise, never a sideways slide — the
+ * workspaces are peers, not a sequence.
+ */
+.motion-workspace {
+  animation: motion-workspace-in var(--motion-fast) var(--ease-out-soft) backwards;
+}
+
+@keyframes motion-workspace-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The bottom-right toast stack (`toast-stack.tsx`): toasts rise from the edge
+   they are pinned to, the mirror of `.motion-drop-in`. */
+.motion-toast-in {
+  animation: motion-toast-in var(--motion-base) var(--ease-out-soft) backwards;
+}
+
+@keyframes motion-toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The command palette, opening downward from where the eye already is. */
+.motion-palette {
+  transform-origin: 50% 0;
+  animation: motion-palette-in var(--motion-fast) var(--ease-out-soft) backwards;
+}
+
+@keyframes motion-palette-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The v2 classes above keep their fade under reduced motion and only lose the
+   movement, at half the duration — the redesign's rule (design §6). The older
+   classes in the block below predate it and keep their own answer. */
+@media (prefers-reduced-motion: reduce) {
+  .motion-workspace,
+  .motion-palette {
+    animation: motion-fade-in calc(var(--motion-fast) / 2) linear backwards;
+  }
+  .motion-toast-in {
+    animation: motion-fade-in calc(var(--motion-base) / 2) linear backwards;
+  }
 }
 
 /* One switch for the lot. Reduced motion means *no* motion here, not slower

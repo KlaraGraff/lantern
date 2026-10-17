@@ -1,6 +1,6 @@
 # UI redesign: 「纸灯」 (paper lantern)
 
-Status: step 1 shipped (tokens), steps 2–4 pending.
+Status: step 1 shipped (tokens). The layout steps below were superseded by the v2 structure (2026-10-17); they continue as [`ui-redesign-shell.md`](ui-redesign-shell.md) and the plans that follow it.
 Design source: the canvas at <https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM> (six boards: current-state diagnosis, tokens, library light/dark, reader + AI panel, settings). Research notes and the resource table live in the project's shared folder (`design/lantern-ui-redesign-2026-10-16.md`).
 
 ## Why

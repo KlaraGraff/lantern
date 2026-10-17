@@ -30,13 +30,6 @@ interface SidebarProps {
   syncProgress?: { applied: number; total: number } | null;
   /** Today's due-for-review count. Surfaced only on the words row — see `memoRowBadgeCount`. */
   dueForReviewCount?: number;
-  /**
-   * Same component, same content, different container: below `md:` this sits in
-   * Home's drawer instead of being a column of the page. Splitting it into two
-   * components would fork the content on the first row anyone adds, so the fork
-   * stops at the shell — width, chrome, and the mouse-only resize grip.
-   */
-  inDrawer?: boolean;
 }
 
 /**
@@ -48,29 +41,17 @@ interface SidebarProps {
 const ROW_HEIGHT = "h-11 md:h-9";
 
 /**
+ * The library menu inside Home's phone drawer (below `md:`). On a desktop the
+ * same job is split three ways since the v2 shell (docs/impls/ui-redesign-shell.md):
+ * `NavRail` for the workspaces, `ShelfChips` for the shelf filters and
+ * collections, ⌘K for the rest.
+ *
  * The traffic lights are a macOS fact, not a wide-window fact: a window dragged
  * narrow still has them and still needs the strip left clear. Branching on width
  * here would put the brand name under the close button.
  */
-
-const SIDEBAR_MIN = 180;
-const SIDEBAR_MAX = 400;
-const SIDEBAR_DEFAULT = 224;
-const STORAGE_KEY = "sidebar-width";
-
-function getStoredWidth(): number {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    const n = parseInt(stored, 10);
-    if (!isNaN(n) && n >= SIDEBAR_MIN && n <= SIDEBAR_MAX) return n;
-  }
-  return SIDEBAR_DEFAULT;
-}
-
-export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress, dueForReviewCount = 0, inDrawer = false }: SidebarProps) {
+export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress, dueForReviewCount = 0 }: SidebarProps) {
   const { t } = useTranslation();
-  const [sidebarWidth, setSidebarWidth] = useState(getStoredWidth);
-  const resizingRef = useRef(false);
 
   const libraryFilters = [
     { id: "all", label: t("sidebar.allBooks"), icon: Library },
@@ -211,59 +192,8 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
     return () => document.removeEventListener("pointerdown", handler);
   }, [contextMenu]);
 
-  const handleResizeStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    resizingRef.current = true;
-    const handle = e.currentTarget;
-    const pointerId = e.pointerId;
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-    const onPointerMove = (ev: PointerEvent) => {
-      const newWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startWidth + ev.clientX - startX));
-      setSidebarWidth(newWidth);
-    };
-    const finish = () => {
-      resizingRef.current = false;
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerCancel);
-      handle.removeEventListener("lostpointercapture", onLostPointerCapture);
-      try {
-        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
-      } catch {
-        // Pointer capture is best-effort and may already be released by WebKit.
-      }
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      setSidebarWidth((w) => {
-        localStorage.setItem(STORAGE_KEY, String(w));
-        return w;
-      });
-    };
-    const onPointerUp = () => finish();
-    const onPointerCancel = () => finish();
-    const onLostPointerCapture = () => finish();
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    try {
-      handle.setPointerCapture(pointerId);
-    } catch {
-      // Some WebKit surfaces reject capture; the window listeners below are the fallback.
-    }
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerCancel);
-    handle.addEventListener("lostpointercapture", onLostPointerCapture);
-  }, [sidebarWidth]);
-
   return (
-    <aside
-      style={inDrawer ? undefined : { width: sidebarWidth }}
-      className={inDrawer
-        ? "w-full bg-bg-muted h-full flex flex-col gap-6 px-4 relative select-none overflow-y-auto overscroll-contain"
-        : "shrink-0 bg-bg-muted border-r border-border h-full flex flex-col gap-6 px-4 relative select-none overflow-hidden"}
-    >
+    <aside className="w-full bg-bg-muted h-full flex flex-col gap-6 px-4 relative select-none overflow-y-auto overscroll-contain">
       {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
       <div className={`flex items-center gap-2.5 pb-2 ${TOP_INSET}`}>
         <div className="size-[26px] shrink-0 overflow-hidden rounded-[7px] border border-border">
@@ -359,7 +289,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         </div>
       </div>
 
-      <div className={`flex flex-col gap-3 ${inDrawer ? "min-h-[132px]" : "min-h-0"} flex-1`}>
+      <div className="flex flex-col gap-3 min-h-[132px] flex-1">
         <div className="flex items-center justify-between shrink-0">
           <h2 className="text-[12px] font-semibold uppercase tracking-[0.3px] text-text-muted">
             {t("sidebar.collections")}
@@ -492,7 +422,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         </div>
       </div>
       {/* User profile */}
-      <div className={`border-t border-border pt-3 ${inDrawer ? "pb-[calc(var(--spacing-safe-bottom)+0.75rem)]" : "pb-3"}`}>
+      <div className="border-t border-border pt-3 pb-[calc(var(--spacing-safe-bottom)+0.75rem)]">
         <button
           onClick={onOpenSettings}
           className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg w-full cursor-pointer hover:bg-bg-input"
@@ -539,15 +469,6 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
             </span>
           </button>
         </div>
-      )}
-      {/* Resize handle — a 4px mouse target, widened under a finger since
-          every docked sidebar (`!inDrawer`) is what an iPad renders. The
-          drawer has a fixed width, so it has nothing to drag there. */}
-      {!inDrawer && (
-        <div
-          onPointerDown={handleResizeStart}
-          className="absolute top-0 right-0 w-1 touch:w-3 h-full cursor-col-resize touch-none hover:bg-accent/30 transition-colors"
-        />
       )}
     </aside>
   );
