@@ -63,6 +63,8 @@ interface BookGridProps {
   loadingMore?: boolean;
   activeCollectionId?: string;
   onBooksChanged?: () => void;
+  /** A last cell after the books — the desktop shelf's import tile. */
+  trailing?: React.ReactNode;
   /**
    * Narrow-screen column count, chosen by the segmented control in `Home.tsx`.
    * `undefined` (always the case on a wide screen) keeps the auto-fill grid
@@ -74,7 +76,7 @@ interface BookGridProps {
   sortable?: boolean;
 }
 
-export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged, columns, sortable = false }: BookGridProps) {
+export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged, columns, trailing, sortable = false }: BookGridProps) {
   const { t } = useTranslation();
   const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
@@ -139,19 +141,24 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
         ? "grid grid-cols-3 gap-3"
         : columns === 4
           ? "grid grid-cols-4 gap-2"
-          : "grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-6";
+          : "grid grid-cols-[repeat(auto-fill,minmax(148px,1fr))] gap-x-5 gap-y-6";
+  // The wide shelf is the 「纸灯」 one (design v2 §8 step 2): narrower covers
+  // with a spine, a serif title, and progress as a line under the author
+  // instead of a badge on the cover. The phone's column modes keep their own
+  // sizes.
+  const paper = columns === undefined;
   const titleClass =
     columns === 4
       ? "mt-1.5 text-[11px] font-semibold text-text-primary tracking-[-0.15px] truncate"
       : columns === 3
         ? "mt-2 text-[12.5px] font-semibold text-text-primary tracking-[-0.15px] truncate"
-        : "mt-3 text-[14px] font-semibold text-text-primary tracking-[-0.15px] truncate";
+        : "mt-2.5 font-serif text-[13px] font-semibold text-text-primary truncate";
   const authorClass =
     columns === 4
       ? "text-[10px] text-text-secondary truncate"
       : columns === 3
         ? "text-[11px] text-text-secondary truncate"
-        : "text-[12px] text-text-secondary truncate";
+        : "text-[11.5px] text-text-muted truncate";
 
   return (
     <>
@@ -166,7 +173,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
             className={`block w-full min-w-0 text-left group ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
             style={staggerEntrance ? ({ "--motion-stagger-index": Math.min(index, STAGGER_CAP) } as React.CSSProperties) : undefined}
           >
-            <div className="relative bg-border rounded-lg overflow-hidden shadow-card aspect-[3/4]">
+            <div className={`relative bg-border overflow-hidden shadow-card aspect-[3/4] ${paper ? "rounded-[4px_8px_8px_4px] transition-transform duration-[var(--motion-instant)] ease-[var(--ease-out-soft)] group-hover:-translate-y-[3px] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0" : "rounded-lg"}`}>
               {book.cover_data ? (
                 <CoverImage src={book.cover_data} alt={book.title} title={book.title} />
               ) : (
@@ -175,6 +182,9 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
                     {book.title}
                   </span>
                 </div>
+              )}
+              {paper && (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,.22)_0,rgba(0,0,0,.06)_6px,rgba(255,255,255,.08)_8px,transparent_12px)]" />
               )}
               {book.available === false && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/30">
@@ -189,7 +199,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
                   </span>
                 </div>
               )}
-              {book.status === "finished" && book.available !== false && (
+              {!paper && book.status === "finished" && book.available !== false && (
                 <div className="absolute top-2 right-2 bg-success text-white text-[12px] px-2 py-1 rounded-full">
                   {t("bookGrid.finished")}
                 </div>
@@ -213,9 +223,20 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
               {book.title}
             </h3>
             <p className={authorClass}>{book.author}</p>
+            {paper && book.status === "finished" ? (
+              <p className="mt-1 text-[10.5px] font-medium text-success-text">{t("bookGrid.finished")}</p>
+            ) : paper && book.progress > 0 ? (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <div className="h-0.5 flex-1 overflow-hidden rounded-full bg-bg-input">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, Math.round(book.progress))}%` }} />
+                </div>
+                <span className="text-[10.5px] tabular-nums text-text-muted">{Math.round(book.progress)}%</span>
+              </div>
+            ) : null}
           </button>
           </SortableBookItem>
         ))}
+        {trailing}
       </div>
 
       {contextMenu && (
