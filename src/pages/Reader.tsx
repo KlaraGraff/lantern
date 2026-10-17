@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, lazy, Suspense } from "react";
 import { BOOK_TRANSITION_TARGET, readerRouteCommitted } from "../utils/book-transition";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -120,7 +120,10 @@ import { useJumpHistory } from "./reader/useJumpHistory";
 import { toggleSidePanel, type TracesTab } from "./reader/side-panel";
 import { useReaderSides } from "./reader/useReaderSides";
 import { useDockTransition } from "./reader/useDockTransition";
-import { LEFT_CARD_WIDTH, reflowsBetween, slotWidth } from "./reader/reader-sides";
+import { LEFT_CARD_WIDTH, RIGHT_CARD_WIDTH, slotWidth } from "./reader/reader-sides";
+import { placeRightCard, type RightCardPlacement } from "./reader/right-card-placement";
+import { useLingering } from "./reader/useLingering";
+import ReaderRightSide from "./reader/ReaderRightSide";
 import { spineSegments } from "./reader/reader-spine";
 import ReaderLeftSide from "./reader/ReaderLeftSide";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
@@ -650,30 +653,41 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     else if (menuWasOpenRef.current) clearReaderSelection();
     menuWasOpenRef.current = open;
   }, [contextMenu, clearReaderSelection]);
-  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel, !isNarrow);
+  const rightSlotRef = useRef<HTMLDivElement>(null);
+  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, !isNarrow, rightSlotRef);
   // Pinning or unpinning a card is the one thing that changes the page's
   // width, and it does so in one transition: hold the page still through it
   // and reflow once at the end. Before paint, so the freeze reads the width
   // the page had before the slot started to move.
   const dock = useDockTransition(viewRef, viewerRef);
-  const leftOpen = sides.left.mode !== "closed";
-  const [leftCardLingering, setLeftCardLingering] = useState(false);
-  useEffect(() => {
-    if (leftOpen) {
-      setLeftCardLingering(true);
+  // `--motion-base`, the cards' slide.
+  const leftCardLingering = useLingering(sides.left.mode !== "closed", 220);
+  const rightCardLingering = useLingering(sides.right.mode !== "closed", 220);
+  const leftSlotRef = useRef<HTMLDivElement>(null);
+  // Where the right card floats: measured each time it opens floating (see
+  // `placeRightCard`). A float with no room beside the text is laid out pinned
+  // — "seated" — without becoming the reader's pin preference.
+  const [rightFit, setRightFit] = useState<RightCardPlacement | null>(null);
+  const rightSeated = !isNarrow && sides.right.mode === "float" && rightFit?.mode === "pinned";
+  const rightShift = !isNarrow && sides.right.mode === "float" && rightFit?.mode === "float" ? rightFit.shift : 0;
+  const rightLayoutMode = rightSeated ? "pinned" : sides.right.mode;
+  const leftSlot = slotWidth(sides.left, LEFT_CARD_WIDTH, isNarrow);
+  const rightSlot = slotWidth({ ...sides.right, mode: rightLayoutMode }, panelWidth ?? RIGHT_CARD_WIDTH, isNarrow);
+  const previousSlotsRef = useRef({ left: leftSlot, right: rightSlot });
+  useLayoutEffect(() => {
+    const previous = previousSlotsRef.current;
+    previousSlotsRef.current = { left: leftSlot, right: rightSlot };
+    if (previous.left !== leftSlot) {
+      dock(leftSlotRef.current);
       return;
     }
-    // `--motion-base`, the card's slide.
-    const timer = window.setTimeout(() => setLeftCardLingering(false), 220);
-    return () => window.clearTimeout(timer);
-  }, [leftOpen]);
-  const leftSlotRef = useRef<HTMLDivElement>(null);
-  const previousSidesRef = useRef(sides);
-  useLayoutEffect(() => {
-    const previous = previousSidesRef.current;
-    previousSidesRef.current = sides;
-    if (reflowsBetween(previous, sides, isNarrow)) dock(leftSlotRef.current);
-  }, [sides, isNarrow, dock]);
+    if (previous.right === rightSlot) return;
+    // A drag on a pinned card has already moved the slot to its final width
+    // (`useSidePanelResize`), and released its own freeze: nothing to hold.
+    const slot = rightSlotRef.current;
+    if (slot && Math.round(slot.getBoundingClientRect().width) === rightSlot) return;
+    dock(slot);
+  }, [leftSlot, rightSlot, dock]);
   const {
     zoom,
     zoomRef,
@@ -2027,6 +2041,27 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     [],
   );
 
+  // Measured once, as the right card opens floating — before paint, so a card
+  // that has to sit down never shows over the text first. Later widths do not
+  // re-measure: the text is translated or the page is narrower by then, and
+  // neither is the geometry the decision is about.
+  const rightCardWidthRef = useRef(RIGHT_CARD_WIDTH);
+  useEffect(() => { rightCardWidthRef.current = panelWidth ?? RIGHT_CARD_WIDTH; }, [panelWidth]);
+  const rightOpensFloating = !isNarrow && sides.right.mode === "float";
+  useLayoutEffect(() => {
+    if (!rightOpensFloating) {
+      setRightFit(null);
+      return;
+    }
+    const bounds = readerViewportRef.current?.getBoundingClientRect();
+    const text = measureReaderTextRect();
+    setRightFit(placeRightCard(
+      bounds?.width ?? 0,
+      text && bounds ? { left: text.left - bounds.left, right: text.right - bounds.left } : null,
+      rightCardWidthRef.current,
+    ));
+  }, [rightOpensFloating, measureReaderTextRect]);
+
   const handlePassiveVocabChange = useCallback((enabled: boolean) => {
     const previous = passiveVocab;
     const request = ++passiveVocabToggleRevisionRef.current;
@@ -2359,8 +2394,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
 
   // A card that is closing keeps its content until it has slid away, or it
   // would leave as an empty frame.
-  const tocCardOpen = !isNarrow && sides.left.view === "toc" && (tocOpen || leftCardLingering);
-  const searchCardOpen = !isNarrow && sides.left.view === "search" && (searchOpen || leftCardLingering);
+  const tocCardOpen = !isNarrow && sides.left.view === "toc" && leftCardLingering;
+  const searchCardOpen = !isNarrow && sides.left.view === "search" && leftCardLingering;
 
   const tocPanel = (variant: "column" | "card") => (
     <TableOfContents
@@ -2389,6 +2424,36 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         closeNarrowPanels();
       }}
     />
+  );
+
+  /**
+   * What the right card shows: the open view, or while it slides away, the one
+   * it was showing.
+   */
+  const rightShown = sidePanel ?? (!isNarrow && rightCardLingering ? sides.right.view : null);
+
+  /**
+   * The right side's frame. Narrow, the panel is its own full-screen sheet and
+   * needs none. Wide, it goes inside the 「浮笺」 card, which carries the views,
+   * the pin and the drag edge — and is the element a drag resizes.
+   */
+  const wrapRightSide = (panel: ReactNode) => isNarrow ? panel : (
+    <ReaderRightSide
+      side={sides.right}
+      layoutMode={rightLayoutMode}
+      seated={rightSeated}
+      width={panelWidth ?? RIGHT_CARD_WIDTH}
+      slotWidth={rightSlot}
+      slotRef={rightSlotRef}
+      cardRef={panelRef}
+      canShowTraces={supportsCfiNavigation && Boolean(bookId)}
+      onShowView={setSidePanel}
+      onPin={() => pinSide("right")}
+      onClose={() => setSidePanel(null)}
+      onResizePointerDown={handlePanelResizePointerDown}
+    >
+      {panel}
+    </ReaderRightSide>
   );
 
   /**
@@ -3020,7 +3085,15 @@ function ReaderSession({ bookId }: { bookId?: string }) {
             )}
           </ReaderLeftSide>
         )}
-        <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}>
+        <div
+          className="flex-1 flex flex-col min-w-0 transition-[translate] duration-[var(--motion-base)] ease-[var(--ease-out-soft)] motion-reduce:transition-none"
+          style={{
+            backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
+            // The text stepping aside for a floating right card: a translation,
+            // never a reflow. See `placeRightCard`.
+            translate: rightShift ? `${-rightShift}px 0` : undefined,
+          }}
+        >
           <main
             ref={attachReaderViewport}
             className="reader-page-viewport flex-1 relative overflow-hidden"
@@ -3316,27 +3389,16 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           </footer>
         </div>
 
-        {/* Not rendered at all below the breakpoint, rather than hidden: a
-            full-screen panel has nothing to resize, and a 6px drag strip on a
-            touchscreen is a control nobody can hit on purpose and everybody
-            hits by accident. `useSidePanelResize` refuses the drag from its
-            side too. */}
-        {sidePanel && !isNarrow && (
-          <div
-            onPointerDown={handlePanelResizePointerDown}
-            className="w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10"
-          />
-        )}
+        {wrapRightSide(
         <div
           ref={(node) => {
-            panelRef.current = node;
+            // Wide, the card is what a drag resizes; see `wrapRightSide`.
+            if (isNarrow) panelRef.current = node;
             if (coveringPanel === "ai" || coveringPanel === "traces") panelSwipeRef(node);
           }}
-          className={panelShellClass(sidePanel !== null, "", coveringPanel === "ai" || coveringPanel === "traces")}
-          // `panelWidth` is undefined below the breakpoint, so no inline width
-          // is written and the panel's classes are free to size it. An inline
-          // width would beat every one of them.
-          style={{ width: panelWidth }}
+          className={isNarrow
+            ? panelShellClass(sidePanel !== null, "", coveringPanel === "ai" || coveringPanel === "traces")
+            : rightShown ? "flex min-h-0 flex-1 flex-col" : "hidden"}
           onPointerDownCapture={blockPageTurnKeyboard}
           {...(coveringPanel === "ai" || coveringPanel === "traces" ? panelSwipeHandlers : undefined)}
         >
@@ -3345,7 +3407,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           {/* No tab bar: X-Ray moved to the traces panel, so the conversation is
               the only thing in here and a one-tab switcher would be a label
               pretending to be a control. The panel gains back its 45px. */}
-          <div className={sidePanel === "ai" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          <div className={rightShown === "ai" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
             <div className="relative flex-1 min-h-0">
               <div className="h-full">
                 <AiPanel
@@ -3377,7 +3439,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
               </div>
             </div>
           </div>
-          {supportsCfiNavigation && sidePanel === "traces" && bookId && (
+          {supportsCfiNavigation && rightShown === "traces" && bookId && (
             <div className="min-h-0 flex-1">
             <ReaderTracesPanel
               tab={tracesTab}
@@ -3435,7 +3497,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
             />
             </div>
           )}
-        </div>
+        </div>,
+        )}
       </div>
 
       {/* The raised chrome.
