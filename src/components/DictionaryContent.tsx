@@ -184,9 +184,11 @@ interface DictionaryContentProps {
   initialView?: "all" | "review";
   /** Narrow-layout drawer opener; see `Home.tsx`. Absent on desktop. */
   menuButton?: ReactNode;
+  /** A word picked in the command palette: land on the saved list, searched for it. */
+  focusWord?: string;
 }
 
-export default function DictionaryContent({ initialView = "all", menuButton }: DictionaryContentProps = {}) {
+export default function DictionaryContent({ initialView = "all", menuButton, focusWord }: DictionaryContentProps = {}) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const openInReader = useOpenBook();
@@ -222,6 +224,13 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   // list in the right state.
   const [listExpanded, setListExpanded] = useState(initialView !== "review");
   useEffect(() => setListExpanded(initialView !== "review"), [initialView]);
+  useEffect(() => {
+    if (!focusWord) return;
+    setContentTab("vocab");
+    setBookFilter(null);
+    setSearch(focusWord);
+    setListExpanded(true);
+  }, [focusWord]);
   const wordListAnchorRef = useRef<HTMLDivElement | null>(null);
   const revealWordList = useCallback(() => {
     setListExpanded(true);

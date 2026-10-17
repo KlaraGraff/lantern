@@ -1,11 +1,15 @@
 import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X, Menu } from "lucide-react";
+import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X, Menu, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Sidebar from "../components/Sidebar";
+import NavRail from "../components/NavRail";
+import ShelfChips from "../components/ShelfChips";
+import Toast from "../components/ui/Toast";
+import { listenForLibraryActions, workspaceOf } from "../components/library-actions";
 import BookGrid from "../components/BookGrid";
 import BookList from "../components/BookList";
 import { BookSortContext } from "../components/BookSort";
@@ -132,6 +136,8 @@ export default function Home() {
   // click on 单词 (via `handleFilterChange`) always resets this to "all", so
   // the collapsed/review-focused start state never lingers past one visit.
   const [vocabInitialView, setVocabInitialView] = useState<"all" | "review">("all");
+  // A word picked in the command palette: the words page opens searched for it.
+  const [vocabFocusWord, setVocabFocusWord] = useState<string | undefined>(undefined);
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredViewMode);
   const [sortMode, setSortMode] = useState<"recent" | "manual">(() => localStorage.getItem(SORT_MODE_STORAGE_KEY) === "manual" ? "manual" : "recent");
   const [sortSaving, setSortSaving] = useState(false);
@@ -172,6 +178,7 @@ export default function Home() {
     // Any explicit sidebar pick is a plain visit, not a review hand-off — see
     // `vocabInitialView` above.
     setVocabInitialView("all");
+    setVocabFocusWord(undefined);
     setActiveFilter(filter);
     drawerHandedOffRef.current = true;
     setDrawerOpen(false);
@@ -536,6 +543,9 @@ export default function Home() {
   };
 
   const handleImport = async () => {
+    // The centred overlay used to make a second import unreachable while one
+    // ran; the toast that replaced it does not, so the guard is explicit.
+    if (importing) return;
     try {
       setImporting(true);
       try {
@@ -558,6 +568,27 @@ export default function Home() {
       setImportError(formatError(err));
     }
   };
+
+  // The command palette's requests (see `library-actions.ts`). Through a ref so
+  // the listener is registered once and still calls this render's import.
+  const handleImportRef = useRef(handleImport);
+  useEffect(() => { handleImportRef.current = handleImport; });
+  useEffect(() => listenForLibraryActions((action) => {
+    switch (action.type) {
+      case "filter": handleFilterChange(action.filter); break;
+      case "word":
+        setVocabInitialView("all");
+        setVocabFocusWord(action.word);
+        setActiveFilter("vocab");
+        break;
+      case "review":
+        setVocabInitialView("review");
+        setVocabFocusWord(undefined);
+        setActiveFilter("vocab");
+        break;
+      case "import": void handleImportRef.current(); break;
+    }
+  }), [handleFilterChange]);
 
   const title =
     activeFilter === "all"
@@ -610,7 +641,7 @@ export default function Home() {
 
   const tabContent =
     activeFilter === "vocab" ? (
-        <DictionaryContent initialView={vocabInitialView} menuButton={menuButton} />
+        <DictionaryContent initialView={vocabInitialView} focusWord={vocabFocusWord} menuButton={menuButton} />
       ) : activeFilter === "qa" ? (
         // "问答" — one time-ordered list holding what used to be two pages,
         // 对话 and 解释 (docs/impls/home-ia-consolidation.md steps 1 and 7).
@@ -714,6 +745,11 @@ export default function Home() {
                 <option value="manual">{t("home.sortManual")}</option>
               </select>
             </div>
+            {!isNarrow && (
+              <div className="mt-3">
+                <ShelfChips activeFilter={activeFilter} onFilterChange={handleFilterChange} bookCounts={bookCounts} collections={collections} />
+              </div>
+            )}
             {(sortMode === "manual" || canMoveBooks) && <p className="mt-2 text-[12px] text-text-muted">{t(canMoveBooks ? sortMode === "recent" ? "home.sortRecentHint" : "home.sortHint" : "home.sortFilteredHint")}</p>}
             {sortError && <p role="alert" className="mt-2 text-[12px] text-danger-text">{t("home.sortError")}</p>}
           </div>
@@ -782,7 +818,13 @@ export default function Home() {
           </div>
         </main>
       );
-  const content = <Suspense fallback={null}>{tabContent}</Suspense>;
+  // Keyed by workspace, not by filter: moving between the rail's workspaces
+  // replays the arrival, flipping a shelf chip does not.
+  const content = (
+    <div key={workspaceOf(activeFilter)} className="motion-workspace flex min-w-0 flex-1">
+      <Suspense fallback={null}>{tabContent}</Suspense>
+    </div>
+  );
 
   return (
     // `h-dvh`, not `h-screen`: `100vh` on iOS measures the *largest* viewport,
@@ -793,7 +835,15 @@ export default function Home() {
     // that is none of its business, and nothing is captured or prevented until
     // it claims one.
     <div className="relative flex h-dvh bg-bg-surface" {...(isNarrow ? drawerPointer : null)}>
-      {!isNarrow && <Sidebar {...sidebarProps} />}
+      {!isNarrow && (
+        <NavRail
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+          dueForReviewCount={dueForReviewCount}
+          userName={userName}
+          onOpenSettings={() => openSettings()}
+        />
+      )}
 
       {isNarrow ? (
         <div className="contents" {...backgroundProps}>
@@ -833,7 +883,7 @@ export default function Home() {
             style={CLOSED_PANEL_STYLE}
             className="fixed inset-y-0 left-0 z-50 w-[300px] max-w-[85%] touch-pan-y outline-none shadow-[8px_0_28px_0_rgba(0,0,0,0.22)]"
           >
-            <Sidebar {...sidebarProps} inDrawer />
+            <Sidebar {...sidebarProps} />
           </div>
         </>
       )}
@@ -852,40 +902,44 @@ export default function Home() {
         </div>
       )}
 
+      {/* Import, its failures and sync progress are toasts (design v2 §5): they
+          report on work that runs on its own, so nothing about them needs the
+          whole window. On a desktop they share the bottom-right stack; the
+          phone drawer keeps its own sync indicator, so sync stays off there. */}
       {importing && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4 rounded-xl border border-border bg-bg-surface px-16 py-12 shadow-popover">
-            <Loader size={28} className="text-accent animate-spin" />
-            <p className="text-[18px] font-semibold text-text-primary">
-              {t("home.importing")}
-            </p>
-            {importSlow && (
-              <p className="max-w-[320px] text-center text-[13px] text-text-muted">
-                {t("home.importingSlow")}
-              </p>
-            )}
-          </div>
-        </div>
+        <Toast icon={<Loader size={14} className="shrink-0 animate-spin text-accent" />}>
+          <span className="flex flex-col">
+            <span className="text-text-primary">{t("home.importing")}</span>
+            {importSlow && <span className="whitespace-normal text-[12px] text-text-muted">{t("home.importingSlow")}</span>}
+          </span>
+        </Toast>
+      )}
+
+      {syncProgress && !isNarrow && (
+        <Toast icon={<RefreshCw size={14} className="shrink-0 animate-spin text-accent" />}>
+          {syncProgress.total > 0
+            ? t("shelf.syncingCount", { applied: syncProgress.applied, total: syncProgress.total })
+            : t("shelf.syncing")}
+        </Toast>
       )}
 
       {importError && (
-        <div className="fixed top-[calc(var(--spacing-safe-top)+1.25rem)] left-1/2 -translate-x-1/2 z-[60] max-w-[600px] bg-white dark:bg-bg-surface border border-border rounded-[14px] shadow-popover flex items-start gap-3 pl-4 pr-3 py-3">
-          <AlertCircle size={16} className="shrink-0 mt-0.5 text-red-500" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-medium text-text-primary tracking-[-0.08px]">
-              {t("home.importError")}
-            </p>
-            <p className="text-[12px] text-text-secondary mt-0.5 break-words">
-              {importError}
-            </p>
-          </div>
-          <button
-            onClick={() => setImportError(null)}
-            className="tap-44 shrink-0 size-6 flex items-center justify-center rounded-lg hover:bg-bg-input cursor-pointer transition-colors"
-          >
-            <X size={14} className="text-text-muted" />
-          </button>
-        </div>
+        <Toast icon={<AlertCircle size={14} className="shrink-0 text-danger-text" />}>
+          <span className="flex items-start gap-3">
+            <span className="flex min-w-0 max-w-[420px] flex-col">
+              <span className="font-medium text-text-primary">{t("home.importError")}</span>
+              <span className="whitespace-normal break-words text-[12px]">{importError}</span>
+            </span>
+            <button
+              type="button"
+              aria-label={t("common.close")}
+              onClick={() => setImportError(null)}
+              className="tap-44 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-bg-input"
+            >
+              <X size={14} className="text-text-muted" />
+            </button>
+          </span>
+        </Toast>
       )}
     </div>
   );

@@ -12,23 +12,20 @@ import test from "node:test";
 
 const readRepo = (path: string) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("the desktop sidebar shell is the string it was before the drawer existed", async () => {
+test("a desktop gets the icon rail, and the sidebar lives only in the drawer", async () => {
+  const home = await readRepo("src/pages/Home.tsx");
   const sidebar = await readRepo("src/components/Sidebar.tsx");
 
-  // Acceptance criterion 3, first bullet: at >=768px the `<aside>` renders the
-  // same class string it rendered before, character for character. Written out
-  // in full rather than matched loosely, because the whole point is that a
-  // reordering or a "harmless" extra utility has to fail here rather than in a
-  // screenshot nobody takes.
-  assert.ok(
-    sidebar.includes(
-      '"shrink-0 bg-bg-muted border-r border-border h-full flex flex-col gap-6 px-4 relative select-none overflow-hidden"',
-    ),
-    "the non-drawer <aside> must keep its original class string verbatim",
-  );
+  // The v2 shell (docs/impls/ui-redesign-shell.md) split the desktop sidebar
+  // into the rail, the shelf chips and ⌘K. What must not happen is the two
+  // menus coexisting at one width: the rail only at >=768px, the sidebar only
+  // inside the drawer, which itself only exists below that.
+  assert.match(home, /\{!isNarrow && \(\s*<NavRail/);
+  assert.equal(home.match(/<Sidebar\b/g)?.length, 1, "Home renders the sidebar exactly once");
+  assert.match(home, /aria-label=\{t\("home\.sidebarLabel"\)\}[\s\S]*<Sidebar \{\.\.\.sidebarProps\} \/>/);
 
-  // Same for the one inline style it carries.
-  assert.match(sidebar, /style=\{inDrawer \? undefined : \{ width: sidebarWidth \}\}/);
+  // A drawer has a fixed width: no resize grip, no stored desktop width.
+  assert.doesNotMatch(sidebar, /sidebar-width|cursor-col-resize/);
 });
 
 test("row height is the only thing the drawer changes about a row", async () => {
@@ -75,7 +72,7 @@ test("nothing on the pointer path is prevented", async () => {
 });
 
 test("the titlebar strip asks the platform, never the width", async () => {
-  for (const path of ["src/pages/Home.tsx", "src/components/Sidebar.tsx"]) {
+  for (const path of ["src/pages/Home.tsx", "src/components/Sidebar.tsx", "src/components/NavRail.tsx"]) {
     const source = await readRepo(path);
 
     // A macOS window dragged down to 400px still has traffic lights. Gating
