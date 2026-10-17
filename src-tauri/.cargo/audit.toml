@@ -1,0 +1,18 @@
+# cargo audit (run from src-tauri/ by CI) reads this file.
+#
+# Every ignore names who pulls the crate in and why the advisory can't be
+# reached from Lantern. Drop an entry once the upstream crate moves to a
+# fixed version.
+[advisories]
+ignore = [
+    # zip < 9: `ZipArchive::extract` / `ZipStreamReader::extract` mishandle
+    # symlinks and Unix permission bits. Lantern's own zip is on 9.x; the old
+    # copies come from crates with no fixed release yet:
+    #   - epub 2.1.5 (zip 3): only opens entries with `by_name`, never extracts.
+    #   - tauri-plugin-updater (zip 4, Windows only): extracts the update
+    #     bundle, but only after its minisign signature has been verified
+    #     against our pubkey, so the archive is our own release artifact.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]
