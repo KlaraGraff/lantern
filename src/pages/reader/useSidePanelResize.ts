@@ -7,46 +7,27 @@ import {
   type RefObject,
 } from "react";
 import { freezeReader, type ShadowHost } from "./reader-freeze";
+import { CARD_INSET, RIGHT_CARD_WIDTH } from "./reader-sides";
 
 const PANEL_MIN_WIDTH = 320;
-const PANEL_MAX_WIDTH = 700;
+const PANEL_MAX_WIDTH = 560;
 /**
- * Panel defaults are set by line length, not by pixels.
+ * The right card's width, set by the 「浮笺」 design (§11 of the redesign doc):
+ * 380px, draggable 320–560.
  *
- * A panel and the book column compete for the same screen. What decides the
- * split is how many characters land on one line inside each — the typographic
- * "measure". Bringhurst's comfortable band is 45–75 characters; WCAG 1.4.8 caps
- * a line at 80 characters, or 40 for CJK, because a Han character is about
- * twice as wide. The AI answers here are mixed Chinese and English, so the CJK
- * count is the binding one.
+ * Narrower than the 440 that `docs/guide/side-panel-width.md` derives from line
+ * length, on purpose: that number was for a column welded beside the page,
+ * paid for by the book on every visit. The card floats over the margin when it
+ * can, and when it cannot it takes its room from the page, so the design spends
+ * less of it. 380 leaves 328px of 14px text after the bubble padding: ~45 Latin
+ * characters, ~23 Han, the bottom of the comfortable band rather than its
+ * middle. A reader who wants more drags it.
  *
- * 66 characters is the optimum for a *primary* reading surface. This is not
- * one — the book is. So the panel takes the lower half of the band and the
- * width it gives up goes back to the page. Subtracting the list padding, the
- * bubble border and the bubble padding (52px in total) from 440 leaves 388px of
- * 14px text: ~53 Latin characters, ~28 Han. Both mid-band, both clear of the
- * WCAG ceiling. The old 525 sat at 65 / 34 — inside the band, but spending 36%
- * of a 1440px window on the sidebar to get there.
- *
- * Reasoning in full, with the competitor survey: `docs/guide/side-panel-width.md`.
+ * One width per side, not per view. The conversation and the traces used to
+ * keep 440 and 400, so switching between them reflowed the page; a card's
+ * geometry belongs to the side, and switching what it shows never moves it.
  */
-const PANEL_DEFAULT_WIDTH = 440;
-/**
- * Width is per panel, not per tab. The AI panel holds a conversation and the
- * traces panel holds lists, so they want different widths and dragging one
- * must not resize the other behind it.
- *
- * Inside the traces panel it is deliberately ONE width for all four tabs. The
- * notes tab used to have its own key and its own 380px default, so switching
- * to it snapped the panel from 525 to 380 and reflowed the page under it — a
- * visible jolt on a plain tab change. Panel geometry belongs to the panel; the
- * active tab does not get a say in it.
- */
-export type ResizableSidePanel = "ai" | "traces";
-
-// Lists, not prose — no measure to satisfy, only "a word, its gloss and its
-// metadata fit on one row". Scaled down by the same proportion as the AI panel.
-const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { traces: 400 };
+const PANEL_DEFAULT_WIDTH = RIGHT_CARD_WIDTH;
 
 /**
  * `resizable` is false on a viewport too narrow to split, where the panel
@@ -68,25 +49,17 @@ const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { trac
 export function useSidePanelResize<T extends ShadowHost>(
   viewRef: RefObject<T | null>,
   viewerRef: RefObject<HTMLElement | null>,
-  panel: ResizableSidePanel | null,
   resizable: boolean,
+  slotRef?: RefObject<HTMLElement | null>,
 ) {
-  const [widths, setWidths] = useState<Partial<Record<ResizableSidePanel, number>>>({});
-  // Nothing is open, so nothing is measured — the container is hidden. Any slot
-  // will do; "ai" avoids widening the key type for a width no one can see.
-  const panelKey = panel ?? "ai";
-  const panelWidth = widths[panelKey]
-    ?? PANEL_DEFAULT_WIDTHS[panelKey]
-    ?? PANEL_DEFAULT_WIDTH;
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const panelWidthRef = useRef(panelWidth);
-  const panelKeyRef = useRef(panelKey);
   const panelRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
   useEffect(() => {
     panelWidthRef.current = panelWidth;
-    panelKeyRef.current = panelKey;
-  }, [panelKey, panelWidth]);
+  }, [panelWidth]);
 
   const handlePanelResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!resizable) return;
@@ -97,13 +70,10 @@ export function useSidePanelResize<T extends ShadowHost>(
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startWidth = panelWidthRef.current;
-    // The drag belongs to the panel it started on, whatever is open by the time
-    // it ends — otherwise a panel switch mid-drag would write the new width onto
-    // the wrong panel.
-    const draggedPanel = panelKeyRef.current;
-    const setPanelWidth = (width: number) => {
-      setWidths((current) => ({ ...current, [draggedPanel]: width }));
-    };
+    // A pinned card has a slot beside the page as wide as the card and its
+    // insets; it follows the card so the drag ends with nothing left to move.
+    const slot = slotRef?.current ?? null;
+    const slotFollows = slot !== null && slot.clientWidth > 0;
     let rafId = 0;
     let latestWidth = startWidth;
     let finished = false;
@@ -127,6 +97,7 @@ export function useSidePanelResize<T extends ShadowHost>(
         if (panelRef.current) {
           panelRef.current.style.width = `${latestWidth}px`;
         }
+        if (slotFollows) slot.style.width = `${latestWidth + CARD_INSET * 2}px`;
         rafId = 0;
       });
     };
@@ -193,7 +164,7 @@ export function useSidePanelResize<T extends ShadowHost>(
     window.addEventListener("pointercancel", handlePointerCancel);
     window.addEventListener("blur", handleWindowBlur);
     handle.addEventListener("lostpointercapture", handleLostPointerCapture);
-  }, [resizable, viewRef, viewerRef]);
+  }, [resizable, slotRef, viewRef, viewerRef]);
 
   return {
     handlePanelResizePointerDown,

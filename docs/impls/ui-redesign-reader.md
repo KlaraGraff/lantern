@@ -1,6 +1,6 @@
 # UI redesign v3: the reader 「浮笺」
 
-Status: in progress. 3a shipped (PR #25); 3c in review; 3b next.
+Status: in progress. 3a (PR #25) and 3c (PR #26) shipped; 3b is landing in parts, the right card first.
 Design source: §§9–12 of `design/lantern-ui-redesign-2026-10-16.md` and the canvas row ⑧ boards (`ReaderProto`, `ReaderToc`, `ReaderExplain`, `ReaderPinnedNight`) in the project's shared folder; rendered at <https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM>. The reader now opens in the library window: [`ui-redesign-single-window.md`](ui-redesign-single-window.md).
 
 ## Why
@@ -36,6 +36,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - Choosing a chapter closes a floating card and leaves a pinned one.
 
 **3b: the right side and the chrome.**
+- **3b-1, the right card (this part).** The conversation and the traces move from a column into one 380px card inset 12px, radius 16, draggable 320–560 and shared by both views (the old 440/400 per-view widths reflowed the page on a switch). Its header switches 「对话 | 划线笔记」 with text and a 2px accent underline, and holds the pin and close. It opens floating when the text leaves room: `placeRightCard` measures the rendered text as the card opens, and the page translates left at most to a 96px left margin. Otherwise it opens *seated*, laid out as pinned without becoming the pin preference, so it never covers a word. Pinned, a 404px slot opens and the page reflows once. A drag on a pinned card moves the slot with it, so the drag's end has nothing left to animate. 「本章」 replaces 「划线笔记」 in 3b-2.
 - The answer card beside the sentence (`ExplainPopover`) gets a receipt line first: 「本章 · model · what was sent」.
 - 「停靠」 turns it into the 380px right card with 「对话 | 本章」 (text with a 2px accent underline). 「本章」 lists this chapter's words, highlights and notes, people so far, and questions asked.
 - Floating, the page only translates. Pinned, it reflows once. When the geometry leaves no room to float, as with the default two columns, the card opens pinned and never covers text.
@@ -45,7 +46,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - An Esc dispatcher closes things in stack order: popover → card → slide card → paper.
 - A 「← 书架」 label replaces the bare back arrow, and Esc on the bare page goes back.
 
-**3c (small).** `getEffectivePageColumns` drops to one column when half the page would be narrower than 480px (`MIN_TWO_COLUMN_SLOT`), so the pinned-plus-two-columns state is not cramped. Landscape alone no longer earns two columns. It ships before 3b, which needs it for the right card's pinned state.
+**3c (small, shipped in PR #26).** `getEffectivePageColumns` drops to one column when half the page would be narrower than 480px (`MIN_TWO_COLUMN_SLOT`), so the pinned-plus-two-columns state is not cramped. Landscape alone no longer earns two columns. It ships before 3b, which needs it for the right card's pinned state.
 
 ## Decisions (3a)
 
@@ -60,6 +61,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - `tests/reader-sides.test.ts`: derivation to the legacy flags, opening modes, peek and its end, pin toggling, slot widths, and which transitions reflow.
 - `tests/reader-spine.test.ts`: spine segments from chapters, section fractions and progress.
 - `tests/reader-measure.test.ts`: the two-column step-down.
+- `tests/right-card-placement.test.ts`: float, step aside, or sit down.
 
 ## Figma prompt
 
