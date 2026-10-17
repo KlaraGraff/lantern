@@ -1,6 +1,6 @@
 # UI redesign v2, step 1: the shell
 
-Status: in progress.
+Status: shipped (PR #22). Step 2 is [`ui-redesign-home.md`](ui-redesign-home.md).
 Design source: v2 boards in the canvas (<https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM>, rows ④–⑦: structure, palette, motion, clickable prototype) and §§5–8 of the written proposal (`design/lantern-ui-redesign-2026-10-16.md` in the project's shared folder). Colour and type tokens are step 0, [`ui-redesign-paper-lantern.md`](ui-redesign-paper-lantern.md).
 
 ## Why

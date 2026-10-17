@@ -68,6 +68,11 @@ const bookById = (id: unknown): HarnessBook =>
  * every word look due.
  */
 const nowMs = () => Date.now();
+/** `YYYY-MM-DD` in local time — the key the reading-stats calendar uses. */
+const localDay = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 /** Anchors hidden during this session. Derived highlights are computed on the
  *  backend, so the harness only has to remember the decisions taken about them. */
@@ -126,6 +131,40 @@ const LIBRARY: HarnessBook[] = emptyLibrary()
     : BOOKS;
 
 const LIBRARY_COLLECTIONS = isShooting() ? PROMO_COLLECTIONS : COLLECTIONS;
+
+/**
+ * Lookups in the first book on the shelf (the one being read), newest first.
+ * Two chapters, so the home page has to pick the newest one's. The promo
+ * shelf gets none: these chapters belong to the smoke fixture's book.
+ */
+const LOOKUP_RECORDS = LIBRARY.length === 0 || isShooting() ? [] : ([
+  ["willow", "Chapter VII · The Piper at the Gates of Dawn", "A tree that grows beside water, with long drooping branches.", 1],
+  ["rapt", "Chapter VII · The Piper at the Gates of Dawn", "So absorbed that nothing else is noticed.", 2],
+  ["reverie", "Chapter VII · The Piper at the Gates of Dawn", "A state of being pleasantly lost in thought.", 3],
+  ["withy", "Chapter VII · The Piper at the Gates of Dawn", "A tough, flexible willow branch.", 4],
+  ["sculled", "Chapter VI · Mr. Toad", "Rowed with a pair of small oars.", 30],
+] as const).map(([word, chapter, definition, hoursAgo], i) => {
+  const at = Date.now() - hoursAgo * 3_600_000;
+  return {
+    id: `lr-${i + 1}`,
+    book_id: LIBRARY[0].id,
+    lookup_text: word,
+    normalized_text: word,
+    context_sentence: null,
+    chapter,
+    cfi: null,
+    definition,
+    context_explanation: null,
+    result_json: null,
+    provider_profile_id: null,
+    model: null,
+    created_at: at,
+    last_looked_up_at: at,
+    updated_at: at,
+    lookup_count: 1,
+    book_title: LIBRARY[0].title,
+  };
+});
 
 /**
  * MCP 那一节要显示的可执行文件路径。真机上是 `current_binary_path()`，也就是
@@ -570,15 +609,21 @@ export const FIXTURES: Record<string, Fixture> = {
     mastered: 1,
     new: 1,
   },
-  get_vocab_learning_dashboard: {
-    total: SAVED_WORDS.length,
-    due_today: SAVED_WORDS.filter((w) => w.next_review_at <= nowMs()).length,
-    by_mastery: { "0": 1, "1": 2, "2": 1, "3": 1, "4": 1 },
-    recent: SAVED_WORDS.slice(0, 3),
-    streak_days: 4,
-    reviewed_today: 2,
-    added_this_week: 3,
-  },
+  // `commands::vocab_learning::VocabLearningDashboard` — camelCase, the shape
+  // `src/pages/reading-stats/tauri-adapter.ts` and the home dashboard read.
+  get_vocab_learning_dashboard: ({ query }: Args) => ({
+    query,
+    lookupCount: 23,
+    newWordsCount: SAVED_WORDS.length,
+    masteredCount: 1,
+    dueForReviewCount: SAVED_WORDS.filter((w) => w.next_review_at <= nowMs()).length,
+    trendGranularity: "day",
+    trend: Array.from({ length: 7 }, (_, i) => ({
+      date: new Date(Date.now() - (6 - i) * 86_400_000).toISOString().slice(0, 10),
+      count: [2, 0, 5, 3, 1, 8, 4][i],
+    })),
+    masteryDistribution: { total: SAVED_WORDS.length, newCount: 1, learningCount: 2, familiarCount: 2, masteredCount: 1 },
+  }),
   // 拍样张时只有主角词有时间线 —— 六个词各挂三条事件，那张图就成了「每个词都
   // 恰好有完整履历」，而真实的生词本不长那样。
   list_mastery_events: ({ vocabWordId }: Args) =>
@@ -659,45 +704,78 @@ export const FIXTURES: Record<string, Fixture> = {
    * Dictionary / lookup
    * ---------------------------------------------------------------- */
   get_cached_lookup: null,
-  list_all_lookup_records: { records: [], next_cursor: null, total: 0, books: [] },
-  list_lookup_records: [],
+  // A handful of lookups in the book being read, newest first like the real
+  // query, so the home page's 「上次读到」 has a chapter and its words.
+  list_all_lookup_records: ({ bookId }: Args) => {
+    const records = LOOKUP_RECORDS.filter((r) => bookId == null || r.book_id === bookId);
+    return {
+      records,
+      next_cursor: null,
+      total: records.length,
+      books: LIBRARY.length > 0 ? [{ book_id: LIBRARY[0].id, title: LIBRARY[0].title, count: LOOKUP_RECORDS.length }] : [],
+    };
+  },
+  list_lookup_records: ({ bookId }: Args) => LOOKUP_RECORDS.filter((r) => r.book_id === bookId),
   word_memory_hint: null,
 
   /* ---------------------------------------------------------------- *
    * Reading stats
    * ---------------------------------------------------------------- */
-  get_reading_stats_dashboard: {
-    overview: {
-      total_minutes: 620,
-      total_sessions: 24,
-      books_started: 3,
-      books_finished: 1,
-      current_streak: 4,
-      longest_streak: 11,
-      words_read: 84_000,
-      pages_read: 310,
-      average_pace_wpm: 212,
-    },
-    books: BOOKS.slice(0, 2).map((b) => ({
-      book_id: b.id,
-      title: b.title,
-      author: b.author,
-      minutes: 300,
-      sessions: 9,
-      progress: b.progress,
-      last_read_at: b.updated_at,
-      cover_data: b.cover_data,
-    })),
-    calendar: Array.from({ length: 30 }, (_, i) => ({
-      date: new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10),
-      minutes: i % 4 === 0 ? 0 : 15 + (i % 7) * 5,
-      sessions: i % 4 === 0 ? 0 : 1,
-    })),
-    facts: {},
-    cachedReview: null,
-    learning: { words_added: 6, words_mastered: 1, reviews_done: 12, due_today: 2 },
-    reviewPendingReason: null,
+  // `commands::reading_stats::ReadingStatsDashboard` — camelCase, seconds.
+  get_reading_stats_dashboard: ({ query }: Args) => {
+    const calendar = Array.from({ length: 30 }, (_, i) => {
+      const activeSeconds = i % 4 === 3 ? 0 : (15 + (i % 7) * 5) * 60;
+      const startedAt = Date.now() - i * 86_400_000 - activeSeconds * 1000;
+      return {
+        date: localDay(Date.now() - i * 86_400_000),
+        activeSeconds,
+        sessionCount: activeSeconds > 0 ? 1 : 0,
+        booksTouched: activeSeconds > 0 ? 1 : 0,
+        sessions: activeSeconds > 0 && LIBRARY.length > 0
+          ? [{ sessionId: `rs-${i}`, bookId: LIBRARY[0].id, title: LIBRARY[0].title, startedAt, endedAt: startedAt + activeSeconds * 1000, activeSeconds }]
+          : [],
+      };
+    }).reverse();
+    const totalActiveSeconds = calendar.reduce((sum, day) => sum + day.activeSeconds, 0);
+    const periodStart = Number((query as { periodStart?: number } | undefined)?.periodStart ?? 0);
+    const periodEnd = Number((query as { periodEnd?: number } | undefined)?.periodEnd ?? Date.now());
+    return {
+      overview: {
+        totalActiveSeconds,
+        booksTouched: Math.min(LIBRARY.length, 2),
+        completedBooks: LIBRARY.filter((b) => b.status === "finished").length,
+        sessionCount: calendar.filter((day) => day.activeSeconds > 0).length,
+        readingDays: calendar.filter((day) => day.activeSeconds > 0).length,
+      },
+      books: LIBRARY.slice(0, 2).map((b, i) => ({
+        bookId: b.id,
+        title: b.title,
+        author: b.author,
+        totalActiveSeconds: i === 0 ? Math.round(totalActiveSeconds * 0.7) : Math.round(totalActiveSeconds * 0.3),
+        sessionCount: i === 0 ? 14 : 6,
+        readingDays: i === 0 ? 12 : 5,
+        lastReadAt: b.updated_at,
+        completed: b.status === "finished",
+        progress: b.progress,
+      })),
+      calendar,
+      facts: {
+        periodStart,
+        periodEnd,
+        totalActiveSeconds,
+        sessionCount: 20,
+        booksTouched: Math.min(LIBRARY.length, 2),
+        completedBooks: 1,
+        mostReadBookTitle: LIBRARY[0]?.title ?? null,
+        mostReadBookSeconds: Math.round(totalActiveSeconds * 0.7),
+        readingDays: 20,
+        mostCommonHour: 21,
+      },
+      cachedReview: null,
+      reviewPendingReason: null,
+    };
   },
+  get_reading_pace: { bookWordsPerMinute: 210, overallWordsPerMinute: 198 },
   facts: {},
   record_reading_session: { recorded: true },
   checkpoint_reading_session: { recorded: true },

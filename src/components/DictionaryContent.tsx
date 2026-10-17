@@ -59,6 +59,7 @@ import {
 } from "./learning-card";
 import { TOP_INSET } from "../utils/top-inset";
 import { platform } from "../services/platform";
+import LearnTodayRow from "./vocab/LearnTodayRow";
 
 // Deferred the same way VocabEntry.tsx defers it — this panel only opens on
 // an explicit expand, and the markdown renderer it drags in has no business
@@ -69,6 +70,13 @@ const VocabEntryDetails = lazy(() => import("./vocab/VocabEntryDetails"));
 // signal the vocabulary list has: the reader keeps needing it and keeps not
 // collecting it.
 const REPEAT_LOOKUP_THRESHOLD = 3;
+
+const MASTERY_SWATCH: Record<string, string> = {
+  new: "bg-mastery-new",
+  learning: "bg-mastery-learning",
+  familiar: "bg-mastery-familiar",
+  mastered: "bg-mastery-mastered",
+};
 
 type SortMode = "newest" | "oldest" | "az";
 type ViewMode = "list" | "card";
@@ -753,8 +761,9 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
               // buttons and nothing else. Left to wrap on its own, six controls
               // in a 440pt row put five on the first line and stranded the
               // sixth — the list-view toggle — alone on a second line with a
-              // hand's width of empty space beside it.
-              <div className="flex w-full items-center gap-2 md:mr-2 md:w-auto">
+              // hand's width of empty space beside it. A desktop has the
+              // `LearnTodayRow` cards instead.
+              <div className="flex w-full items-center gap-2 md:hidden">
                 <Button
                   variant="secondary"
                   size="md"
@@ -1005,6 +1014,12 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-page pb-20">
+        {contentTab === "vocab" && (
+          <LearnTodayRow
+            dueCount={dueEntries.length}
+            dueBookCount={new Set(dueEntries.flatMap((entry) => entry.books.filter((book) => !book.quiz).map((book) => book.id))).size}
+          />
+        )}
         {contentTab === "vocab" && !isEmpty && (
           <ReviewBoard totalWordCount={allEntries.length} onSeeAllWords={revealWordList} />
         )}
@@ -1287,7 +1302,11 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
                               <span className="block text-[14px] font-semibold text-text-primary leading-5">
                                 {entry.word}
                               </span>
-                              <span className={`inline-flex mt-1 text-[10px] font-medium ${entry.primary.mastery === "mastered" ? "text-success-text" : entry.primary.mastery === "learning" ? "text-accent-text" : "text-text-muted"}`}>
+                              {/* Mastery is data, so it wears the data ramp
+                                  (`--color-mastery-*`), not the brand or the
+                                  success green. */}
+                              <span className="mt-1 inline-flex items-center gap-1.5 text-[10px] font-medium text-text-secondary">
+                                <span aria-hidden="true" className={`size-2 rounded-[2px] ${MASTERY_SWATCH[entry.primary.mastery] ?? "bg-mastery-new"}`} />
                                 {t(`vocab.mastery.${entry.primary.mastery}`)}
                               </span>
                               {entry.books.length > 1 ? (

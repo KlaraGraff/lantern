@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { BarChart3, GraduationCap, Library, MessageCircleQuestion, Search, StickyNote, type LucideIcon } from "lucide-react";
+import { BarChart3, GraduationCap, House, MessageCircleQuestion, Search, StickyNote, type LucideIcon } from "lucide-react";
 import LanternLogo from "./LanternLogo";
 import { platform } from "../services/platform";
 import { memoRowBadgeCount } from "./sidebar-badges";
@@ -23,7 +23,7 @@ interface Workspace {
 }
 
 const WORKSPACES: readonly Workspace[] = [
-  { filter: "all", labelKey: "nav.library", icon: Library, owns: isShelfFilter },
+  { filter: "all", labelKey: "nav.library", icon: House, owns: isShelfFilter },
   { filter: "vocab", labelKey: "nav.learn", icon: GraduationCap, owns: (f) => f === "vocab" },
   { filter: "notes", labelKey: "sidebar.notes", icon: StickyNote, owns: (f) => f === "notes" },
   { filter: "qa", labelKey: "sidebar.qa", icon: MessageCircleQuestion, owns: (f) => f === "qa" },

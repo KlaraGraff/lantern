@@ -8,6 +8,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Sidebar from "../components/Sidebar";
 import NavRail from "../components/NavRail";
 import ShelfChips from "../components/ShelfChips";
+import HomeDashboard from "./home/HomeDashboard";
 import Toast from "../components/ui/Toast";
 import { listenForLibraryActions, workspaceOf } from "../components/library-actions";
 import BookGrid from "../components/BookGrid";
@@ -352,7 +353,12 @@ export default function Home() {
 
   // Book counts for sidebar badges — lightweight, no book data loaded.
   const [bookCounts, setBookCounts] = useState({ all: 0, reading: 0, finished: 0 });
+  // The dashboard re-reads whenever the counts do — every import, delete and
+  // sync tick calls `refreshCounts` — and when the window regains focus, which
+  // is how a session in a reader window ends from this window's point of view.
+  const [dashboardKey, setDashboardKey] = useState(0);
   const refreshCounts = useCallback(async () => {
+    setDashboardKey((key) => key + 1);
     try {
       const counts = await invoke<{ all: number; reading: number; finished: number }>("get_book_counts");
       setBookCounts(counts);
@@ -361,6 +367,11 @@ export default function Home() {
     }
   }, []);
   useEffect(() => { refreshCounts(); }, [refreshCounts]);
+  useEffect(() => {
+    const bump = () => setDashboardKey((key) => key + 1);
+    window.addEventListener("focus", bump);
+    return () => window.removeEventListener("focus", bump);
+  }, []);
 
   // Today's due-for-review count, for the sidebar's words-row badge. Uses
   // `get_vocab_stats` rather than `list_vocab_due_for_review` — the badge only
@@ -639,6 +650,250 @@ export default function Home() {
     </Button>
   ) : null;
 
+  // The shelf's parts, laid out two ways below: a phone keeps the header it
+  // has always had; a desktop scrolls one page — the home dashboard, then the
+  // shelf under its own heading with the chips beside it (design v2 §5).
+  const viewToggle = isNarrow ? (
+    // Replaces the two icon buttons below: on a phone the grid's
+    // column count is a reader choice worth a dedicated control,
+    // not a second click behind a single "grid" icon. Same
+    // segmented-control shape as `settings.ai.reasoningEffortScope`.
+    <div
+      role="group"
+      aria-label={t("home.columnsLabel")}
+      className="flex w-full rounded-md bg-bg-input p-0.5"
+    >
+      {(
+        [
+          { mode: "grid2", label: t("home.columnsTwo") },
+          { mode: "grid3", label: t("home.columnsThree") },
+          { mode: "grid4", label: t("home.columnsFour") },
+          { mode: "list", label: t("home.columnsList") },
+        ] as const
+      ).map((option) => (
+        <button
+          key={option.mode}
+          type="button"
+          aria-pressed={viewMode === option.mode}
+          onClick={() => changeViewMode(option.mode)}
+          className={`h-9 flex-1 cursor-pointer whitespace-nowrap rounded-sm px-2 text-[13px] font-medium transition-colors ${
+            viewMode === option.mode
+              ? "bg-bg-surface text-accent-text shadow-sm"
+              : "text-text-muted"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  ) : (
+    <>
+      <Button
+        variant="icon"
+        size="md"
+        active={viewMode !== "list"}
+        aria-label={t("home.viewGrid")}
+        onClick={() => { if (viewMode === "list") changeViewMode("grid3"); }}
+      >
+        <LayoutGrid size={16} />
+      </Button>
+      <Button
+        variant="icon"
+        size="md"
+        active={viewMode === "list"}
+        aria-label={t("home.viewList")}
+        onClick={() => changeViewMode("list")}
+      >
+        <List size={16} />
+      </Button>
+    </>
+  );
+
+  const searchInput = (
+    <Input
+      icon={<Search size={16} />}
+      placeholder={t("home.search")}
+      value={searchQuery}
+      onChange={(e) => setSearchQuery(e.target.value)}
+      className={isNarrow ? "min-w-0 flex-1" : "w-[220px] shrink-0"}
+    />
+  );
+
+  const sortSelect = (
+    <select
+      aria-label={t("home.sortLabel")}
+      value={sortMode}
+      onChange={(e) => {
+        const next = e.target.value === "manual" ? "manual" : "recent";
+        setSortMode(next);
+        localStorage.setItem(SORT_MODE_STORAGE_KEY, next);
+        setSortError(false);
+      }}
+      className={`${isNarrow ? "ml-auto" : ""} h-10 shrink-0 cursor-pointer rounded-md border border-border bg-bg-surface px-3 text-[13px] text-text-primary`}
+    >
+      <option value="recent">{t("home.sortRecent")}</option>
+      <option value="manual">{t("home.sortManual")}</option>
+    </select>
+  );
+
+  const shelfNotes = (
+    <>
+      {(sortMode === "manual" || canMoveBooks) && <p className="mt-2 text-[12px] text-text-muted">{t(canMoveBooks ? sortMode === "recent" ? "home.sortRecentHint" : "home.sortHint" : "home.sortFilteredHint")}</p>}
+      {sortError && <p role="alert" className="mt-2 text-[12px] text-danger-text">{t("home.sortError")}</p>}
+    </>
+  );
+
+  // The wide grid's last cell (canvas 「v2 首页」): the same import and the
+  // same way to find books as the footer below, sized like a book.
+  const importTile = (
+    <div className="flex min-w-0 flex-col">
+      <button
+        type="button"
+        onClick={handleImport}
+        className="flex aspect-[3/4] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-[1.5px] border-dashed border-text-muted/40 px-4 text-center text-[12px] font-medium text-text-muted transition-colors duration-[var(--motion-instant)] hover:border-accent hover:text-accent"
+      >
+        <Upload size={18} />
+        {platform.hasDragDrop ? t("home.dropHint") : t("home.importHint")}
+      </button>
+      <button
+        type="button"
+        onClick={() => openSettings("library")}
+        className="mt-2.5 cursor-pointer text-left text-[11.5px] text-text-muted transition-colors hover:text-accent"
+      >
+        {t("home.findBooks")}
+      </button>
+    </div>
+  );
+
+  const shelfBooks = loading ? (
+    <p className="text-text-muted text-[14px]">{t("home.loading")}</p>
+  ) : displayBooks.length === 0 ? (
+    <div className={`flex flex-col items-center justify-center gap-4 ${isNarrow ? "h-full" : "py-16"}`}>
+      <p className="text-text-muted text-[14px]">
+        {searchQuery
+          ? t("home.noResults")
+          : isCollectionFilter
+            ? t("home.noCollectionBooks")
+            : activeFilter !== "all"
+              ? t("home.noFilteredBooks", { filter: activeFilter })
+              : t(platform.hasFormatConvert ? "home.empty" : "home.emptyNoConvert")}
+      </p>
+      {activeFilter === "all" && !searchQuery && (
+        <Button variant="primary" size="md" onClick={handleImport}>
+          <Plus size={16} />
+          {t("home.importBook")}
+        </Button>
+      )}
+    </div>
+  ) : (
+    <BookSortContext ids={displayBooks.map((book) => book.id)} enabled={canMoveBooks} list={viewMode === "list"} onMove={(from, to) => { void handleMoveBook(from, to); }}>
+    {viewMode === "list" ? (
+    <BookList books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} sortable={canMoveBooks} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} />
+    ) : (
+    // The column count only ever narrows the grid on a narrow screen —
+    // a wide window always gets the auto-fill grid, whichever of
+    // grid2/grid3 happens to be stored, because the segmented control
+    // that sets it isn't even on screen there.
+    <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} sortable={canMoveBooks} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : viewMode === "grid4" ? 4 : 3) : undefined} trailing={isNarrow ? undefined : importTile} />
+    )}
+    </BookSortContext>
+  );
+
+  // `100dvh` puts the bottom of the layout at the bottom of the visible
+  // viewport, which on a phone is where the home indicator sits. The
+  // inset is 0 everywhere else, so this only ever adds on a device
+  // that reports one.
+  const importFooter = (
+    <div className={`shrink-0 mx-page ${isNarrow ? "mb-[calc(var(--spacing-safe-bottom)+var(--spacing-page))]" : "mb-page"} flex flex-col items-center gap-1.5`}>
+      <button
+        onClick={handleImport}
+        className="w-full rounded-lg border border-dashed border-text-muted/40 py-4 flex items-center justify-center gap-2 text-[14px] text-text-secondary hover:border-accent hover:text-accent transition-colors cursor-pointer"
+      >
+        <Upload size={16} />
+        {/* Same button either way — only the invitation to drop is a lie
+            on a platform that cannot receive a drop. */}
+        {platform.hasDragDrop ? t("home.dropHint") : t("home.importHint")}
+      </button>
+      {/* The moment someone wants a book is the moment they have none —
+          so the list of places to find one belongs here, not only in a
+          settings tab they have no reason to open. */}
+      <button
+        onClick={() => openSettings("library")}
+        className="text-[12px] text-text-muted hover:text-accent transition-colors"
+      >
+        {t("home.findBooks")}
+      </button>
+    </div>
+  );
+
+  const shelf = isNarrow ? (
+    <main className="flex-1 flex flex-col min-w-0">
+      <div className="border-b border-border px-page pb-section relative select-none">
+        {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
+        <div className={`${TOP_INSET} flex items-center justify-between mb-4`}>
+          {menuButton}
+          <h1 className="flex-1 font-serif text-[22px] font-semibold text-text-primary tracking-[0.01em]">
+            {title}
+          </h1>
+          <div data-tauri-drag-region className="flex items-center gap-0">{viewToggle}</div>
+        </div>
+        <div className="flex items-center gap-3">
+          {searchInput}
+          {sortSelect}
+        </div>
+        {shelfNotes}
+      </div>
+
+      <LibraryHintBanner />
+
+      <div className="flex-1 overflow-auto p-page pb-20">{shelfBooks}</div>
+
+      {importFooter}
+    </main>
+  ) : (
+    <main className="relative flex min-w-0 flex-1 flex-col">
+      {/* Reserved for the traffic lights, and only where there are any.
+          This is a platform question, not a width one — a macOS window
+          dragged narrow still has them. */}
+      {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 z-10 h-titlebar" />}
+      <div className="flex-1 overflow-auto">
+        <div className={`${TOP_INSET} mx-auto max-w-[1180px] px-page`}>
+          {/* Searching is about the shelf; the dashboard steps aside so the
+              results start at the top. */}
+          {!searchQuery && (
+            <HomeDashboard
+              userName={userName}
+              dueForReviewCount={dueForReviewCount}
+              refreshKey={dashboardKey}
+              onImport={handleImport}
+              onReview={() => { setVocabInitialView("review"); setVocabFocusWord(undefined); setActiveFilter("vocab"); }}
+              onOpenFilter={handleFilterChange}
+            />
+          )}
+          <div className="select-none border-b border-border pb-section">
+            <div className="flex items-center gap-3">
+              <h2 className="shrink-0 font-serif text-[18px] font-semibold text-text-primary">{t("home.shelf")}</h2>
+              <div className="min-w-0 flex-1">
+                <ShelfChips activeFilter={activeFilter} onFilterChange={handleFilterChange} bookCounts={bookCounts} collections={collections} />
+              </div>
+              {searchInput}
+              {sortSelect}
+              <div className="flex items-center">{viewToggle}</div>
+            </div>
+            {shelfNotes}
+          </div>
+        </div>
+
+        <LibraryHintBanner />
+
+        <div className="mx-auto max-w-[1180px] p-page pb-10">{shelfBooks}</div>
+
+        {/* The grid carries its own import tile; the list has no cell for one. */}
+        {viewMode === "list" && <div className="mx-auto max-w-[1180px]">{importFooter}</div>}
+      </div>
+    </main>
+  );
+
   const tabContent =
     activeFilter === "vocab" ? (
         <DictionaryContent initialView={vocabInitialView} focusWord={vocabFocusWord} menuButton={menuButton} />
@@ -651,173 +906,7 @@ export default function Home() {
         <AnnotationsContent menuButton={menuButton} />
       ) : activeFilter === "stats" ? (
         <ReadingStatsContent menuButton={menuButton} onOpenReview={() => { setVocabInitialView("review"); setActiveFilter("vocab"); }} />
-      ) : (
-        <main className="flex-1 flex flex-col min-w-0">
-          <div className="border-b border-border px-page pb-section relative select-none">
-            {/* Reserved for the traffic lights, and only where there are any.
-                This is a platform question, not a width one — a macOS window
-                dragged narrow still has them. */}
-            {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
-            <div className={`${TOP_INSET} flex items-center justify-between mb-4`}>
-              {menuButton}
-              {/* `md:flex-initial` is the CSS initial value, so the desktop row
-                  is the two-item `justify-between` it has always been. */}
-              <h1 className="flex-1 md:flex-initial font-serif text-[22px] md:text-[26px] font-semibold text-text-primary tracking-[0.01em]">
-                {title}
-              </h1>
-              <div data-tauri-drag-region className="flex items-center gap-0">
-                {isNarrow ? (
-                  // Replaces the two icon buttons below: on a phone the grid's
-                  // column count is a reader choice worth a dedicated control,
-                  // not a second click behind a single "grid" icon. Same
-                  // segmented-control shape as `settings.ai.reasoningEffortScope`.
-                  <div
-                    role="group"
-                    aria-label={t("home.columnsLabel")}
-                    className="flex w-full rounded-md bg-bg-input p-0.5"
-                  >
-                    {(
-                      [
-                        { mode: "grid2", label: t("home.columnsTwo") },
-                        { mode: "grid3", label: t("home.columnsThree") },
-                        { mode: "grid4", label: t("home.columnsFour") },
-                        { mode: "list", label: t("home.columnsList") },
-                      ] as const
-                    ).map((option) => (
-                      <button
-                        key={option.mode}
-                        type="button"
-                        aria-pressed={viewMode === option.mode}
-                        onClick={() => changeViewMode(option.mode)}
-                        className={`h-9 flex-1 cursor-pointer whitespace-nowrap rounded-sm px-2 text-[13px] font-medium transition-colors ${
-                          viewMode === option.mode
-                            ? "bg-bg-surface text-accent-text shadow-sm"
-                            : "text-text-muted"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    <Button
-                      variant="icon"
-                      size="md"
-                      active={viewMode !== "list"}
-                      onClick={() => { if (viewMode === "list") changeViewMode("grid3"); }}
-                    >
-                      <LayoutGrid size={16} />
-                    </Button>
-                    <Button
-                      variant="icon"
-                      size="md"
-                      active={viewMode === "list"}
-                      onClick={() => changeViewMode("list")}
-                    >
-                      <List size={16} />
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Input
-                icon={<Search size={16} />}
-                placeholder={t("home.search")}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="min-w-0 flex-1 md:flex-none md:w-[448px]"
-              />
-              <select
-                aria-label={t("home.sortLabel")}
-                value={sortMode}
-                onChange={(e) => {
-                  const next = e.target.value === "manual" ? "manual" : "recent";
-                  setSortMode(next);
-                  localStorage.setItem(SORT_MODE_STORAGE_KEY, next);
-                  setSortError(false);
-                }}
-                className="ml-auto h-10 shrink-0 cursor-pointer rounded-md border border-border bg-bg-surface px-3 text-[13px] text-text-primary"
-              >
-                <option value="recent">{t("home.sortRecent")}</option>
-                <option value="manual">{t("home.sortManual")}</option>
-              </select>
-            </div>
-            {!isNarrow && (
-              <div className="mt-3">
-                <ShelfChips activeFilter={activeFilter} onFilterChange={handleFilterChange} bookCounts={bookCounts} collections={collections} />
-              </div>
-            )}
-            {(sortMode === "manual" || canMoveBooks) && <p className="mt-2 text-[12px] text-text-muted">{t(canMoveBooks ? sortMode === "recent" ? "home.sortRecentHint" : "home.sortHint" : "home.sortFilteredHint")}</p>}
-            {sortError && <p role="alert" className="mt-2 text-[12px] text-danger-text">{t("home.sortError")}</p>}
-          </div>
-
-          <LibraryHintBanner />
-
-          <div className="flex-1 overflow-auto p-page pb-20">
-            {loading ? (
-              <p className="text-text-muted text-[14px]">{t("home.loading")}</p>
-            ) : displayBooks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-4">
-                <p className="text-text-muted text-[14px]">
-                  {searchQuery
-                    ? t("home.noResults")
-                    : isCollectionFilter
-                      ? t("home.noCollectionBooks")
-                      : activeFilter !== "all"
-                        ? t("home.noFilteredBooks", { filter: activeFilter })
-                        : t(platform.hasFormatConvert ? "home.empty" : "home.emptyNoConvert")}
-                </p>
-                {activeFilter === "all" && !searchQuery && (
-                  <Button variant="primary" size="md" onClick={handleImport}>
-                    <Plus size={16} />
-                    {t("home.importBook")}
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <BookSortContext ids={displayBooks.map((book) => book.id)} enabled={canMoveBooks} list={viewMode === "list"} onMove={(from, to) => { void handleMoveBook(from, to); }}>
-              {viewMode === "list" ? (
-              <BookList books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} sortable={canMoveBooks} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} />
-              ) : (
-              // The column count only ever narrows the grid on a narrow screen —
-              // a wide window always gets the auto-fill grid, whichever of
-              // grid2/grid3 happens to be stored, because the segmented control
-              // that sets it isn't even on screen there.
-              <BookGrid books={displayBooks} hasMore={hasMore} loadMore={loadMore} loadingMore={loadingMore} sortable={canMoveBooks} activeCollectionId={isCollectionFilter ? activeFilter.replace("collection:", "") : undefined} onBooksChanged={() => { refresh(); refreshCounts(); collections.refresh();}} columns={isNarrow ? (viewMode === "grid2" ? 2 : viewMode === "grid4" ? 4 : 3) : undefined} />
-              )}
-              </BookSortContext>
-            )}
-          </div>
-
-          {/* `100dvh` puts the bottom of the layout at the bottom of the visible
-              viewport, which on a phone is where the home indicator sits. The
-              inset is 0 everywhere else, so this only ever adds on a device
-              that reports one. */}
-          <div className={`shrink-0 mx-page ${isNarrow ? "mb-[calc(var(--spacing-safe-bottom)+var(--spacing-page))]" : "mb-page"} flex flex-col items-center gap-1.5`}>
-            <button
-              onClick={handleImport}
-              className="w-full rounded-lg border border-dashed border-text-muted/40 py-4 flex items-center justify-center gap-2 text-[14px] text-text-secondary hover:border-accent hover:text-accent transition-colors cursor-pointer"
-            >
-              <Upload size={16} />
-              {/* Same button either way — only the invitation to drop is a lie
-                  on a platform that cannot receive a drop. */}
-              {platform.hasDragDrop ? t("home.dropHint") : t("home.importHint")}
-            </button>
-            {/* The moment someone wants a book is the moment they have none —
-                so the list of places to find one belongs here, not only in a
-                settings tab they have no reason to open. */}
-            <button
-              onClick={() => openSettings("library")}
-              className="text-[12px] text-text-muted hover:text-accent transition-colors"
-            >
-              {t("home.findBooks")}
-            </button>
-          </div>
-        </main>
-      );
+      ) : shelf;
   // Keyed by workspace, not by filter: moving between the rail's workspaces
   // replays the arrival, flipping a shelf chip does not.
   const content = (
