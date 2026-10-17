@@ -14,7 +14,13 @@
  * thing. With it gone the AI panel has one view, so there is no `AiTab`.
  */
 export type SidePanel = "traces" | "ai" | null;
-export type TracesTab = "notes" | "vocab" | "xray";
+/**
+ * `chapter` is 「本章」, the wide card's view of what was left in this chapter
+ * (`ReaderChapterPanel`); the other three are the whole-book lists it links
+ * to. Below the breakpoint the panel keeps its three tabs and `chapter` reads
+ * as `notes`.
+ */
+export type TracesTab = "chapter" | "notes" | "vocab" | "xray";
 
 /** Clicking an already-open panel's toolbar button closes it; any other panel opens it. */
 export function toggleSidePanel(current: SidePanel, panel: Exclude<SidePanel, null>): SidePanel {

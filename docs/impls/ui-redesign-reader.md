@@ -1,6 +1,6 @@
 # UI redesign v3: the reader 「浮笺」
 
-Status: in progress. 3a (PR #25), 3c (PR #26) and 3b-1 (PR #27) shipped; 3b is landing in parts, the chrome (3b-2) next.
+Status: in progress. 3a (PR #25), 3c (PR #26), 3b-1 (PR #27) and 3b-2 (PR #28) shipped; 3b is landing in parts, 「本章」 (3b-3) next.
 Design source: §§9–12 of `design/lantern-ui-redesign-2026-10-16.md` and the canvas row ⑧ boards (`ReaderProto`, `ReaderToc`, `ReaderExplain`, `ReaderPinnedNight`) in the project's shared folder; rendered at <https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM>. The reader now opens in the library window: [`ui-redesign-single-window.md`](ui-redesign-single-window.md).
 
 ## Why
@@ -36,13 +36,14 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - Choosing a chapter closes a floating card and leaves a pinned one.
 
 **3b: the right side and the chrome.**
-- **3b-1, the right card (shipped, PR #27).** The conversation and the traces move from a column into one 380px card inset 12px, radius 16, draggable 320–560 and shared by both views (the old 440/400 per-view widths reflowed the page on a switch). Its header switches 「对话 | 划线笔记」 with text and a 2px accent underline, and holds the pin and close. It opens floating when the text leaves room: `placeRightCard` measures the rendered text as the card opens, and the page translates left at most to a 96px left margin. Otherwise it opens *seated*, laid out as pinned without becoming the pin preference, so it never covers a word. Pinned, a 404px slot opens and the page reflows once. A drag on a pinned card moves the slot with it, so the drag's end has nothing left to animate. 「本章」 replaces 「划线笔记」 in a later part.
+- **3b-1, the right card (shipped, PR #27).** The conversation and the traces move from a column into one 380px card inset 12px, radius 16, draggable 320–560 and shared by both views (the old 440/400 per-view widths reflowed the page on a switch). Its header switches 「对话 | 划线笔记」 with text and a 2px accent underline, and holds the pin and close. It opens floating when the text leaves room: `placeRightCard` measures the rendered text as the card opens, and the page translates left at most to a 96px left margin. Otherwise it opens *seated*, laid out as pinned without becoming the pin preference, so it never covers a word. Pinned, a 404px slot opens and the page reflows once. A drag on a pinned card moves the slot with it, so the drag's end has nothing left to animate. 「本章」 replaces 「划线笔记」 in 3b-3.
+- **3b-3, 「本章」 (this part).** The card's second view becomes 「本章」: one list of what the reader left in this chapter, in the design's order: words, then highlights and notes (bookmarks included, auto-highlights left out by rule ④), then questions asked. A trace belongs to the chapter when the section named by its CFI's first step falls inside `currentScope` (`chapter-traces.ts`). A question is placed by the `sectionIndex` its message metadata already stores, or its selection CFI. Every row goes back to where it was made, and a question opens its conversation. The toolbar's traces button and the segment both land on 「本章」. A footer links to the whole book's notes, vocabulary and character relationships: the old three tabs, with a 「← 本章」 row above them. Narrow keeps its three tabs.
 - The answer card beside the sentence (`ExplainPopover`) gets a receipt line first: 「本章 · model · what was sent」.
 - 「停靠」 turns it into the 380px right card with 「对话 | 本章」 (text with a 2px accent underline). 「本章」 lists this chapter's words, highlights and notes, people so far, and questions asked.
 - Floating, the page only translates. Pinned, it reflows once. When the geometry leaves no room to float, as with the default two columns, the card opens pinned and never covers text.
 - The bookmark ear on the right edge holds an answer still streaming.
-- The vocab, notes and X-Ray tabs go. Traces moves to Settings → Advanced.
-- **3b-2, the chrome (this part).**
+- The vocab, notes and X-Ray tabs go. Traces moves to Settings → Advanced. *As built in 3b-3 the tabs leave the card's surface but stay one link away under 「全书」, since the reader has no Advanced settings section, and a vocab marker click or 「查看语境解释」 still opens them directly.*
+- **3b-2, the chrome (shipped, PR #28).**
   - The top bar fades and becomes `inert` after two page turns, while staying in flow (`chrome-fade.ts`, `useChromeFade`). A turn counts only through the page-turn path, so a TOC jump or a link does not. A pointer over the bar brings it back; the inert bar's pointer events land on a wrapper around it. Settings, export, a peeking or floating card, or a pointer resting on the bar hold it up. A pinned card does not, since it is part of the page. Narrow is unchanged.
   - An Esc dispatcher closes things in stack order: popover → card → slide card → paper (`reader-escape.ts`). Popovers, menus, dialogs and slide cards keep their own Esc; the dispatcher acts only when none is up. Then it puts away a peeking or floating left card, then a floating right card, and on the bare page goes back to the shelf. A pinned card is passed by. An Esc inside a chapter document is replayed on the main document, so the same order holds wherever focus is. A standalone reader window has no shelf behind it, so its bare page ignores Esc.
   - A 「← 书架」 label replaces the bare back arrow.
@@ -58,6 +59,12 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - **Which sides open pinned is remembered on the device** (`localStorage`), not in the synced settings: it depends on the screen's width, and a laptop and a desktop want different answers.
 - **The edge peek has no setting yet.** The design asks for a way to turn it off; it ships with 3b's settings changes.
 
+## Decisions (3b-3)
+
+- **People so far are left out of 「本章」 for now.** X-Ray is an on-demand AI call with no stored list, and `book_person_aliases` has no first-seen position, so there is no spoiler-safe list to read. It needs a backend index first.
+- **Questions read at most the 40 most recent chats**, one `list_chat_messages` each, while the card is open. There is no per-book message query.
+- **The whole-book lists stay in the reader, one link down**, rather than behind a new Advanced settings section (design §12). They are where vocab-marker clicks, export and 「查看语境解释」 already land, and an Advanced section for one switch would be a settings page of its own.
+
 ## Tests
 
 - `tests/reader-sides.test.ts`: derivation to the legacy flags, opening modes, peek and its end, pin toggling, slot widths, and which transitions reflow.
@@ -65,6 +72,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - `tests/reader-measure.test.ts`: the two-column step-down.
 - `tests/right-card-placement.test.ts`: float, step aside, or sit down.
 - `tests/reader-escape.test.ts`: what one Esc does, layer by layer.
+- `tests/chapter-traces.test.ts`: section from a CFI, the chapter range, which questions belong.
 - `tests/chrome-fade.test.ts`: two turns fade the bar, a wake resets the count, a held turn does not count.
 
 ## Figma prompt

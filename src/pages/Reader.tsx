@@ -291,7 +291,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     dismissFloating,
     pin: pinSide,
   } = useReaderSides();
-  const [tracesTab, setTracesTab] = useState<TracesTab>("notes");
+  const [tracesTab, setTracesTab] = useState<TracesTab>("chapter");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   /**
@@ -364,7 +364,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   }, [isNarrow]);
   const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
   useEffect(() => {
-    setTracesTab("notes");
+    setTracesTab("chapter");
     setXrayInteraction(null);
   }, [bookId]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
@@ -1927,6 +1927,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   // whichever of its tabs was last active (tracesTab persists across
   // close/reopen); the AI panel has only the conversation to reopen on.
   const toggleTracesPanel = () => {
+    // Wide, the toolbar's way in lands on 「本章」 (design §12).
+    if (!isNarrow && sidePanel !== "traces") setTracesTab("chapter");
     setSidePanel((prev) => toggleSidePanel(prev, "traces"));
   };
 
@@ -2510,7 +2512,10 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       slotRef={rightSlotRef}
       cardRef={panelRef}
       canShowTraces={supportsCfiNavigation && Boolean(bookId)}
-      onShowView={setSidePanel}
+      onShowView={(view) => {
+        if (view === "traces") setTracesTab("chapter");
+        setSidePanel(view);
+      }}
       onPin={() => pinSide("right")}
       onClose={() => setSidePanel(null)}
       onResizePointerDown={handlePanelResizePointerDown}
@@ -3055,8 +3060,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
               size="md"
               active={sidePanel === "traces"}
               className="touch:size-11"
-              aria-label={t("reader.traces.title")}
-              title={t("reader.traces.title")}
+              aria-label={t("reader.side.chapter")}
+              title={t("reader.side.chapter")}
               onClick={toggleTracesPanel}
             >
               <Layers size={16} />
@@ -3517,8 +3522,19 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           {supportsCfiNavigation && rightShown === "traces" && bookId && (
             <div className="min-h-0 flex-1">
             <ReaderTracesPanel
-              tab={tracesTab}
+              tab={isNarrow && tracesTab === "chapter" ? "notes" : tracesTab}
               onTabChange={setTracesTab}
+              chapterProps={isNarrow ? undefined : {
+                bookId,
+                chapterTitle: currentChapterTitle ?? undefined,
+                scope: currentScope,
+                onNavigate: (cfi) => { navigateToCfi(cfi); },
+                onOpenChat: (chatId) => {
+                  setInitialChatId(chatId);
+                  setSidePanel("ai");
+                },
+                onShowWholeBook: setTracesTab,
+              }}
               vocabProps={{
                 bookId,
                 bookTitle: book.title,
