@@ -1,6 +1,6 @@
 # UI redesign v3: the reader 「浮笺」
 
-Status: in progress. 3a (PR #25), 3c (PR #26) and 3b-1 to 3b-3 (PRs #27–#29) shipped; 3b-4, the receipt line and the bookmark ear, is the last part of 3b.
+Status: shipped. 3a (PR #25), 3c (PR #26) and 3b-1 to 3b-4 (PRs #27–#30); the wrap-up below closes the redesign's step 4.
 Design source: §§9–12 of `design/lantern-ui-redesign-2026-10-16.md` and the canvas row ⑧ boards (`ReaderProto`, `ReaderToc`, `ReaderExplain`, `ReaderPinnedNight`) in the project's shared folder; rendered at <https://claude.ai/artifact/JBpitzgxmkchUGmDANjZnM>. The reader now opens in the library window: [`ui-redesign-single-window.md`](ui-redesign-single-window.md).
 
 ## Why
@@ -39,7 +39,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - **3b-1, the right card (shipped, PR #27).** The conversation and the traces move from a column into one 380px card inset 12px, radius 16, draggable 320–560 and shared by both views (the old 440/400 per-view widths reflowed the page on a switch). Its header switches 「对话 | 划线笔记」 with text and a 2px accent underline, and holds the pin and close. It opens floating when the text leaves room: `placeRightCard` measures the rendered text as the card opens, and the page translates left at most to a 96px left margin. Otherwise it opens *seated*, laid out as pinned without becoming the pin preference, so it never covers a word. Pinned, a 404px slot opens and the page reflows once. A drag on a pinned card moves the slot with it, so the drag's end has nothing left to animate. 「本章」 replaces 「划线笔记」 in 3b-3.
 - **3b-3, 「本章」 (shipped, PR #29).** The card's second view becomes 「本章」: one list of what the reader left in this chapter, in the design's order: words, then highlights and notes (bookmarks included, auto-highlights left out by rule ④), then questions asked. A trace belongs to the chapter when the section named by its CFI's first step falls inside `currentScope` (`chapter-traces.ts`). A question is placed by the `sectionIndex` its message metadata already stores, or its selection CFI. Every row goes back to where it was made, and a question opens its conversation. The toolbar's traces button and the segment both land on 「本章」. A footer links to the whole book's notes, vocabulary and character relationships: the old three tabs, with a 「← 本章」 row above them. Narrow keeps its three tabs.
 - The answer card beside the sentence (`ExplainPopover`) gets a receipt line first: 「本章 · model · what was sent」.
-- **3b-4, the receipt line and the bookmark ear (this part).**
+- **3b-4, the receipt line and the bookmark ear (shipped, PR #30).**
   - The answer beside the sentence is the learning card today (`ExplainPopover` only carries custom actions), so the receipt line goes on the learning card, under its header, from the first frame. It names only what `ai_learning_card` sends: the selection and its context, the book and chapter titles when there is a book, the level settings, and for a word any earlier lookups. The model leads once the answer reports it. A cached card says nothing was sent this time (`learning-card/receipt.ts`). The design's 「本章」 scope chip is left off, because this request sends a sentence, not the chapter.
   - The bookmark ear: when the right card is shut while the conversation is still answering, a 28×36 tab on the right edge holds it, its dot breathing until the answer is done. A click reopens the conversation. AiPanel stays mounted while the card is shut, so the answer keeps arriving either way.
 - 「停靠」 turns it into the 380px right card (in 3b-4 the card's existing 「问 AI」 is this hand-off, minus the morph) with 「对话 | 本章」 (text with a 2px accent underline). 「本章」 lists this chapter's words, highlights and notes, people so far, and questions asked.
@@ -73,6 +73,13 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - **「停靠」 is the learning card's existing 「问 AI」 for now.** It already hands the passage and the card's analysis to the right card's conversation. The 260ms morph from one element into the other is left for later.
 - **The ear does not follow the anchor sentence off screen.** The design also folds a beside-the-sentence answer into the ear when a page turn takes its sentence away. The learning card is a dialog positioned by its own placement code, so that waits for the morph.
 - **The edge-peek setting moves to step 4** with the rest of the settings changes.
+
+## Wrap-up (step 4)
+
+- **The edge peek can be turned off.** Settings → Reading gains 「悬停左缘查看目录」 (`reader_edge_peek`, on by default, app-level like one-handed mode). Off, the spine stays and the edge no longer opens the card; ⌘1, the toolbar and the pin still do. The row shows only with a mouse, the only pointer that peeks.
+- **The learn page keeps step 2's shape.** The design's 「单词 / 学习卡 / 测验」 switch would repeat the review card (→ flashcards) and the quiz card (→ the quiz) that already sit at the top of the page, so it is not added. The review card's 「约 X 分钟」 is left off: nothing records how long a review takes, and a per-word guess would be a made-up number.
+- **The status row stays as it is.** It is already one line under a hairline (book progress, and chapter progress or page numbers as set in Settings → Reading), which is what §12 asked of it.
+- **Left for later, each needing more than a UI change:** people so far in 「本章」 (a first-seen index), the morph from the answer card into the right card, the ear collecting an answer whose sentence turns off the page, and chapter jumps in a reader-window ⌘K.
 
 ## Tests
 

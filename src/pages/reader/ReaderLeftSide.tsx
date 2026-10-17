@@ -18,6 +18,8 @@ interface ReaderLeftSideProps {
   chapterCount: number;
   /** Search is not offered for every format; without it the card has no view switch. */
   canSearch: boolean;
+  /** Resting the mouse on the edge peeks the card; Settings → Reading can turn it off. */
+  peekOnHover: boolean;
   onPeek: () => void;
   onEndPeek: () => void;
   onPin: () => void;
@@ -41,6 +43,7 @@ export default function ReaderLeftSide({
   slotRef,
   chapterCount,
   canSearch,
+  peekOnHover,
   onPeek,
   onEndPeek,
   onPin,
@@ -84,7 +87,7 @@ export default function ReaderLeftSide({
         <div
           className="group/spine absolute inset-y-0 left-0 z-20 w-6"
           onPointerEnter={(event) => {
-            if (event.pointerType !== "mouse") return;
+            if (event.pointerType !== "mouse" || !peekOnHover) return;
             clearTimer();
             if (!peeking) peekTimer.current = window.setTimeout(onPeek, PEEK_IN_MS);
           }}

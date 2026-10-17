@@ -1664,6 +1664,8 @@
   "settings.layout.pageTurnAnimationHint": "左右翻页时使用的动画效果",
   "settings.layout.oneHandMode": "单手模式",
   "settings.layout.oneHandModeHint": "点按屏幕左右两侧都翻下一页，回到上一页用滑动",
+  "settings.layout.edgePeek": "悬停左缘查看目录",
+  "settings.layout.edgePeekHint": "鼠标停在阅读页最左边时，滑出目录卡片",
   "settings.layout.progressDisplay": "进度显示",
   "settings.layout.progressDisplayHint": "可选择要显示的阅读进度指标",
   "settings.layout.previousPageBinding": "上一页按键",
