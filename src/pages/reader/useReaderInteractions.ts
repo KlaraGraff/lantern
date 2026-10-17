@@ -117,6 +117,11 @@ interface ReaderInteractionsOptions {
    * alone cannot catch it inside a foliate chapter's iframe.
    */
   onOpenSearch(): void;
+  /**
+   * A bare Esc inside a chapter document, handed to the reader so the same
+   * one-layer-per-press order applies wherever focus happens to be.
+   */
+  onEscape(): void;
 }
 
 function canvasHasVisibleContent(canvas: HTMLCanvasElement): boolean {
@@ -170,6 +175,7 @@ export function useReaderInteractions({
   handleReaderBinding,
   onReturnJump,
   onOpenSearch,
+  onEscape,
 }: ReaderInteractionsOptions) {
   const installDocumentInteractions = useCallback(({
     doc,
@@ -616,6 +622,12 @@ export function useReaderInteractions({
       } else if (isSearchShortcut) {
         event.preventDefault();
         onOpenSearch();
+      } else if (
+        event.key === "Escape" && !event.repeat
+        && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+      ) {
+        event.preventDefault();
+        onEscape();
       } else if (zoomCommand) {
         // The book is its own document, and nothing pressed inside it reaches
         // the window listener that answers these keys everywhere else — so the
@@ -974,6 +986,7 @@ export function useReaderInteractions({
     handleZoomFit,
     onReturnJump,
     onOpenSearch,
+    onEscape,
     openLearningInteraction,
     pendingSelectionMenuRef,
     pendingWordClickRef,

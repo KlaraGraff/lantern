@@ -282,6 +282,7 @@
   "reader.fileUnreadable": "The book file is where it should be, but its contents could not be read. If it lives on an external or network drive, check that the drive is still connected.",
   "reader.retry": "Retry",
   "reader.returnToLibrary": "Return to library",
+  "reader.backToShelf": "Shelf",
   "reader.downloadingFromICloud": "Downloading from iCloud...",
   "reader.downloadingFromICloudPercent": "Downloading from iCloud... {{percent}}%",
   "reader.downloadFailed": "The download did not finish. The book is still in iCloud — retry when you have a connection.",

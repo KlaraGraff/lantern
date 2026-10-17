@@ -126,6 +126,8 @@ import { useLingering } from "./reader/useLingering";
 import ReaderRightSide from "./reader/ReaderRightSide";
 import { spineSegments } from "./reader/reader-spine";
 import ReaderLeftSide from "./reader/ReaderLeftSide";
+import { escapeStep } from "./reader/reader-escape";
+import { useChromeFade } from "./reader/useChromeFade";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
 import type { TapZone } from "./reader/tap-zones";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
@@ -968,6 +970,53 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [supportsSearch, setSearchOpen, setTocOpen]);
 
+  // Esc, one layer per press (`reader-escape.ts`). A popover, a menu, a
+  // dialog or a slide card answers its own Esc; this only acts when none is
+  // up. A standalone reader window has no shelf behind it, so its bare page
+  // keeps Esc to itself.
+  const escapeOverlayOpen = Boolean(
+    settingsOpen || exportOpen || contextMenu || translation || customAction || footnote
+    || learningCards.length > 0 || diagnosticsPanelOpen || chromeOpen,
+  );
+  const handleEscape = useCallback((): boolean => {
+    if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return false;
+    const step = escapeStep({
+      overlayOpen: escapeOverlayOpen,
+      narrow: isNarrow,
+      narrowPanelOpen: Boolean(tocOpen || searchOpen || sidePanel),
+      sides,
+    });
+    if (step === "panels") {
+      setTocOpen(false);
+      setSearchOpen(false);
+      setSidePanel(null);
+    } else if (step === "left" || step === "right") {
+      dismissFloating(step);
+    } else if (step === "leave" && !isStandaloneWindow) {
+      leaveReader();
+    } else {
+      return false;
+    }
+    return true;
+  }, [escapeOverlayOpen, isNarrow, tocOpen, searchOpen, sidePanel, sides, setTocOpen, setSearchOpen, setSidePanel, dismissFloating, leaveReader]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.repeat) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+      if (handleEscape()) event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleEscape]);
+  // A bare Esc inside a chapter document is replayed on this one, so the
+  // popovers' own listeners and the dispatcher above answer it as they would
+  // a press anywhere else.
+  const forwardEscape = useCallback(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  }, []);
+
   // Cards and AI answers are lookup surfaces of their own: the same
   // double-click and selection gestures work inside them, one level deeper.
   const lookupWordInPanel = useCallback((
@@ -1157,8 +1206,21 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     }, 240);
   }, [cancelPendingWordClick, openLearningInteraction]);
 
+  // The wide top bar fades after two page turns (`chrome-fade.ts`). Settings
+  // hang from it and a floating card is a moment of looking around, so either
+  // holds it up; a pinned card is part of the page and does not.
+  const {
+    faded: chromeFaded,
+    noteTurn: noteChromeTurn,
+    hoverHandlers: chromeHoverHandlers,
+  } = useChromeFade(
+    isNarrow || settingsOpen || exportOpen
+    || sides.left.mode === "peek" || sides.left.mode === "float" || sides.right.mode === "float",
+  );
+
   const turnReaderPage = useCallback((direction: "previous" | "next") => {
     setContextMenu(null);
+    noteChromeTurn();
     const performTurn = async () => {
       if (isTextBook) {
         textReaderPageNavigationRef.current?.[direction === "previous" ? "prev" : "next"]();
@@ -1175,7 +1237,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       viewport: readerViewportRef.current,
       turn: performTurn,
     });
-  }, [isTextBook, readerSettingsRef]);
+  }, [isTextBook, readerSettingsRef, noteChromeTurn]);
 
   const {
     blockPageTurnKeyboard,
@@ -1756,6 +1818,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     handleReaderBinding,
     onReturnJump: handleJumpBack,
     onOpenSearch: handleOpenSearch,
+    onEscape: forwardEscape,
   });
 
   useFoliateView({
@@ -2711,10 +2774,15 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           viewport's box and makes foliate re-columnize the whole chapter. That
           is why the rest of the toolbar moved into a floating bar rather than
           into a taller header. */}
+      {/* Wide, the bar fades and goes inert after two page turns but keeps its
+          height. Its pointer events then land on this wrapper, which brings
+          it back. */}
+      <div className="shrink-0" {...chromeHoverHandlers}>
       <header
         className={isNarrow
           ? `flex shrink-0 relative select-none ${TOP_INSET} ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`
-          : `flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+          : `flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none transition-opacity duration-[var(--motion-base)] ease-[var(--ease-out-soft)] motion-reduce:transition-none ${chromeFaded ? "opacity-0" : ""} ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+        inert={chromeFaded}
         style={isStandaloneWindow ? {
           backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
           color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
@@ -2803,11 +2871,17 @@ function ReaderSession({ bookId }: { bookId?: string }) {
             </button>
           ) : (
             <>
-              {/* 36px is under the 44px both Apple and WCAG 2.5.5 ask for. The
-                  header's icon buttons grow on a coarse pointer — a modality
-                  question, unlike the layout above, so `touch:` and not `md:`. */}
-              <Button variant="icon" size="md" className="touch:size-11" onClick={() => leaveReader()}>
+              {/* 「← 书架」: the way out names where it goes. Button's own
+                  `touch:` sizes take it to 44px on a coarse pointer. */}
+              <Button
+                variant="ghost"
+                size="md"
+                className="-ml-1 px-2"
+                title={t("reader.returnToLibrary")}
+                onClick={() => leaveReader()}
+              >
                 <ArrowLeft size={16} />
+                {t("reader.backToShelf")}
               </Button>
               <div className="w-px h-6 bg-border" />
             </>
@@ -3030,6 +3104,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           onClearLookupMarks={bookId ? clearLookupMarks : undefined}
         />
       </header>
+      </div>
 
       {/* Body */}
       {/* `relative` is what the narrow panels position against — see `panelShellClass`. */}
