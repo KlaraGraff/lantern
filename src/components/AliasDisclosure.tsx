@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AliasDecision, AliasMatch, AliasResolutionMetadata, ChatMessage } from "../hooks/useAiChat";
 import { serializeMessageMetadata } from "../hooks/useAiChat";
 import IndexManagerModal from "./IndexManagerModal";
+import { referringPhrase } from "./alias-phrase";
 
 // Mirrors the camelCase fields of AliasGroupView (person_aliases.rs) — only
 // `canonical` is needed here, the picker just lists names.
@@ -61,8 +62,9 @@ function findMentionedCanonical(content: string, canonicals: string[]): string |
 
 interface AliasDisclosureLineProps {
   resolution: AliasResolutionMetadata;
-  /** What the reader actually typed — quoted back in the low-confidence
-   *  line ("couldn't tell who X refers to"). */
+  /** What the reader actually typed. The low-confidence line quotes back
+   *  only the part of it that names the person ("couldn't tell who X refers
+   *  to") — see `referringPhrase`. */
   precedingUserContent: string;
   /** Which book's alias table the "manage" link opens. Omitted for a message
    *  that was not asked against a book — the link is then simply absent. */
@@ -89,7 +91,7 @@ export function AliasDisclosureLine({ resolution, precedingUserContent, bookId, 
         role="status"
         className="mb-2 rounded-md bg-bg-input px-2.5 py-1.5 text-[11.5px] leading-[1.5] text-text-secondary"
       >
-        {t("ai.aliasDisclosure.low.body", { phrase: precedingUserContent })}
+        {t("ai.aliasDisclosure.low.body", { phrase: referringPhrase(precedingUserContent) })}
       </div>
     );
   }
@@ -184,6 +186,12 @@ export function AliasResolutionFooter({ message, precedingUserContent }: AliasRe
     return () => { cancelled = true; };
   }, [isLow, decision, message.bookId]);
 
+  // The alias is the phrase that names the person, not the whole question:
+  // the backend embeds the alias on its own to match the *next* question, and
+  // the table lists it as what this person can be called. The full question
+  // still goes along as `sourceQuery`, which is what it is for.
+  const phrase = useMemo(() => referringPhrase(precedingUserContent), [precedingUserContent]);
+
   const detectedCanonical = useMemo(
     () => findMentionedCanonical(message.content, canonicals ?? []),
     [message.content, canonicals],
@@ -247,7 +255,7 @@ export function AliasResolutionFooter({ message, precedingUserContent }: AliasRe
       aliasId = await invoke<string>("teach_description_alias", {
         bookId: message.bookId,
         canonical,
-        alias: precedingUserContent,
+        alias: phrase,
         sourceQuery: precedingUserContent,
       });
     } catch (err) {
@@ -282,7 +290,7 @@ export function AliasResolutionFooter({ message, precedingUserContent }: AliasRe
     return (
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-2 text-[11.5px] text-text-secondary">
         <span>
-          {t("ai.aliasDisclosure.low.receipt", { phrase: precedingUserContent, canonical: decision.canonical })}
+          {t("ai.aliasDisclosure.low.receipt", { phrase, canonical: decision.canonical })}
         </span>
         {decision.aliasId && (
           <button

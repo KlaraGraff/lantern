@@ -14,6 +14,7 @@
  */
 import { PROMO_COVERS, bookUrl, coverUrl } from "./covers.generated";
 import type { HarnessBook } from "../fixture-data";
+import { activeShotName } from "./index";
 
 const DAY = 86_400_000;
 const now = Date.now();
@@ -90,10 +91,22 @@ function toBook(shelf: Shelf): HarnessBook {
   };
 }
 
+/**
+ * 「打开一本书」那张卡只在一本书第一次被打开时出现（status 还是 unread）。书架上
+ * 本来没有没开过的书，所以 `bookOpen` 那一场把《Moby-Dick》放回「还没开始」——
+ * 只在那一场：别的图里它照旧是读完的九本之一（覆盖率的对照组数的就是那九本）。
+ */
+const UNREAD_IN_SHOT: Record<string, string> = { bookOpen: "moby-dick" };
+
+const shelfForShot = (shelf: Shelf): Shelf =>
+  UNREAD_IN_SHOT[activeShotName() ?? ""] === shelf.slug
+    ? { ...shelf, status: "unread", progress: 0, touched: shelf.added }
+    : shelf;
+
 /** 只保留封面真的抽出来了的书 —— 少下了一两本，书架少一格，不炸。 */
 export const PROMO_BOOKS: HarnessBook[] = SHELF.filter(
   (s) => PROMO_COVERS[s.slug],
-).map(toBook);
+).map(shelfForShot).map(toBook);
 
 export const PROMO_COLLECTIONS = [
   { id: "col-austen", name: "Austen", book_count: 2, sort_order: 0, created_at: ago(60), updated_at: ago(2) },

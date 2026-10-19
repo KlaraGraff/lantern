@@ -36,7 +36,7 @@ import {
   DICTIONARY_MISS,
   GENERIC_DICTIONARY_ENTRY,
 } from "./dictionary-data";
-import { isShooting } from "./promo";
+import { MARK_STAGE, activeShotName, isShooting } from "./promo";
 import { PROMO_BOOKS, PROMO_COLLECTIONS } from "./promo/library";
 import {
   promoBookCoverage,
@@ -45,14 +45,23 @@ import {
   promoVocabProfile,
 } from "./promo/coverage";
 import {
+  MEMORY_CARD,
+  MEMORY_HINT,
+  MEMORY_WORD,
   PROMO_CHATS,
   PROMO_CHAT_MESSAGES,
+  PROMO_INDEX_DETAILS,
   PROMO_MASTERY_EVENTS,
+  PROMO_PASS_RATES,
+  PROMO_PILE_PLAN,
   PROMO_PROFILE_EVIDENCE,
+  promoAliasGroups,
   promoLearningCard,
+  promoMarkWords,
   promoProfileView,
   promoVocabWords,
 } from "./promo/content";
+import { JANE_EYRE_DIFFICULTY, MOBY_DICK_DIFFICULTY, MOBY_DICK_SECTIONS } from "./promo/difficulty.generated";
 
 type Args = Record<string, unknown>;
 type Fixture = unknown | ((args: Args) => unknown);
@@ -101,8 +110,10 @@ interface HarnessNote {
 }
 const harnessSavedNotes: HarnessNote[] = [];
 const harnessDeletedNotes = new Set<string>();
+// The seeded notes belong to the smoke fixture's book; on the promo shelf they
+// would turn up, in English, under every word card in Pride and Prejudice.
 const harnessNotes = (): HarnessNote[] => [
-  ...NOTES.filter((n) => !harnessDeletedNotes.has(n.id) && !harnessSavedNotes.some((s) => s.id === n.id)),
+  ...(isShooting() ? [] : NOTES).filter((n) => !harnessDeletedNotes.has(n.id) && !harnessSavedNotes.some((s) => s.id === n.id)),
   ...harnessSavedNotes,
 ];
 
@@ -184,7 +195,33 @@ const SHELF_CHATS = isShooting() ? PROMO_CHATS : CHATS;
  * book that is not on the promo shelf, so a shot of the vocabulary page would
  * otherwise name a book the reader cannot see anywhere else in the image.
  */
-const SAVED_WORDS = isShooting() ? promoVocabWords() : VOCAB;
+/**
+ * Real per-sentence CFIs only where a shot needs them: the chapter-end line
+ * counts "words saved in this chapter" by resolving each word's CFI, and the
+ * older shots double-click a saved word whose real CFI would put a vocab mark
+ * on it — and a click on that mark opens the vocabulary side panel, not the card.
+ */
+const REAL_CFI_SHOTS = new Set(["chapterEnd", "chapterEndOpen"]);
+const SAVED_WORDS = isShooting() ? promoVocabWords(REAL_CFI_SHOTS.has(activeShotName() ?? "")) : VOCAB;
+
+/**
+ * The two in-book-marks shots (`marksBefore` / `marksAfter`) put six words on
+ * the first page of chapter II with real paragraph CFIs, at two points in time.
+ * Only the reader's mark overlay reads them; the rest of the app keeps the
+ * shelf's usual saved words.
+ */
+const MARK_STAGE_NOW = MARK_STAGE[activeShotName() ?? ""];
+const MARKED_WORDS = MARK_STAGE_NOW ? promoMarkWords(MARK_STAGE_NOW) : SAVED_WORDS;
+
+/** The shot's saved words by name — the review piles are assembled from these. */
+const savedWord = (name: string) => {
+  const word = SAVED_WORDS.find((w) => w.normalized_word === name);
+  if (!word) throw new Error(`harness/promo: 生词本里没有 "${name}"`);
+  return word;
+};
+
+/** The alias table before the reader taught 「那个牧师」, for the shots of that very moment. */
+const ALIAS_TABLE_BEFORE_TEACHING = ["aliasPriestLow", "aliasPriestTaught"].includes(activeShotName() ?? "");
 
 /* ------------------------------------------------------------------ *
  * Profile
@@ -598,7 +635,7 @@ export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
    * Vocabulary / learning
    * ---------------------------------------------------------------- */
-  list_vocab_words: () => SAVED_WORDS.slice(),
+  list_vocab_words: () => MARKED_WORDS.slice(),
   list_all_vocab_words: () => SAVED_WORDS.slice(),
   list_vocab_due_for_review: () => SAVED_WORDS.filter((w) => w.next_review_at <= nowMs()),
   check_vocab_exists: null,
@@ -635,6 +672,19 @@ export const FIXTURES: Record<string, Fixture> = {
   // `PileCard` throw on `pile.kind.kind` the moment a pile had any words in
   // it, which only started happening once the fixture words became visible.
   list_review_piles: () => {
+    if (isShooting()) {
+      // 拍样张时按 `PROMO_PILE_PLAN` 排三堆，每堆的来由都对得上那几个词的履历。
+      const pile = (kind: Record<string, unknown>, names: string[], hoursAgo: number) => {
+        const words = names.map(savedWord);
+        return { kind, word_ids: words.map((w) => w.id), words, newest_activity_at: nowMs() - hoursAgo * 3_600_000 };
+      };
+      const book = { book_id: SAVED_WORDS[0].book_id, book_title: SAVED_WORDS[0].book_title };
+      return [
+        pile({ kind: "repeat_lookups_in_book", ...book, solo_word_lookups: null, solo_word_glances: null }, PROMO_PILE_PLAN.repeat, 2),
+        pile({ kind: "recent_chapter_lookups", ...book, chapter: PROMO_PILE_PLAN.chapter.label }, PROMO_PILE_PLAN.chapter.words, 5),
+        pile({ kind: "long_unseen" }, PROMO_PILE_PLAN.longUnseen, 24 * 20),
+      ];
+    }
     const due = SAVED_WORDS.filter((w) => w.next_review_at <= nowMs());
     return [
       {
@@ -659,7 +709,10 @@ export const FIXTURES: Record<string, Fixture> = {
       },
     ];
   },
-  list_word_marks: () => SAVED_WORDS.map((w) => ({ normalized_word: w.normalized_word, enabled: true })),
+  // The marks shots turn the whole-word layer off: it paints every occurrence of
+  // a saved word in one uniform style, and those two images are about the
+  // per-mastery overlay that layer would otherwise stand in for.
+  list_word_marks: () => MARK_STAGE_NOW ? [] : SAVED_WORDS.map((w) => ({ normalized_word: w.normalized_word, enabled: true })),
   list_word_mark_exceptions: [],
   list_lookup_occurrence_marks: [],
   list_word_forms: [],
@@ -716,7 +769,9 @@ export const FIXTURES: Record<string, Fixture> = {
     };
   },
   list_lookup_records: ({ bookId }: Args) => LOOKUP_RECORDS.filter((r) => r.book_id === bookId),
-  word_memory_hint: null,
+  // Only the `memory` shot has a record to report, and only for its one word.
+  word_memory_hint: ({ word }: Args) =>
+    activeShotName() === "memory" && String(word ?? "").toLowerCase() === MEMORY_WORD ? { ...MEMORY_HINT } : null,
 
   /* ---------------------------------------------------------------- *
    * Reading stats
@@ -811,13 +866,17 @@ export const FIXTURES: Record<string, Fixture> = {
   ],
   ai_list_models: ["harness-model-large", "harness-model-small"],
   ai_reasoning_effort_options: { supported: false, options: [] },
-  ai_vector_retrieval_status: { available: false, reason: "harness", dimensions: null, model: null },
+  // The alias shots show a taught description alias (matched by meaning), which
+  // only works with an embedding model behind it — so the promo shelf has one.
+  ai_vector_retrieval_status: isShooting()
+    ? { available: true, reason: null, dimensions: 1536, model: "harness-embed-3" }
+    : { available: false, reason: "harness", dimensions: null, model: null },
   /**
    * `IndexDetails` as `IndexManagerModal.tsx` declares it. `sections` and
    * `chunks` must be arrays: the modal calls `.some()` on `sections` during
    * render with no guard, so a `{}` here empties the whole window.
    */
-  ai_index_details: {
+  ai_index_details: isShooting() ? PROMO_INDEX_DETAILS : {
     status: "ready",
     error: null,
     chunkCount: 42,
@@ -925,7 +984,12 @@ export const FIXTURES: Record<string, Fixture> = {
    * `add_person_alias` has to return a real id string — the receipt only
    * offers 撤销 when it has a row id to delete.
    */
-  list_person_aliases: () => PERSON_ALIAS_GROUPS.map((group) => ({ ...group })),
+  list_person_aliases: () => isShooting()
+    ? promoAliasGroups(!ALIAS_TABLE_BEFORE_TEACHING)
+    : PERSON_ALIAS_GROUPS.map((group) => ({ ...group })),
+  // The low-confidence 「✓ 对」 writes through this, not `add_person_alias`; the
+  // receipt only offers 撤销 when it gets a row id back.
+  teach_description_alias: () => `pa-harness-${harnessAliasWrites++}`,
   add_person_alias: () => `pa-harness-${harnessAliasWrites++}`,
   delete_person_alias: null,
   clear_person_aliases: null,
@@ -1006,6 +1070,7 @@ export const FIXTURES: Record<string, Fixture> = {
   ai_learning_card: (a: Args) => {
     // 等级会换掉卡片显示哪几块，所以内容也得按等级取 —— 取的就是应用自己读的
     // 那个 `cefr_level`，样张里没有第二套开关。
+    if (activeShotName() === "memory" && String(a.text ?? "").trim().toLowerCase() === MEMORY_WORD) return MEMORY_CARD;
     const card = promoLearningCard(a.text, resolveSettings().cefr_level);
     if (!card) throw new Error(`harness: 样张里没有 "${String(a.text)}" 这张卡`);
     return card;
@@ -1166,7 +1231,7 @@ export const FIXTURES: Record<string, Fixture> = {
     ratioPercent: 30,
     providers: ["openai"],
   },
-  get_book_difficulty: (a: Args) => ({
+  get_book_difficulty: (a: Args) => promoDifficulty(a.bookId ?? a.book_id) ?? ({
     bookId: String(a.bookId ?? a.book_id ?? BOOKS[0].id),
     status: "ready",
     totalTokens: 84_000,
@@ -1182,6 +1247,16 @@ export const FIXTURES: Record<string, Fixture> = {
     error: null,
     override: null,
     stale: false,
+  }),
+  get_book_difficulty_sections: (a: Args) =>
+    isShooting() && String(a.bookId ?? a.book_id) === "moby-dick"
+      ? MOBY_DICK_SECTIONS.map((section, index) => ({ sectionOrder: index, chapterTitle: section.title, ...section }))
+      : [],
+  get_vocab_pass_rates: () => (isShooting() ? { ...PROMO_PASS_RATES } : {
+    bandPassRates: [0.98, 0.95, 0.9, 0.7, 0.4],
+    scorableLookups: 320,
+    spanDays: 40,
+    sufficient: true,
   }),
   // Coverage. The numbers are chosen to land on a *point* rather than a range
   // (enough baseline books, a narrow "眼熟" band), because the interval state
@@ -1246,6 +1321,26 @@ export const FIXTURES: Record<string, Fixture> = {
   },
   export_vocab_backup: { version: 1, words: VOCAB.slice(), exported_at: nowMs() },
 };
+
+/**
+ * `get_book_difficulty` on the promo shelf, for the two books the open-book
+ * card reads (`difficulty.generated.ts` — counted, not invented). `null` for
+ * every other book and outside a shot, which falls back to the generic row.
+ */
+function promoDifficulty(bookId: unknown): Record<string, unknown> | null {
+  const id = String(bookId ?? "");
+  const counted = !isShooting() ? null : id === "moby-dick" ? MOBY_DICK_DIFFICULTY : id === "jane-eyre" ? JANE_EYRE_DIFFICULTY : null;
+  if (!counted) return null;
+  const base = {
+    bookId: id,
+    sourceSha256: id.padEnd(64, "0").slice(0, 64),
+    computedAt: new Date().toISOString(),
+    error: null,
+    override: null,
+    stale: false,
+  };
+  return { ...base, status: "done", ...counted };
+}
 
 function harnessProfile(): AiProfile {
   return {

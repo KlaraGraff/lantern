@@ -20,9 +20,11 @@ import {
   ENDING_JUMP,
   HERO_LOOKUP_WORD,
   MASTERY_WORD,
+  MEMORY_WORD,
   PROMO_CUSTOM_MODULE_NAME,
   VOCAB_JUMP,
 } from "./content";
+import { PROMO_COVERS } from "./covers.generated";
 import { activeScene, activeShotName } from "./index";
 
 /** 截图脚本等的就是这个属性。 */
@@ -91,22 +93,36 @@ const byText = (label: string, scope?: ParentNode): HTMLElement | null =>
  * 「src/ 不知道 harness 存在」。所以按行上显示的字去找。
  */
 const FILTER_LABEL_KEY: Record<string, string> = {
-  all: "sidebar.allBooks",
+  all: "nav.library",
   reading: "sidebar.currentlyReading",
   finished: "sidebar.finished",
   chats: "sidebar.chats",
-  vocab: "sidebar.vocab",
+  vocab: "nav.learn",
   review: "sidebar.review",
   notes: "sidebar.notes",
+  qa: "sidebar.qa",
   explanations: "sidebar.explanations",
-  stats: "sidebar.readingStats",
+  stats: "nav.stats",
 };
+
+/**
+ * 桌面版的左栏是 `NavRail`（`<nav aria-label="主导航">`，一列图标 + 小字），
+ * 旧的文字侧栏 `<aside>` 只剩手机抽屉还在用。先在 rail 里找，找不到再退回
+ * `<aside>`，最后才是整页。
+ */
+const navRail = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>(`nav[aria-label="${text("nav.label")}"]`);
 
 function sidebarRow(filterId: string): HTMLElement | null {
   const key = FILTER_LABEL_KEY[filterId];
   if (!key) return null;
-  // 侧栏在 <aside> 里；限定范围，免得撞上正文里同名的字。
-  return byText(text(key), document.querySelector("aside") ?? document.body);
+  const label = text(key);
+  for (const scope of [navRail(), document.querySelector("aside"), document.body]) {
+    if (!scope) continue;
+    const hit = byText(label, scope);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -315,9 +331,14 @@ async function openScopeMenu(): Promise<void> {
  * 所以这里先点它，再点节名，和读者的路径一模一样。
  */
 async function openSettingsSection(sectionLabel: string): Promise<void> {
-  const entry = await waitFor("左栏底部的设置入口", () =>
-    buttons(document.querySelector("aside") ?? document.body)
-      .find((b) => b.textContent?.includes(text("settings.title"))) ?? null);
+  // NavRail 底部那颗圆形按钮上显示的是名字缩写，「设置」两个字只在 aria-label
+  // 上；旧侧栏（手机抽屉）是可见文字。两种都认。
+  const entry = await waitFor("左栏底部的设置入口", () => {
+    const rail = navRail();
+    const inRail = rail ? byLabel(text("settings.title"), rail) : null;
+    return inRail ?? buttons(document.querySelector("aside") ?? document.body)
+      .find((b) => b.textContent?.includes(text("settings.title"))) ?? null;
+  });
   entry.click();
 
   const dialog = await waitFor("设置模态框", () => document.querySelector<HTMLElement>('[role="dialog"]'));
@@ -486,6 +507,79 @@ async function scrollCardToTop(heading: string): Promise<void> {
   }
 }
 
+/* ---------------- 宣传片场景用的几个小动作 ---------------- */
+
+/**
+ * 正文标记是书铺好之后才画的：`refreshAnnotations` 要先取回生词、再逐个解析
+ * CFI、再往 foliate 的 overlayer 上加。没有一个能等的信号，所以等书铺好之后
+ * 再给它一段固定的时间 —— 只在标记那几张图上用。
+ */
+async function waitForMarks(): Promise<void> {
+  await waitForBook();
+  await sleep(1500);
+  await settle();
+}
+
+/** 阅读器 AI 侧栏顶上那个数据库图标 —— 打开这本书的「AI 索引管理」。 */
+async function openIndexManager(): Promise<void> {
+  const button = await waitFor("「AI 索引管理」按钮", () =>
+    buttons().find((b) => b.getAttribute("title") === text("indexManager.title")) ?? null);
+  button.click();
+  await waitFor("人物别名那一节", () =>
+    [...document.querySelectorAll<HTMLElement>("h4, h3")]
+      .find((h) => h.textContent?.trim().startsWith(text("indexManager.aliases.title"))) ?? null);
+  await settle();
+}
+
+/** 把某个小标题滚到它所在滚动容器的顶上（量的是位置，不是像素数）。 */
+async function scrollHeadingToTop(heading: string): Promise<void> {
+  const anchor = await waitFor(`「${heading}」小标题`, () =>
+    [...document.querySelectorAll<HTMLElement>("h2, h3, h4")]
+      .find((el) => el.textContent?.trim().startsWith(heading)) ?? null);
+  const target = anchor.closest<HTMLElement>("section") ?? anchor;
+  const scroller = scrollerOf(target);
+  for (let pass = 0; pass < 6; pass += 1) {
+    const off = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+    if (Math.abs(off) < 4) break;
+    scroller.scrollTop += off;
+    await settle();
+  }
+}
+
+/** 低置信那一条下面的「✓ 对，就是 X」。X 是界面自己从回答里读出来的。 */
+const confirmAliasButton = () => {
+  const prefix = text("ai.aliasDisclosure.low.confirm").split("{{")[0];
+  return buttons().find((b) => b.textContent?.trim().startsWith(prefix)) ?? null;
+};
+
+/**
+ * 一页一页往后翻，直到章末那一行出现在看得见的这一页上。
+ *
+ * 那一行是 `chapter-end-hint.ts` 装在章节 document 最末尾的，所以只会落在这一章
+ * 的最后一页 —— 翻过头就进了下一章，正好用 `readerContents().index` 拦住。
+ */
+async function pageToChapterEnd(maxTurns = 30): Promise<void> {
+  await waitForBook();
+  const view = document.querySelector<FoliateView>("foliate-view");
+  const start = readerContents()?.index;
+  for (let turn = 0; turn <= maxTurns; turn++) {
+    const contents = readerContents();
+    if (contents && contents.index !== start) throw new Error("翻过了章末也没看见那一行");
+    const line = contents?.doc.querySelector<HTMLElement>("[data-lantern-chapter-end]");
+    const frame = contents?.doc.defaultView?.frameElement?.getBoundingClientRect();
+    if (line && frame) {
+      const box = line.getBoundingClientRect();
+      if (box.width && visibleInReader({ x: frame.x + box.x + 8, y: frame.y + box.y + box.height / 2 })) {
+        await settle();
+        return;
+      }
+    }
+    view?.renderer?.next?.();
+    await sleep(350);
+  }
+  throw new Error(`翻了 ${maxTurns} 页也没看见章末那一行`);
+}
+
 /* ------------------------------------------------------------------ *
  * 每张图各自要摆的样子
  * ------------------------------------------------------------------ */
@@ -601,6 +695,135 @@ const ACTIONS: Record<string, () => Promise<void>> = {
     await expandProfileEvidence(text("profile.slot.syntax_explain"));
     await scrollSettingsTo(text("profile.yourText.heading"));
   },
+
+  /* ---------------- 宣传片 ---------------- */
+
+  /** 查一个读顺了的词。卡片顶上那句提示来自 `word_memory_hint`，和线上同一条路。 */
+  async memory() {
+    await waitForBook();
+    await lookupWord(MEMORY_WORD);
+    await waitFor("「已跳过基础释义」那一句", () =>
+      document.body.textContent?.includes(text("learningCard.memory.mastered")) ? true : null);
+    await settle();
+  },
+
+  /** 两张标记图什么都不点：差别全在那几个词的掌握度上，页面停在第二章第一页。 */
+  async marksBefore() {
+    await waitForMarks();
+  },
+
+  async marksAfter() {
+    await waitForMarks();
+  },
+
+  /**
+   * 人物别名表：侧栏 → 数据库图标 → 窗口里的「人物别名」那一节，再滚到表格。
+   * 表格上面压着一张「有 1 个称呼同时指向不止一个人」的卡，不滚的话表只露两行。
+   */
+  async aliases() {
+    await waitForBook();
+    await openAiPanel();
+    await openIndexManager();
+    const search = await waitFor("别名表的搜索框", () =>
+      document.querySelector<HTMLInputElement>(`input[placeholder="${text("indexManager.aliases.searchPlaceholder")}"]`));
+    const row = search.parentElement?.parentElement ?? search;
+    const scroller = scrollerOf(row);
+    for (let pass = 0; pass < 6; pass += 1) {
+      const off = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+      if (Math.abs(off) < 4) break;
+      scroller.scrollTop += off;
+      await settle();
+    }
+  },
+
+  async aliasesAmbiguity() {
+    await waitForBook();
+    await openAiPanel();
+    await openIndexManager();
+    await scrollHeadingToTop(text("indexManager.aliases.title"));
+  },
+
+  async aliasDarcy() {
+    await waitForBook();
+    await openAiPanel();
+    await setAiPanelWidth(560);
+    await openChat("达西为什么一开始那么傲慢");
+  },
+
+  async aliasPriestLow() {
+    await waitForBook();
+    await openAiPanel();
+    await setAiPanelWidth(560);
+    await openChat("那个牧师后来娶了谁");
+    // 按钮上的人名是界面拿别名表比对回答正文得出的，表取回来之前它不出现。
+    await waitFor("「✓ 对，就是…」", confirmAliasButton);
+    await settle();
+  },
+
+  /** 同一轮，真的点下「✓ 对」：写进别名表、改写这条消息，就地变成回执。 */
+  async aliasPriestTaught() {
+    await waitForBook();
+    await openAiPanel();
+    await setAiPanelWidth(560);
+    await openChat("那个牧师后来娶了谁");
+    (await waitFor("「✓ 对，就是…」", confirmAliasButton)).click();
+    const receipt = text("ai.aliasDisclosure.low.receipt").split("{{")[0];
+    await waitFor("「已记下」回执", () => (document.body.textContent?.includes(receipt) ? true : null));
+    await settle();
+  },
+
+  async aliasPriestMedium() {
+    await waitForBook();
+    await openAiPanel();
+    await setAiPanelWidth(560);
+    await openChat("那个牧师为什么那么巴结凯瑟琳夫人");
+  },
+
+  /** 书架上点那本还没开过的书的封面 —— 卡片是应用自己拦下来弹的。 */
+  async bookOpen() {
+    const title = PROMO_COVERS["moby-dick"].title;
+    const cover = await waitFor(`书架上的《${title}》`, () =>
+      buttons().find((b) => b.querySelector("[data-book-cover]") && b.textContent?.includes(title)) ?? null);
+    cover.click();
+    await waitFor("打开书时的那张卡", () => byLabel(text("bookOpenCard.close")));
+    // 难度、章节、通过率是卡片自己各取各的，等「这个数字怎么来的」出现，说明
+    // 结论那一段已经按真数据画出来了。
+    await waitFor("卡片上的结论", () => byText(text("bookOpenCard.disclosureToggle")));
+    await settle();
+  },
+
+  async chapterEnd() {
+    await pageToChapterEnd();
+  },
+
+  /** 点那一行上的「看看」—— 那是章节 document 里的一个真按钮，派的是真 click。 */
+  async chapterEndOpen() {
+    await pageToChapterEnd();
+    const doc = readerContents()?.doc;
+    const toggle = doc?.querySelector<HTMLElement>("[data-lantern-chapter-end] button[aria-expanded]");
+    if (!toggle) throw new Error("章末那一行上没有「看看」");
+    toggle.click();
+    await waitFor("章末展开", () => (toggle.isConnected && toggle.getAttribute("aria-expanded") === "true" ? true : null));
+    await settle();
+  },
+
+  async reviewBoard() {
+    await waitFor("回顾板", () =>
+      document.body.textContent?.includes(text("reviewBoard.subtitle")) ? true : null);
+    await settle();
+  },
+
+  async flashcard() {
+    await waitFor("「显示答案」", () => byText(text("vocab.showAnswer")));
+    await settle();
+  },
+
+  async flashcardAnswer() {
+    const reveal = await waitFor("「显示答案」", () => byText(text("vocab.showAnswer")));
+    reveal.click();
+    await waitFor("答案翻开", () => (byText(text("vocab.showAnswer")) ? null : true));
+    await settle();
+  },
 };
 
 /* ------------------------------------------------------------------ *
@@ -613,8 +836,12 @@ const ACTIONS: Record<string, () => Promise<void>> = {
 export function applySceneRoute(): void {
   const scene = activeScene();
   if (!scene?.route) return;
-  // 保留 query，`?shot=` 后面还要被 fixture 层读到。
-  window.history.replaceState(null, "", `${scene.route}${window.location.search}`);
+  // 保留 query，`?shot=` 后面还要被 fixture 层读到。路由自己带 query 的
+  // （`/flashcards?pile=…`）两段拼起来。
+  const [path, own] = scene.route.split("?");
+  const current = window.location.search.replace(/^\?/, "");
+  const query = [own, current].filter(Boolean).join("&");
+  window.history.replaceState(null, "", `${path}${query ? `?${query}` : ""}`);
 }
 
 /**
