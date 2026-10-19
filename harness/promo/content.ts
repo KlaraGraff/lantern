@@ -1142,12 +1142,25 @@ const MARK_WORDS: { word: string; cfi: string; definition: string; context: stri
   { word: "discretion", cfi: "epubcfi(/6/8!/4/2[chapter-2]/20,/1:1,/1:38)", definition: "/dɪˈskreʃn/ n. 分寸感。", context: "Kitty has no discretion in her coughs", before: "familiar", after: "mastered" },
 ];
 
-export type MarkStage = "before" | "after";
+/**
+ * `before` / `after` 是两个时间点；`new` / `learning` / `familiar` / `mastered`
+ * 是「四档各一帧」：同一页上同样那三个词，全部停在这一档 —— 四张图只差档位。
+ */
+export type MarkStage = "before" | "after" | Mastery;
+
+/**
+ * 四档那组图只用这三个词：两个在左栏、一个在右栏，各自原句的 CFI 都是真的。
+ * 释义注在词的上方会把那一行撑高，所以挑的是段落里靠前、撑高之后下面也不会
+ * 换页的词。
+ */
+const TIER_WORDS = new Set(["trimming", "resentfully", "deigned"]);
+
+const isTier = (stage: MarkStage): stage is Mastery => stage !== "before" && stage !== "after";
 
 export const promoMarkWords = (stage: MarkStage) =>
-  MARK_WORDS.map((entry, index) => promoVocabWord({
+  MARK_WORDS.filter((entry) => !isTier(stage) || TIER_WORDS.has(entry.word)).map((entry, index) => promoVocabWord({
     word: entry.word,
-    mastery: entry[stage],
+    mastery: isTier(stage) ? stage : entry[stage],
     definition: entry.definition,
     context: entry.context,
     saved: stage === "before" ? 6 + index : 30 + index,

@@ -716,6 +716,22 @@ const ACTIONS: Record<string, () => Promise<void>> = {
     await waitForMarks();
   },
 
+  async marksNew() {
+    await waitForMarks();
+  },
+
+  async marksLearning() {
+    await waitForMarks();
+  },
+
+  async marksFamiliar() {
+    await waitForMarks();
+  },
+
+  async marksMastered() {
+    await waitForMarks();
+  },
+
   /**
    * 人物别名表：侧栏 → 数据库图标 → 窗口里的「人物别名」那一节，再滚到表格。
    * 表格上面压着一张「有 1 个称呼同时指向不止一个人」的卡，不滚的话表只露两行。

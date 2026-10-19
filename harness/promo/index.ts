@@ -16,7 +16,7 @@ import { serializeCardDesignConfig } from "../../src/components/learning-card/co
 import { cardDesignConfigForLevel } from "../../src/components/learning-card/level-presets";
 import { recommendedExplanationMode } from "../../src/components/onboarding/explanation-samples";
 import type { CefrLevel } from "../../src/components/settings/cefr";
-import { PROMO_CARD_CONFIG, PROMO_CARD_CONFIG_CUSTOM } from "./content";
+import { PROMO_CARD_CONFIG, PROMO_CARD_CONFIG_CUSTOM, type MarkStage } from "./content";
 
 export interface Scene {
   /** 覆盖到 harness 设置上的键值，会盖过 fixture-data 的默认值。 */
@@ -103,6 +103,11 @@ export const SCENES: Record<string, Scene> = {
   /** 同一页正文，两个时间点：生词标记按掌握度褪色，读顺了的直接消失。 */
   marksBefore: { settings: ZH, route: "/reader/pride-and-prejudice" },
   marksAfter: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  /** 同一页、同样三个词，四档各一帧：新词（释义 + 琥珀线）→ 学习中（释义 + 青线）→ 眼熟（灰虚线）→ 读顺了（什么都没有）。 */
+  marksNew: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  marksLearning: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  marksFamiliar: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  marksMastered: { settings: ZH, route: "/reader/pride-and-prejudice" },
   /** 这本书的人物别名表（AI 索引窗口里的「人物别名」），停在表格那一段。 */
   aliases: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
   /** 同一节的开头：「达西」指向两个人，表上先把这件事摊开。 */
@@ -130,9 +135,13 @@ export const SCENES: Record<string, Scene> = {
 };
 
 /** 正文标记那两张图各自在哪个时间点。 */
-export const MARK_STAGE: Record<string, "before" | "after"> = {
+export const MARK_STAGE: Record<string, MarkStage> = {
   marksBefore: "before",
   marksAfter: "after",
+  marksNew: "new",
+  marksLearning: "learning",
+  marksFamiliar: "familiar",
+  marksMastered: "mastered",
 };
 
 /**
