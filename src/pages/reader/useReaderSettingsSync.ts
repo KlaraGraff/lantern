@@ -20,7 +20,9 @@ import type {
 import {
   getDefaultReaderTheme,
   isReaderFontAvailable,
+  parseReaderBackground,
   parseReaderCustomTheme,
+  serializeReaderBackground,
 } from "../../components/reader-settings.ts";
 import { parseLineSpacing } from "../../components/reader-paragraph-settings.ts";
 import {
@@ -49,6 +51,8 @@ import {
 export const readerPreferenceSettingKeys = {
   theme: "reader_theme",
   customTheme: "reader_custom_theme",
+  // Global-only and never synced: it names a file in this device's app data.
+  background: "reader_background",
   margins: "margins",
   readingMode: "reading_mode",
   pageColumns: "page_columns",
@@ -153,6 +157,7 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
   return {
     theme: getDefaultReaderTheme(),
     customTheme: parseReaderCustomTheme(null),
+    background: null,
     // Match the active global reading setup. Unsupported fonts still fall back
     // through `isReaderFontAvailable()` when settings resolve on the platform.
     font: "times",
@@ -226,6 +231,8 @@ export function resolveReaderSettings(
       || defaults.theme,
     // Global-only: the reader panel edits it straight into the global setting.
     customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme),
+    // Global-only, written by Settings → Reading; an absent row is no picture.
+    background: parseReaderBackground(globalSettings.reader_background),
     pageColumns: pageColumnsSetting(
       perBookSettings[perBookSettingKeys.pageColumns],
       pageColumnsSetting(globalSettings.page_columns, defaults.pageColumns),
@@ -592,6 +599,9 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (previous.customTheme.color !== next.customTheme.color
       || previous.customTheme.opacity !== next.customTheme.opacity) {
       changed[readerPreferenceSettingKeys.customTheme] = JSON.stringify(next.customTheme);
+    }
+    if (serializeReaderBackground(previous.background) !== serializeReaderBackground(next.background)) {
+      changed[readerPreferenceSettingKeys.background] = serializeReaderBackground(next.background);
     }
     // Global-only, so it has no per-book branch above to fall back on: without
     // this line the Aa panel's Chinese-font picker restyles the page and saves

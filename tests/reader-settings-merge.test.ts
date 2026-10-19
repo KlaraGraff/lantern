@@ -16,6 +16,7 @@ import {
 const previous: ReaderSettingsState = {
   theme: "paper",
   customTheme: { color: "#DDE8D8", opacity: 70 },
+  background: null,
   font: "palatino",
   cjkFont: "system",
   fontSize: 26,

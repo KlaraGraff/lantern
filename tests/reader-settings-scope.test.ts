@@ -165,6 +165,7 @@ test("bulk selection applies only to visible results and preserves cross-search 
 const baseState: ReaderSettingsState = {
   theme: "paper",
   customTheme: { color: "#DDE8D8", opacity: 70 },
+  background: null,
   font: "palatino",
   cjkFont: "system",
   fontSize: 26,

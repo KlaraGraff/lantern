@@ -10,6 +10,7 @@
 // pin the exact key set without a DOM.
 
 import type { ReaderSettingsState } from "../ReaderSettings";
+import { serializeReaderBackground } from "../reader-settings.ts";
 
 /**
  * Every global `settings` row the Reading section owns, in the order the rows
@@ -27,6 +28,7 @@ import type { ReaderSettingsState } from "../ReaderSettings";
 export const READING_DEFAULT_SETTING_KEYS = [
   "reader_theme",
   "reader_custom_theme",
+  "reader_background",
   "font_family",
   "cjk_font_family",
   "font_size",
@@ -65,6 +67,9 @@ export function buildReadingDefaultSettings(
   return {
     reader_theme: defaults.theme,
     reader_custom_theme: JSON.stringify(defaults.customTheme),
+    // Clears the picture setting only; the copied file stays until the next
+    // pick replaces it, like an imported font outliving a reset.
+    reader_background: serializeReaderBackground(defaults.background),
     font_family: defaults.font,
     cjk_font_family: defaults.cjkFont,
     font_size: String(defaults.fontSize),

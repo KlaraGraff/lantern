@@ -89,6 +89,11 @@ export interface PlatformCapabilities {
   /** Font files can be imported through a native picker. */
   readonly hasFontImport: boolean;
   /**
+   * A picture can be picked from disk for the reader's background. Desktop
+   * only for now, like font import: both need the native file picker.
+   */
+  readonly hasReaderBackgroundImport: boolean;
+  /**
    * A model server can run on this machine and be reached over the loopback
    * address. Gates the Ollama preset in the AI catalog: Ollama is a process the
    * reader starts alongside Lantern and Lantern talks to at
@@ -173,6 +178,7 @@ const ABSENT: Capability = {
   hasUpdater: false,
   hasFileReveal: false,
   hasFontImport: false,
+  hasReaderBackgroundImport: false,
   hasLocalModelRuntime: false,
   hasEmbeddingIndex: false,
   hasCellularReachability: false,
@@ -189,6 +195,7 @@ const DESKTOP: Capability = {
   hasUpdater: true,
   hasFileReveal: true,
   hasFontImport: true,
+  hasReaderBackgroundImport: true,
   hasLocalModelRuntime: true,
   hasEmbeddingIndex: true,
 };

@@ -1096,6 +1096,9 @@ export const FIXTURES: Record<string, Fixture> = {
   ),
   enhanced_font_status: { installed: false, enabled: false, downloading: false, bytes: 0 },
   list_custom_fonts: [],
+  // The native picker, cancelled: nothing to copy, nothing changes.
+  import_reader_background: null,
+  clear_reader_background: null,
   speech_cache_stats: { bytes: 1_240_000, entries: 18, limitBytes: 200_000_000 },
   speech_voice_options: { options: ["en-US-AriaNeural", "en-GB-SoniaNeural"], updated_at: nowMs() },
   speech_list_models: ["tts-1"],

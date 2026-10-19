@@ -123,6 +123,13 @@ const themes = [
 
 export type ReaderTheme = (typeof themes)[number]["id"];
 export interface ReaderCustomTheme { color: string; opacity: number }
+/**
+ * A picture laid behind the page. `path` is the copy the backend keeps in the
+ * app data dir (`import_reader_background`); `opacity` is how much of the
+ * picture shows through the theme's own paper color, 0–100. The theme still
+ * decides the text color, so a low opacity keeps any theme readable.
+ */
+export interface ReaderBackground { path: string; opacity: number }
 export type ReaderFont = string;
 
 export interface ReaderCapabilities {
@@ -395,6 +402,34 @@ export function parseReaderCustomTheme(value: unknown): ReaderCustomTheme {
       ? Math.min(100, Math.max(0, Number(record.opacity)))
       : DEFAULT_READER_CUSTOM_THEME.opacity,
   };
+}
+
+export const READER_BACKGROUND_OPACITY_MIN = 5;
+export const READER_BACKGROUND_OPACITY_MAX = 100;
+/** Faint enough that body text keeps its contrast over a busy photo. */
+export const DEFAULT_READER_BACKGROUND_OPACITY = 30;
+
+/** `reader_background` row → picture, or `null` for none (absent, "" or junk). */
+export function parseReaderBackground(value: unknown): ReaderBackground | null {
+  let source = value;
+  if (typeof source === "string") {
+    if (!source) return null;
+    try { source = JSON.parse(source); } catch { return null; }
+  }
+  if (!source || typeof source !== "object") return null;
+  const record = source as Partial<ReaderBackground>;
+  if (typeof record.path !== "string" || !record.path) return null;
+  const opacity = Number(record.opacity);
+  return {
+    path: record.path,
+    opacity: Number.isFinite(opacity)
+      ? Math.round(Math.min(READER_BACKGROUND_OPACITY_MAX, Math.max(READER_BACKGROUND_OPACITY_MIN, opacity)))
+      : DEFAULT_READER_BACKGROUND_OPACITY,
+  };
+}
+
+export function serializeReaderBackground(background: ReaderBackground | null): string {
+  return background ? JSON.stringify(background) : "";
 }
 
 function rgb(color: string) {

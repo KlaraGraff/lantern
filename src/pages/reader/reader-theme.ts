@@ -225,10 +225,18 @@ export function getReaderCSS(
       widows: 1;
     }
   ` : "";
+  // A background picture lives behind the iframe (see Reader.tsx); the chapter
+  // has to let it through, including any color the book sets on <html>.
+  const backgroundPictureCss = settings.background ? `
+    html {
+      background: transparent !important;
+    }
+  ` : "";
   return `
     ${READER_STYLESHEET_MARKER}
+    ${backgroundPictureCss}
     body {
-      background-color: ${themeColors.body} !important;
+      background-color: ${settings.background ? "transparent" : themeColors.body} !important;
       color: ${themeColors.text} !important;
       font-family: ${fontFamily} !important;
       font-size: ${fontSize}px !important;
