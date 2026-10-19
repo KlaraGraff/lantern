@@ -19,6 +19,7 @@ import {
   getReaderThemes,
   type ReaderCapabilities,
   type ReaderFont,
+  type ReaderBackground,
   type ReaderCustomTheme,
   type ReaderTheme,
 } from "./reader-settings";
@@ -61,6 +62,8 @@ export type ParagraphSpacing = "original" | "none" | "compact" | "comfortable" |
 export interface ReaderSettingsState {
   theme: ReaderTheme;
   customTheme: ReaderCustomTheme;
+  /** Global only, and local to this device — see `ReaderBackground`. */
+  background: ReaderBackground | null;
   /** 西文字体。中文字符不走它——见 `cjkFont`。 */
   font: ReaderFont;
   /**

@@ -921,6 +921,9 @@ pub fn run() {
             commands::fonts::import_custom_fonts,
             commands::fonts::list_custom_fonts,
             commands::fonts::delete_custom_font,
+            // The reader's background picture (local only, never synced)
+            commands::reader_background::import_reader_background,
+            commands::reader_background::clear_reader_background,
             commands::enhanced_fonts::enhanced_font_status,
             commands::enhanced_fonts::enhanced_font_download,
             commands::enhanced_fonts::enhanced_font_set_enabled,

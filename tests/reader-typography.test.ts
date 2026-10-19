@@ -20,7 +20,7 @@ import {
 
 const settings: ReaderSettingsState = {
   lookupMarkersNeverFade: false, chapterEndReviewHint: true, bookFinishedHint: true,
-  theme: "paper", customTheme: { color: "#DDE8D8", opacity: 70 }, font: "palatino",
+  theme: "paper", customTheme: { color: "#DDE8D8", opacity: 70 }, background: null, font: "palatino",
   cjkFont: "system",
   fontSize: 26, narrowFontShrink: true, readingMode: "scrolling", pageColumns: 2,
   pageTurnAnimation: "slide", showChapterProgress: true, showBookProgress: false,

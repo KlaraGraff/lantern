@@ -3,7 +3,7 @@ import { BOOK_TRANSITION_TARGET, readerRouteCommitted } from "../utils/book-tran
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -2755,6 +2755,18 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     },
   ];
 
+  const themeColors = getThemeStyles(readerSettings.theme, readerSettings.customTheme);
+  const backgroundPicture = readerSettings.background;
+  // With a picture behind the page, every in-flow layer between it and the
+  // text has to be see-through: the shell paints the theme color once, the
+  // picture sits on that at its own opacity, and the header, body, page and
+  // footer stop painting over it. The raised bars and cards stay opaque —
+  // they sit over the text and need a solid ground of their own.
+  const pageColor = backgroundPicture ? "transparent" : themeColors.body;
+  const inFlowChromeClass = isStandaloneWindow
+    ? ""
+    : backgroundPicture ? "border-b border-border" : "bg-bg-surface border-b border-border";
+
   /**
    * The raised bars have to be opaque — they sit over the page, not beside it.
    * A standalone window paints its own theme rather than the app surface, the
@@ -2769,7 +2781,24 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   // two bars are absolute children of this box rather than flex siblings of
   // <main>, so opening and closing them costs no reflow inside the chapter.
   return (
-    <div className="relative flex flex-col h-screen bg-bg-page" style={getReaderThemeVars(readerSettings.theme, readerSettings.customTheme) as React.CSSProperties}>
+    <div
+      className={`relative flex flex-col h-screen ${backgroundPicture ? "isolate" : "bg-bg-page"}`}
+      style={{
+        ...getReaderThemeVars(readerSettings.theme, readerSettings.customTheme),
+        ...(backgroundPicture ? { backgroundColor: themeColors.body } : null),
+      } as React.CSSProperties}
+    >
+      {backgroundPicture && (
+        <div
+          aria-hidden
+          data-reader-background
+          className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center"
+          style={{
+            backgroundImage: `url("${convertFileSrc(backgroundPicture.path)}")`,
+            opacity: backgroundPicture.opacity / 100,
+          }}
+        />
+      )}
       {/* Invisible overlay to close popovers when clicking anywhere */}
       {settingsOpen && (
         <div
@@ -2790,13 +2819,13 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       <div className="shrink-0" {...chromeHoverHandlers}>
       <header
         className={isNarrow
-          ? `flex shrink-0 relative select-none ${TOP_INSET} ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`
-          : `flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none transition-opacity duration-[var(--motion-base)] ease-[var(--ease-out-soft)] motion-reduce:transition-none ${chromeFaded ? "opacity-0" : ""} ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+          ? `flex shrink-0 relative select-none ${TOP_INSET} ${inFlowChromeClass}`
+          : `flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none transition-opacity duration-[var(--motion-base)] ease-[var(--ease-out-soft)] motion-reduce:transition-none ${chromeFaded ? "opacity-0" : ""} ${inFlowChromeClass}`}
         inert={chromeFaded}
         style={isStandaloneWindow ? {
-          backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
-          color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
-          borderBottom: `1px solid ${getThemeStyles(readerSettings.theme, readerSettings.customTheme).text}1a`,
+          backgroundColor: pageColor,
+          color: themeColors.text,
+          borderBottom: `1px solid ${themeColors.text}1a`,
         } : undefined}
       >
         {platform.hasTitleBarInset && (
@@ -3120,7 +3149,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       {/* `relative` is what the narrow panels position against — see `panelShellClass`. */}
       <div
         className="relative flex flex-1 overflow-hidden"
-        style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
+        style={{ backgroundColor: pageColor }}
       >
         {!isNarrow && aiStreaming && sidePanel !== "ai" && (
           <ReaderBookmarkEar onOpen={() => setSidePanel("ai")} />
@@ -3177,7 +3206,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         <div
           className="flex-1 flex flex-col min-w-0 transition-[translate] duration-[var(--motion-base)] ease-[var(--ease-out-soft)] motion-reduce:transition-none"
           style={{
-            backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
+            backgroundColor: pageColor,
             // The text stepping aside for a floating right card: a translation,
             // never a reflow. See `placeRightCard`.
             translate: rightShift ? `${-rightShift}px 0` : undefined,
@@ -3186,7 +3215,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           <main
             ref={attachReaderViewport}
             className="reader-page-viewport flex-1 relative overflow-hidden"
-            style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
+            style={{ backgroundColor: pageColor }}
             onClick={() => {
               setSettingsOpen(false);
               // Clicks inside the iframe (text content) don't bubble out
@@ -3414,10 +3443,10 @@ function ReaderSession({ bookId }: { bookId?: string }) {
             // bar — and because it is a `shrink-0` sibling of <main>, whatever
             // it fails to reserve is room the text above it keeps and then has
             // clipped. `max()` so desktop is untouched: no inset, no change.
-            className={`${isNarrow ? "" : "px-page"} pb-[max(0.5rem,var(--spacing-safe-bottom))] pt-0 shrink-0 ${isStandaloneWindow ? "" : "bg-bg-surface"}`}
+            className={`${isNarrow ? "" : "px-page"} pb-[max(0.5rem,var(--spacing-safe-bottom))] pt-0 shrink-0 ${isStandaloneWindow || backgroundPicture ? "" : "bg-bg-surface"}`}
             style={isStandaloneWindow ? {
-              backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
-              color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
+              backgroundColor: pageColor,
+              color: themeColors.text,
             } : undefined}
           >
             {isNarrow ? (

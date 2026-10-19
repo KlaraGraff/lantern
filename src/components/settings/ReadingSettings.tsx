@@ -12,8 +12,11 @@ import {
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
   getDefaultReaderTheme,
+  parseReaderBackground,
   parseReaderCustomTheme,
   getThemeStyles,
+  serializeReaderBackground,
+  type ReaderBackground,
   type ReaderCustomTheme,
   type ReaderTheme,
 } from "../reader-settings";
@@ -45,6 +48,7 @@ import type { PassiveVocabPreviewState } from "./PassiveVocabPreview";
 import { formatPassiveVocabSummary, parsePassiveVocabSettings } from "../passive-vocab";
 import type { SettingsView } from "../settings-destination";
 import EnhancedFontSettings from "./EnhancedFontSettings";
+import ReaderBackgroundSettings from "./ReaderBackgroundSettings";
 import Button from "../ui/Button";
 import ConfirmDialog from "./ConfirmDialog";
 import { buildReadingDefaultSettings } from "./reading-defaults";
@@ -171,6 +175,7 @@ export default function ReadingSettings({
   const [view, setView] = useState<ReadingView>(initialView === "passiveVocab" ? "passiveVocab" : "list");
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(getDefaultReaderTheme());
   const [customTheme, setCustomTheme] = useState<ReaderCustomTheme>(() => parseReaderCustomTheme(null));
+  const [readerBackground, setReaderBackground] = useState<ReaderBackground | null>(null);
   const [fontFamily, setFontFamily] = useState("georgia");
   const [cjkFontFamily, setCjkFontFamily] = useState("system");
   const [fontSize, setFontSize] = useState(26);
@@ -246,6 +251,9 @@ export default function ReadingSettings({
         case "theme":
           setReaderTheme((values.reader_theme as ReaderTheme) || getDefaultReaderTheme());
           setCustomTheme(parseReaderCustomTheme(values.reader_custom_theme));
+          break;
+        case "background":
+          setReaderBackground(parseReaderBackground(values.reader_background));
           break;
         case "fontFamily":
           if (values.font_family) setFontFamily(values.font_family);
@@ -545,6 +553,16 @@ export default function ReadingSettings({
             }}
           />
         </div>
+      )}
+      {platform.hasReaderBackgroundImport && (
+        <ReaderBackgroundSettings
+          background={readerBackground}
+          pageColor={getThemeStyles(readerTheme, customTheme).body}
+          onChange={(next) => {
+            setReaderBackground(next);
+            void persist({ reader_background: serializeReaderBackground(next) }, { toast: true });
+          }}
+        />
       )}
       {/* Font Family */}
       <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">

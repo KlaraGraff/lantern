@@ -34,6 +34,7 @@ import type { RehydrationGroup } from "./settings-rehydration";
  */
 export const READING_REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
   { id: "theme", keys: ["reader_theme", "reader_custom_theme"] },
+  { id: "background", keys: ["reader_background"] },
   { id: "fontFamily", keys: ["font_family"] },
   { id: "cjkFontFamily", keys: ["cjk_font_family"] },
   { id: "fontSize", keys: ["font_size"] },

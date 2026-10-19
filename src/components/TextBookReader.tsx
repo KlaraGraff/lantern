@@ -1489,7 +1489,8 @@ function TextBookReader({
   );
 
   const typography = useMemo(() => ({
-    backgroundColor: getThemeStyles(settings.theme, settings.customTheme).body,
+    // A background picture shows through from the reader shell behind this.
+    backgroundColor: settings.background ? "transparent" : getThemeStyles(settings.theme, settings.customTheme).body,
     color: getThemeStyles(settings.theme, settings.customTheme).text,
     fontFamily: getFontFamily(settings.font, settings.cjkFont),
     fontSize: `${measure.fontSize}px`,
