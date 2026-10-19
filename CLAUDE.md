@@ -19,7 +19,7 @@
 
 ```
 src/                    # React frontend
-  pages/                # Home, Reader, BookDetails, Quiz, QuizPaper, FlashcardReview (+ per-page subdirs)
+  pages/                # Home, Reader, BookDetails, FlashcardReview (+ per-page subdirs; 词卷 Quiz pages are withdrawn to the `feature/word-quiz` branch)
   components/           # UI components
     ui/                 # Primitives: Button, Input, Select, Slider, Toggle
     settings/           # Settings modal sections (one per tab)

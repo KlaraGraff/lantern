@@ -1513,7 +1513,8 @@ pub(crate) fn record_vocab_review_inner(
 /// caller that already holds its own `SyncWriter::with_tx` transaction can
 /// apply a review without nesting a second transaction on `db.conn` — that
 /// mutex is not reentrant, so two `with_tx` calls on the same thread would
-/// deadlock. Quiz submission (`commands::quiz`) is the first such caller: one
+/// deadlock. Quiz submission (`commands::quiz`, kept on the `feature/word-quiz`
+/// branch while 词卷 is withdrawn) was the first such caller: one
 /// transaction writes the paper's result, advances the wrong-word pool, *and*
 /// calls this once per graded target word that already lives in the vocab
 /// book.
@@ -1727,30 +1728,6 @@ pub(crate) fn record_vocab_review_in_tx(
         params![id],
         row_to_vocab,
     )
-    .map_err(Into::into)
-}
-
-/// The one existing, confirmed vocab-book entry for `word`, if any — the
-/// match quiz submission (`commands::quiz`) needs before it can write an FSRS
-/// review for a target word. Case-insensitive and confirmed-only, same as the
-/// rest of this file's word-identity lookups: a `watchlist` candidate the
-/// reader has not actually added is not "in the vocab book" yet, so a review
-/// answer about it is not evidence FSRS should learn from.
-///
-/// Any one matching row is enough — `record_vocab_review_in_tx` propagates the
-/// resulting schedule to every sibling row spelling the same word via
-/// `propagate_progress_to_siblings`, so the cross-book merge these entries
-/// already get on every other review path applies here too.
-pub(crate) fn find_confirmed_vocab_id_by_word(
-    tx: &rusqlite::Transaction,
-    word: &str,
-) -> AppResult<Option<String>> {
-    tx.query_row(
-        "SELECT id FROM vocab_words WHERE word = ?1 COLLATE NOCASE AND list_status = 'confirmed' LIMIT 1",
-        params![word],
-        |row| row.get(0),
-    )
-    .optional()
     .map_err(Into::into)
 }
 

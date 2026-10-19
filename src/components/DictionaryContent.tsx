@@ -778,10 +778,6 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
                     </span>
                   )}
                 </Button>
-                <Button variant="primary" size="md" onClick={() => navigate("/quiz")}>
-                  <FileText size={15} />
-                  {t("vocab.entry.quiz")}
-                </Button>
               </div>
             )}
             {contentTab === "vocab" ? (
