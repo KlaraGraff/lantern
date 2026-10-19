@@ -14,10 +14,7 @@
 
 </div>
 
-<p align="center">
-  <a href="assets/promo/lantern-promo.mp4"><img src="assets/promo/poster.jpg" width="640" alt="Lantern 宣传片（1 分钟）"></a><br>
-  <sub>▶ 1 分钟看懂 Lantern（点图下载视频）</sub>
-</p>
+https://github.com/user-attachments/assets/b9c2a311-f394-4341-a3f7-2e71f5605f38
 
 ![Lantern 阅读界面](assets/screenshots/hero.png)
 
