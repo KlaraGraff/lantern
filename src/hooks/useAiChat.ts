@@ -526,14 +526,14 @@ function messageContentForApi(message: ChatMessage): string {
     : message.content;
 }
 
-/** Derive a short title from the user's first message (truncated at word boundary). */
-/** Fallback: truncate user message into a short title. */
-function deriveTitle(userMsg: string): string {
-  let title = userMsg
-    .replace(/^Explain this passage:\s*"?/i, "")
-    .replace(/^Explain\s*/i, "")
-    .replace(/"$/, "")
-    .trim();
+/** Fallback when the AI title fails: the reader's own question, or the start of
+ *  the passage when the question is too short to tell one chat from another. */
+function deriveTitle(question: string, passage?: string): string {
+  let title = question.trim();
+  const source = passage?.trim().replace(/\s+/g, " ");
+  if (source && [...title].length < 8) {
+    title = title ? `${title}：${source}` : source;
+  }
   if (title.length > 40) {
     const cut = title.lastIndexOf(" ", 40);
     title = title.substring(0, cut > 10 ? cut : 40) + "...";
@@ -542,10 +542,13 @@ function deriveTitle(userMsg: string): string {
 }
 
 /** Generate a chat title using a dedicated AI call with per-request event channel.
- *  Titles from the user's first message alone so it can run concurrently with
- *  the response stream instead of waiting for it to finish. */
+ *  Titles from the first question (with its passage and chapter, which is
+ *  where a short question's subject lives) so it can run concurrently with the
+ *  response stream instead of waiting for it to finish. */
 async function generateAiTitle(
-  userMsg: string,
+  question: string,
+  passage?: string,
+  chapter?: string,
 ): Promise<string | null> {
   const requestId = `title-${createUuid()}`;
   const eventName = `ai-title-chunk-${requestId}`;
@@ -570,14 +573,21 @@ async function generateAiTitle(
       }
       serverDone = true;
       if (event.payload.error) return finish(null);
-      title = title.replace(/^["']|["']$/g, "").replace(/[.!]$/, "").trim();
+      // Models still wrap or label the title now and then despite the prompt.
+      title = (title.trim().split("\n")[0] ?? "")
+        .replace(/^(title|标题)\s*[:：]\s*/i, "")
+        .replace(/[.!。！]+$/, "")
+        .replace(/^["'“‘「『](.*)["'”’」』]$/, "$1")
+        .replace(/[.!。！]+$/, "")
+        .trim();
       if (title.length > 50) title = title.substring(0, 50).trim() + "...";
       finish(title || null);
     });
     timeoutId = setTimeout(() => finish(null), 15000);
     invoke("ai_generate_title", {
-      userMessage: userMsg,
-      assistantMessage: "",
+      question,
+      passage: passage ?? null,
+      chapter: chapter ?? null,
       requestId,
     }).catch(() => finish(null));
     const result = await resultPromise;
@@ -1027,17 +1037,17 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       // the response stream (not after it), showing a loading state until it
       // lands. Falls back to a truncated title if the AI call fails.
       if (isNewChat && currentBookId) {
-        const titleSource = context || content;
+        const titleChapter = bookContext?.chapter;
         const titleGeneration = titleGenerationRef.current + 1;
         titleGenerationRef.current = titleGeneration;
         setTitling(true);
-        generateAiTitle(titleSource).then(async (aiTitle) => {
+        generateAiTitle(content, context, titleChapter).then(async (aiTitle) => {
           try {
             // Only auto-title if the chat is still untitled — the user (or a
             // synced rename) may have renamed it while generation was pending.
             const chat = await invoke<ChatRecord>("get_chat", { chatId: currentChatId });
             if (chat.title === "New chat") {
-              const title = aiTitle || deriveTitle(titleSource);
+              const title = aiTitle || deriveTitle(content, context);
               if (title) {
                 await invoke("rename_chat", { chatId: currentChatId, title });
                 await refreshChats(currentBookId);

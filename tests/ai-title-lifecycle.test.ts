@@ -44,3 +44,9 @@ test("a done event arriving after local timeout cannot turn it into successful c
   h.chunk({ delta: "partial", done: false }); h.timeout(); h.chunk({ delta: "", done: true });
   assert.equal(await result, null); assert.deepEqual(h.commands, ["ai_generate_title", "ai_cancel"]);
 });
+
+test("a labelled, quoted title is unwrapped but inner book-title marks are kept", async () => {
+  const h = harness(); const result = h.start(); await settle();
+  h.chunk({ delta: "标题：「《了不起的盖茨比》里的绿灯」。\n多余的第二行", done: false }); h.chunk({ delta: "", done: true });
+  assert.equal(await result, "《了不起的盖茨比》里的绿灯");
+});
