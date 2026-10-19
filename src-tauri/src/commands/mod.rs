@@ -29,7 +29,6 @@ pub mod mcp;
 pub mod notes;
 pub mod oauth;
 pub mod profile;
-pub mod quiz;
 pub mod reader_background;
 pub mod reader_exit;
 pub mod reading_behavior;

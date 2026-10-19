@@ -1060,18 +1060,6 @@ pub fn run() {
             commands::profile::profile_compress_text,
             commands::profile::profile_tidy_text,
             // Quiz-scroll (词卷) papers + wrong-word repetition pool
-            commands::quiz::create_quiz_paper,
-            commands::quiz::get_quiz_paper,
-            commands::quiz::list_quiz_papers,
-            commands::quiz::update_quiz_paper_content,
-            commands::quiz::update_quiz_paper_generation,
-            commands::quiz::delete_quiz_paper,
-            commands::quiz::save_quiz_ask_threads,
-            commands::quiz::save_quiz_paper_draft,
-            commands::quiz::submit_quiz_paper,
-            commands::quiz::list_due_wrong_words,
-            commands::quiz::list_wrong_words,
-            commands::quiz::clear_wrong_words,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
             commands::lookup_history::get_cached_lookup,
