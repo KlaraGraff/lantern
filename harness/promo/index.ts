@@ -46,6 +46,12 @@ const ZH: Record<string, string> = {
 };
 
 /**
+ * 别名那几张图：读者教过的「那个牧师」是按语义匹配的，要开着向量检索才生效
+ * （设置 › AI 配置里那个开关）；不开的话别名表上会挂一条「现在不生效」。
+ */
+const ZH_ALIASES: Record<string, string> = { ...ZH, ai_vector_retrieval: "true" };
+
+/**
  * 按学习者等级配好的一套设置。
  *
  * 两处都不是手写的，都是端应用自己那个函数的结果：
@@ -89,6 +95,44 @@ export const SCENES: Record<string, Scene> = {
   cards: { settings: { ...ZH, learning_card_config: PROMO_CARD_CONFIG_CUSTOM } },
   /** 书库全景。不进 README，用来单独检查书架长什么样。 */
   library: { settings: ZH },
+
+  /* ---------------- 宣传片用的场景 ---------------- */
+
+  /** 查一个已经读顺了的词：卡片顶上说「已跳过基础释义」，卡片也真的短了。 */
+  memory: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  /** 同一页正文，两个时间点：生词标记按掌握度褪色，读顺了的直接消失。 */
+  marksBefore: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  marksAfter: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  /** 这本书的人物别名表（AI 索引窗口里的「人物别名」），停在表格那一段。 */
+  aliases: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
+  /** 同一节的开头：「达西」指向两个人，表上先把这件事摊开。 */
+  aliasesAmbiguity: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
+  /** 用中文名问：「『达西』按『Mr. Darcy』找的」+ 换成「Miss Darcy」。 */
+  aliasDarcy: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
+  /** 没认出「那个牧师」：回答下面问一句「对，就是 Mr. Collins 吗」。 */
+  aliasPriestLow: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
+  /** 同一轮，点了「✓ 对」之后：就地变成一行回执。 */
+  aliasPriestTaught: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
+  /** 教过之后再问：「你教过『那个牧师』指的是『Mr. Collins』」。 */
+  aliasPriestMedium: { settings: ZH_ALIASES, route: "/reader/pride-and-prejudice" },
+  /** 第一次打开一本没读过的书时那张卡（设置 › 阅读里要开着）。 */
+  bookOpen: { settings: { ...ZH, book_open_card_enabled: "true" } },
+  /** 翻到第二章最后一页：「这一章你查过 N 个词」。 */
+  chapterEnd: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  /** 同一行点了「看看」：就地展开，那几个词一个个排出来。 */
+  chapterEndOpen: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  /** 学习页顶上的回顾板：几堆词，各带一句来由。 */
+  reviewBoard: { settings: ZH, libraryFilter: "vocab" },
+  /** 从回顾板的一堆进去翻卡：原句挖空。 */
+  flashcard: { settings: ZH, route: "/flashcards?pile=long_unseen" },
+  /** 同一张卡，点了「显示答案」。 */
+  flashcardAnswer: { settings: ZH, route: "/flashcards?pile=long_unseen" },
+};
+
+/** 正文标记那两张图各自在哪个时间点。 */
+export const MARK_STAGE: Record<string, "before" | "after"> = {
+  marksBefore: "before",
+  marksAfter: "after",
 };
 
 /**

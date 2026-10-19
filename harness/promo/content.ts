@@ -195,6 +195,122 @@ const assistantTurn = (
   updated_at: ago(days),
 });
 
+/* ---------------- 人物别名的三轮对话 ---------------- */
+
+/**
+ * 别名那几张图的对话。三轮都用中文叫法问一本英文书 —— 书里一个汉字都没有，
+ * 能不能答上来全看别名表。`aliasResolution` 是后端 `resolve()` 那一步的结论，
+ * 应用把它原样存进消息的 metadata，界面从这里读出回答上方那一行和下方那一条。
+ *
+ * 引用照旧逐字出自原文，而且都在第二十一章以内（书架上那本读到 34%）：
+ * 「那个牧师后来娶了谁」的真答案在第二十二章，所以那一轮只答到他把殷勤转给
+ * 夏洛特为止，剩下的明说还没读到。
+ */
+const DARCY_SOURCES: Source[] = [
+  from(3, "III")(1, "he was discovered to be proud, to be above his company, and above being pleased"),
+  from(3, "III")(2, "She is tolerable; but not handsome enough to tempt me"),
+  from(5, "V")(3, "One cannot wonder that so very fine a young man, with family, fortune, everything in his favour, should think highly of himself."),
+  from(5, "V")(4, "I could easily forgive his pride, if he had not mortified mine."),
+];
+
+const DARCY_ANSWER = [
+  "他一出场就把自己放在了全场之上。第一场舞会上大家起初很欣赏他，直到发现他「骄傲，自视高人一等，怎么都不肯高兴」[S1]。",
+  "",
+  "宾利劝他请伊丽莎白跳舞，他回了那句「还行，但没好看到能打动我」[S2] —— 这是他傲慢的顶点，也是她对他全部偏见的起点。",
+  "",
+  "夏洛特替他说过一句公道话：家世、财产样样占全的年轻人，自视高一点也不奇怪 [S3]。伊丽莎白接的那句才是要害：「要不是他伤了我的自尊，我很容易原谅他的骄傲。」[S4]",
+  "",
+  "所以这份傲慢至少一半来自身份 —— 他看不上梅里屯这种乡下社交场。另一半，到你读到的地方书里还没解释。",
+].join("\n");
+
+const PRIEST_SOURCES: Source[] = [
+  from(15, "XV")(1, "Having now a good house and very sufficient income, he intended to marry"),
+  from(19, "XIX")(2, "I think it a right thing for every clergyman in easy circumstances (like myself) to set the example of matrimony in his parish"),
+  from(21, "XXI")(3, "were transferred for the rest of the day to Miss Lucas"),
+];
+
+/**
+ * 低置信那一轮。界面的「✓ 对，就是 X」从回答正文里取 X：按出现位置取最早的
+ * 那个书中人名，所以 Mr. Collins 必须是正文里第一个出现的人名。
+ */
+const PRIEST_ANSWER = [
+  "你问的应该是 Mr. Collins —— 班纳特家的表亲，亨斯福德的牧师。他一来就打算娶妻 [S1]。",
+  "",
+  "到你读到的地方，他先向伊丽莎白求婚，理由的第一条是「牧师应当在教区里为婚姻作表率」[S2]；被拒之后，当天就把殷勤转到了 Charlotte Lucas 身上 [S3]。",
+  "",
+  "他最后娶了谁，前 34% 里还没写到。",
+].join("\n");
+
+const PATRON_SOURCES: Source[] = [
+  from(13, "XIII")(1, "whose bounty and beneficence has preferred me to the valuable rectory of this parish"),
+  from(15, "XV")(2, "made him altogether a mixture of pride and obsequiousness, self-importance and humility"),
+];
+
+const PATRON_ANSWER = [
+  "因为他的位置就是她给的。他自己在信里写得明白：是凯瑟琳·德·包尔夫人的恩典，让他得了这个教区 [S1]。",
+  "",
+  "书里对他的评语也很直接：对贵人的敬畏和对自己的好感搅在一起，成了「骄傲与谄媚、自大与谦卑的混合」[S2]。",
+].join("\n");
+
+/** 别名表里那条「那个牧师 → Mr. Collins」是读者在这一轮里亲手教的。 */
+export const PRIEST_QUESTION = "那个牧师后来娶了谁？";
+
+const ALIAS_CHATS = [
+  { id: "promo-darcy", title: "达西为什么一开始那么傲慢", days: 4 },
+  { id: "promo-priest", title: "那个牧师后来娶了谁", days: 5 },
+  { id: "promo-patron", title: "那个牧师为什么那么巴结凯瑟琳夫人", days: 2 },
+].map(({ id, title, days }) => ({
+  id,
+  book_id: "pride-and-prejudice",
+  title,
+  model: "harness-model-large",
+  pinned: false,
+  metadata: null,
+  created_at: ago(days),
+  updated_at: ago(days),
+}));
+
+const ALIAS_CHAT_MESSAGES: Record<string, PromoMessage[]> = {
+  "promo-darcy": [
+    userTurn("promo-darcy-1", "promo-darcy", "达西为什么一开始那么傲慢？", 4),
+    assistantTurn("promo-darcy-2", "promo-darcy", DARCY_ANSWER, 4, {
+      sources: DARCY_SOURCES,
+      spoilerGuard: { active: true, wholeBookIntent: false, progress: 34 },
+      route: "whole_book",
+      sectionIndex: chapterIndex(5),
+      aliasResolution: {
+        confidence: "medium",
+        matched: [{ alias: "达西", canonicals: ["Mr. Darcy", "Miss Darcy"] }],
+        defaultCanonical: "Mr. Darcy",
+      },
+    }),
+  ],
+  "promo-priest": [
+    userTurn("promo-priest-1", "promo-priest", PRIEST_QUESTION, 5),
+    assistantTurn("promo-priest-2", "promo-priest", PRIEST_ANSWER, 5, {
+      sources: PRIEST_SOURCES,
+      spoilerGuard: { active: true, wholeBookIntent: true, progress: 34 },
+      route: "whole_book",
+      sectionIndex: chapterIndex(21),
+      aliasResolution: { confidence: "low", matched: [], defaultCanonical: null },
+    }),
+  ],
+  "promo-patron": [
+    userTurn("promo-patron-1", "promo-patron", "那个牧师为什么那么巴结凯瑟琳夫人？", 2),
+    assistantTurn("promo-patron-2", "promo-patron", PATRON_ANSWER, 2, {
+      sources: PATRON_SOURCES,
+      spoilerGuard: { active: true, wholeBookIntent: false, progress: 34 },
+      route: "whole_book",
+      sectionIndex: chapterIndex(15),
+      aliasResolution: {
+        confidence: "medium",
+        matched: [{ alias: "那个牧师", canonicals: ["Mr. Collins"], description: true }],
+        defaultCanonical: "Mr. Collins",
+      },
+    }),
+  ],
+};
+
 export const PROMO_CHATS = [
   {
     id: "promo-ending",
@@ -226,6 +342,7 @@ export const PROMO_CHATS = [
     created_at: ago(3),
     updated_at: ago(3),
   },
+  ...ALIAS_CHATS,
 ];
 
 /**
@@ -263,6 +380,7 @@ export const PROMO_CHAT_MESSAGES: Record<string, PromoMessage[]> = {
       sectionIndex: CH2,
     }),
   ],
+  ...ALIAS_CHAT_MESSAGES,
 };
 
 /* ------------------------------------------------------------------ *
@@ -644,7 +762,18 @@ interface VocabSpec {
   saved: number;
   /** 距离下次复习几天；负数表示已经到期。 */
   due: number;
+  /**
+   * 收藏时那一句的 range CFI（原句整句，不是一个点）。应用拿它解析出那一句，再在
+   * 句子里找这个词画标记（`useFoliateAnnotations` 的 `textRangeWithinRange`），
+   * 章末那句「这一章你查过 N 个词」也按它数。所以必须是这个词真在的那一句 ——
+   * 全部挂在第二章开头的话，第三章、第六章的词也会被算进第二章。
+   *
+   * 这些 CFI 不是手拼的：在 harness 里让 foliate 自己对那一句的 Range 调
+   * `view.getCFI()` 得出来，再 `resolveCFI()` 回去核对过原文逐字一致。
+   */
+  cfi: string;
 }
+
 
 const PROMO_VOCAB_SPECS: VocabSpec[] = [
   {
@@ -660,6 +789,7 @@ const PROMO_VOCAB_SPECS: VocabSpec[] = [
       "达西这句话的杀伤力全在 **tolerable** 上。他没说她丑，他说的是「还行」—— 而这句话伊丽莎白就在旁边听着。",
     saved: 21,
     due: 26,
+    cfi: "epubcfi(/6/10!/4/2[chapter-3]/28,/1:138,/3:0)",
   },
   {
     word: "waited",
@@ -671,6 +801,7 @@ const PROMO_VOCAB_SPECS: VocabSpec[] = [
     inContext: "这一句其实已经把结果说了：他去了 —— 读成「等宾利先生」就整段反了。",
     saved: 12,
     due: -1,
+    cfi: "epubcfi(/6/8!/4/2[chapter-2]/4,/2/1:0,/5:9)",
   },
   {
     word: "deigned",
@@ -682,6 +813,7 @@ const PROMO_VOCAB_SPECS: VocabSpec[] = [
     inContext: "她不是没听见，是觉得这句话不值得接。所以这半句写的是姿态，不是沉默。",
     saved: 9,
     due: -2,
+    cfi: "epubcfi(/6/8!/4/2[chapter-2]/16,/2/1:0,/3:37)",
   },
   {
     word: "circumspection",
@@ -693,6 +825,7 @@ const PROMO_VOCAB_SPECS: VocabSpec[] = [
     inContext: "这一句是反话 —— 班纳特先生在笑太太把「认识不认识」看得比什么都重。",
     saved: 9,
     due: 1,
+    cfi: "epubcfi(/6/8!/4/2[chapter-2]/34,/1:1,/1:30)",
   },
   {
     word: "discretion",
@@ -701,6 +834,7 @@ const PROMO_VOCAB_SPECS: VocabSpec[] = [
     context: "Kitty has no discretion in her coughs",
     saved: 7,
     due: 4,
+    cfi: "epubcfi(/6/8!/4/2[chapter-2]/20,/1:1,/1:38)",
   },
   {
     word: "bestow",
@@ -710,6 +844,7 @@ const PROMO_VOCAB_SPECS: VocabSpec[] = [
       "I have been meditating on the very great pleasure which a pair of fine eyes in the face of a pretty woman can bestow.",
     saved: 1,
     due: 0,
+    cfi: "epubcfi(/6/16!/4/2[chapter-6]/98,/1:85,/1:202)",
   },
 ];
 
@@ -730,7 +865,15 @@ const EXPOSURE_REASON = JSON.stringify({
   exposures: 6,
 });
 
-function promoVocabWord(spec: VocabSpec) {
+/**
+ * 旧样张（首图、等级图……）里所有生词共用的那个位置：第二章开头的一个点。它解析
+ * 不出句子，所以正文里不会为这些词画覆盖层标记 —— 首图双击的 waited 本身就是
+ * 收藏过的词，一旦它身上有覆盖层标记，点下去打开的是生词侧栏（`show-annotation`
+ * → traces），不是查词卡。那几张图要的是查词卡，所以它们继续用这个点。
+ */
+const LEGACY_CFI = "epubcfi(/6/8!/4/2/2)";
+
+function promoVocabWord(spec: VocabSpec, realCfi = true) {
   return {
     id: `promo-vw-${spec.word}`,
     word: spec.word,
@@ -744,7 +887,7 @@ function promoVocabWord(spec: VocabSpec) {
     context_explanation: spec.inContext ?? null,
     book_id: "pride-and-prejudice",
     book_title: HERO_BOOK.title,
-    cfi: "epubcfi(/6/8!/4/2/2)",
+    cfi: realCfi ? spec.cfi : LEGACY_CFI,
     list_status: "confirmed",
     mastery: spec.mastery,
     // 只有阅读曝光引擎会写 auto。这里唯一那个 auto 就是主角词，「自动判定」
@@ -764,7 +907,9 @@ function promoVocabWord(spec: VocabSpec) {
   };
 }
 
-export const promoVocabWords = () => PROMO_VOCAB_SPECS.map(promoVocabWord);
+/** `realCfi`：要不要用每个词真实的原句位置（章末那一行要靠它数「这一章」的词）。 */
+export const promoVocabWords = (realCfi = false) =>
+  PROMO_VOCAB_SPECS.map((spec) => promoVocabWord(spec, realCfi));
 
 /**
  * 「它是怎么走到这一步的」那条时间线（`mastery_events`，migration 038）。
@@ -929,3 +1074,186 @@ export const PROMO_CARD_CONFIG_CUSTOM = (() => {
 
 /** 场景要点开的就是这一行。名字只写一处，图和数据不会各说各的。 */
 export const PROMO_CUSTOM_MODULE_NAME = CUSTOM_MODULE.name;
+
+/* ------------------------------------------------------------------ *
+ * 「它记得你」：查一个已经读顺了的词
+ * ------------------------------------------------------------------ */
+
+/** `memory` 场景双击的那个词。它有卡片，也在生词本里。 */
+export const MEMORY_WORD = "circumspection";
+
+/**
+ * `word_memory_hint` 在 `memory` 场景里给这个词的回答：查过三次、复习过两次、
+ * 已经读顺了。卡片顶上那一句「你已把这个词标记为读顺了，这张卡已跳过基础释义」
+ * 就是从这里来的，`LearningCardView` 只在 mastery 是 mastered 时说这句话。
+ */
+export const MEMORY_HINT = { looked_up_times: 3, mastery: "mastered", reviews: 2, mastery_book_title: null };
+
+/**
+ * 同一个词，读顺了以后的那张卡。提示词里带着读者的记录，模型就不再给音标、
+ * 词性和基础释义 —— 所以这份没有 word_info / common_senses，只讲这一句里的用法。
+ */
+export const MEMORY_CARD = {
+  version: 1,
+  kind: "word",
+  sourceText: "circumspection",
+  modules: {
+    context_meaning: {
+      summary: "这次只说这一句：I honour your circumspection 是反话，「敬佩」是拿来挖苦的。",
+      details: [
+        "太太刚说自己跟宾利不认识、没法引荐，他就顺着夸她「审慎」—— 把一个小小的推脱抬成了美德，好接下一句「那我自己去」。",
+      ],
+    },
+    collocations: {
+      items: [
+        { title: "honour sb's circumspection", text: "这一句的说法，正式到近乎夸张，正是笑点所在。" },
+        { title: "with circumspection", text: "谨慎地（做某事），最常见的搭配。" },
+      ],
+    },
+    synonyms: {
+      summary: "换成 prudence 意思不变，但会丢掉这句的那点调侃。",
+      meta: ["prudence", "caution"],
+    },
+  },
+};
+
+/* ------------------------------------------------------------------ *
+ * 正文里的标记：同一页，两个时间点
+ * ------------------------------------------------------------------ */
+
+type Mastery = VocabSpec["mastery"];
+
+/**
+ * 第二章第一屏上的六个生词。`marksBefore` / `marksAfter` 两张图拍的是同一页，
+ * 只差这几个词的掌握度 —— 新词是琥珀色实线，学习中是青色，眼熟是灰色虚线，
+ * 读顺了就什么都不画（`mark-palette.ts`）。所以后一张图里有的词褪了色，有的
+ * 直接没了。
+ *
+ * 位置是各自原句的 range CFI（取法同上面 `VocabSpec.cfi`）：waited / trimming 在
+ * 第 1 段，resentfully 第 3 段，hypocritical 第 5 段，deigned 第 7 段，discretion
+ * 第 9 段 —— 都在第二章第一屏上。
+ */
+const MARK_WORDS: { word: string; cfi: string; definition: string; context: string; before: Mastery; after: Mastery }[] = [
+  { word: "waited", cfi: "epubcfi(/6/8!/4/2[chapter-2]/4,/2/1:0,/5:9)", definition: "/weɪt/ v. wait on sb：登门拜访。", context: "Mr. Bennet was among the earliest of those who waited on Mr. Bingley.", before: "familiar", after: "mastered" },
+  { word: "trimming", cfi: "epubcfi(/6/8!/4/2[chapter-2]/4,/5:236,/5:292)", definition: "/ˈtrɪmɪŋ/ v. 给（帽子）加装饰、修边。", context: "Observing his second daughter employed in trimming a hat", before: "new", after: "learning" },
+  { word: "resentfully", cfi: "epubcfi(/6/8!/4/2[chapter-2]/8,/5:17,/5:44)", definition: "/rɪˈzentfəli/ adv. 带着不满地。", context: "said her mother resentfully", before: "learning", after: "familiar" },
+  { word: "hypocritical", cfi: "epubcfi(/6/8!/4/2[chapter-2]/12,/3:61,/3:128)", definition: "/ˌhɪpəˈkrɪtɪkl/ adj. 表里不一的。", context: "She is a selfish, hypocritical woman, and I have no opinion of her.", before: "new", after: "familiar" },
+  { word: "deigned", cfi: "epubcfi(/6/8!/4/2[chapter-2]/16,/2/1:0,/3:37)", definition: "/deɪn/ v. 屈尊；not deign to 是「不屑于」。", context: "Mrs. Bennet deigned not to make any reply", before: "learning", after: "mastered" },
+  { word: "discretion", cfi: "epubcfi(/6/8!/4/2[chapter-2]/20,/1:1,/1:38)", definition: "/dɪˈskreʃn/ n. 分寸感。", context: "Kitty has no discretion in her coughs", before: "familiar", after: "mastered" },
+];
+
+export type MarkStage = "before" | "after";
+
+export const promoMarkWords = (stage: MarkStage) =>
+  MARK_WORDS.map((entry, index) => promoVocabWord({
+    word: entry.word,
+    mastery: entry[stage],
+    definition: entry.definition,
+    context: entry.context,
+    saved: stage === "before" ? 6 + index : 30 + index,
+    due: 3,
+    cfi: entry.cfi,
+  }));
+
+/* ------------------------------------------------------------------ *
+ * 人物别名表
+ * ------------------------------------------------------------------ */
+
+/**
+ * `list_person_aliases` 拍样张时的那份。`canonical` 是书里的写法，`mentions` 是
+ * 这个写法在全书里出现的次数 —— 数自 `harness/books/` 那本 EPUB（把 Mr. 后面的
+ * 不换行空格当普通空格），不是估的。
+ *
+ * 「达西」同时挂在 Mr. Darcy 和 Miss Darcy 下面是故意的：中文读者确实这么叫两个人，
+ * 别名表会把它标成「指向不止一个人」，回答上方那句「『达西』按『Mr. Darcy』找的」
+ * 也是因为这个才出现。
+ *
+ * 「那个牧师」是读者自己教的（source user，description 类）：它不是名字，是一句
+ * 描述，按语义匹配。`withTaughtPriest: false` 给的是教之前的那张表。
+ */
+export function promoAliasGroups(withTaughtPriest = true) {
+  let n = 0;
+  const entry = (alias: string, mentions: number, source: "auto" | "user" = "auto", sourceQuery: string | null = null) => ({
+    id: `promo-pa-${++n}`,
+    alias,
+    source,
+    mentions,
+    kind: sourceQuery ? "description" : "name",
+    sourceQuery,
+  });
+  const group = (canonical: string, mentions: number, aliases: string[]) => ({
+    canonical,
+    entries: aliases.map((alias) => entry(alias, mentions)),
+  });
+  const collins = group("Mr. Collins", 149, ["柯林斯", "柯林斯先生"]);
+  if (withTaughtPriest) collins.entries.push(entry("那个牧师", 149, "user", PRIEST_QUESTION));
+  return [
+    group("Elizabeth", 634, ["伊丽莎白", "丽萃", "Lizzy", "Eliza", "Miss Eliza"]),
+    group("Mr. Darcy", 273, ["达西", "达西先生", "Fitzwilliam Darcy"]),
+    group("Jane", 292, ["简", "吉英"]),
+    group("Mrs. Bennet", 153, ["班纳特太太"]),
+    collins,
+    group("Mr. Bingley", 114, ["宾利", "彬格莱"]),
+    group("Miss Darcy", 39, ["达西", "达西小姐", "乔治安娜", "Georgiana"]),
+  ];
+}
+
+/**
+ * `ai_index_details` 拍样张时的那份：别名表在「AI 索引」窗口里，窗口上半段是
+ * 这本书的概要和各章摘要。只写到第三章 —— 和书架上那本的进度不冲突，也足够
+ * 说明这是同一本书。
+ */
+export const PROMO_INDEX_DETAILS = {
+  status: "ready",
+  error: null,
+  chunkCount: 1184,
+  embeddedCount: 1184,
+  embeddingModel: "harness-embed-3",
+  indexedAt: ago(12),
+  overview: {
+    sectionIndex: null,
+    sectionTitle: null,
+    content: "班纳特家有五个待嫁的女儿。富有的宾利先生租下尼日斐庄园，带来了他的朋友达西先生；第一场舞会上达西冷落了伊丽莎白，她从此认定他傲慢。",
+    userEdited: false,
+  },
+  sections: [
+    { sectionIndex: chapterIndex(1), sectionTitle: "I", content: "班纳特太太听说尼日斐租出去了，催丈夫去拜访新来的单身汉宾利先生；班纳特先生嘴上推脱。", userEdited: false },
+    { sectionIndex: chapterIndex(2), sectionTitle: "II", content: "班纳特先生其实早已拜访过宾利，故意拖到家人抱怨完才说出来。", userEdited: false },
+    { sectionIndex: chapterIndex(3), sectionTitle: "III", content: "梅里屯舞会：宾利和简跳了两次；达西拒绝请伊丽莎白跳舞，说她「还行，但没好看到能打动我」。", userEdited: true },
+  ],
+  chunks: [
+    { index: 0, sectionTitle: "I", snippet: "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife." },
+    { index: 1, sectionTitle: "II", snippet: "Mr. Bennet was among the earliest of those who waited on Mr. Bingley." },
+  ],
+};
+
+/* ------------------------------------------------------------------ *
+ * 回顾板
+ * ------------------------------------------------------------------ */
+
+/**
+ * 回顾板上的三堆。每一堆的「来由」都要和生词本里那几个词的履历对得上：
+ *  - 反复查的：deigned 查过 2 次、circumspection 3 次（`coverage.generated.ts`
+ *    的 savedUnknown 也是这两个数）；
+ *  - 刚读完的第二章：这四个词的收藏位置都在第二章（见上面的 `cfi`）；
+ *  - 很久没再遇到的：tolerable 已经读顺了，bestow 只在第六章出现过一次。
+ */
+export const PROMO_PILE_PLAN = {
+  repeat: ["deigned", "circumspection"],
+  chapter: { label: "第二章", words: ["waited", "deigned", "discretion", "circumspection"] },
+  longUnseen: ["tolerable", "bestow"],
+};
+
+/**
+ * 「打开一本书」那张卡要的读者通过率（`get_vocab_pass_rates`），按五个频率档。
+ *
+ * 和覆盖率那张图用的是同一个虚构读者（频率表前 8 000 名读顺、9 000 名以内眼熟）：
+ * 前三档（5 000 名以内）几乎从不停下来，第 4 档（5 001–20 000）大约三成能直接
+ * 读过去，第 5 档基本都要查。查词条数和天数照抄词汇画像。
+ */
+export const PROMO_PASS_RATES = {
+  bandPassRates: [0.99, 0.98, 0.96, 0.31, 0.06],
+  scorableLookups: 1_842,
+  spanDays: 96,
+  sufficient: true,
+};
