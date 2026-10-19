@@ -103,16 +103,18 @@ export default function ReaderBackgroundSettings({ background, pageColor, onChan
       </div>
       {background && (
         <div className="mt-3">
+          {/* Shown as transparency, the word everyone knows; stored as opacity. */}
           <Slider
-            min={READER_BACKGROUND_OPACITY_MIN}
-            max={READER_BACKGROUND_OPACITY_MAX}
+            min={100 - READER_BACKGROUND_OPACITY_MAX}
+            max={100 - READER_BACKGROUND_OPACITY_MIN}
             step={5}
-            value={draftOpacity}
+            value={100 - draftOpacity}
             label={t("settings.layout.backgroundOpacity")}
-            displayValue={`${draftOpacity}%`}
+            displayValue={`${100 - draftOpacity}%`}
             hint={t("settings.layout.backgroundOpacityHint")}
-            onChange={setDraftOpacity}
-            onChangeEnd={(opacity) => {
+            onChange={(transparency) => setDraftOpacity(100 - transparency)}
+            onChangeEnd={(transparency) => {
+              const opacity = 100 - transparency;
               if (opacity !== background.opacity) onChange({ ...background, opacity });
             }}
           />
