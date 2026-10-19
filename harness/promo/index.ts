@@ -39,6 +39,7 @@ const ZH: Record<string, string> = {
   language: "zh",
   theme: "light",
   theme_reader: "paper",
+  reader_theme: "paper",
   font_size: "19",
   line_height: "1.7",
   learning_card_config: PROMO_CARD_CONFIG,
