@@ -12,7 +12,6 @@ import BookOpenGateProvider from "./components/BookOpenGateProvider";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
-import QuizReadyBanner from "./components/QuizReadyBanner";
 import CommandPalette from "./components/command-palette/CommandPalette";
 import { ToastStackProvider } from "./components/toast-stack";
 import { UpdaterProvider } from "./hooks/useUpdater";
@@ -40,8 +39,6 @@ const isMainWindow = getCurrentWebviewWindow().label === "main";
 const Reader = lazy(() => import("./pages/Reader"));
 const BookDetails = lazy(() => import("./pages/BookDetails"));
 // 学习板块的三个全屏页（词卷 / 试卷 / 翻卡）同理只在导航到时才加载。
-const Quiz = lazy(() => import("./pages/Quiz"));
-const QuizPaper = lazy(() => import("./pages/QuizPaper"));
 const FlashcardReview = lazy(() => import("./pages/FlashcardReview"));
 
 // Chunks load from the local filesystem here, so this is normally on screen
@@ -173,14 +170,6 @@ function AppContent() {
               element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
             />
             <Route
-              path="/quiz"
-              element={<Suspense fallback={<StudyPageFallback />}><Quiz /></Suspense>}
-            />
-            <Route
-              path="/quiz/paper/:paperId"
-              element={<Suspense fallback={<StudyPageFallback />}><QuizPaper /></Suspense>}
-            />
-            <Route
               path="/flashcards"
               element={<Suspense fallback={<StudyPageFallback />}><FlashcardReview /></Suspense>}
             />
@@ -194,7 +183,6 @@ function AppContent() {
         <ErrorBoundary scope="silent">
           <ReasoningEffortNotice />
           <AiRouteFallbackNotice />
-          <QuizReadyBanner />
         </ErrorBoundary>
         {/* Wraps exactly the two surfaces that show an update — the toast and
             the Settings → About row — so they share one lifecycle instead of

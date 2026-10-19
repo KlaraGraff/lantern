@@ -636,7 +636,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       });
       setExpandedId((current) => current === id ? null : current);
       // 指向这行的设置一并清掉，回到跟随路由——留着一个悬空 id 只会让下拉框
-      // 显示失效项（出题模型是硬指定，悬空意味着词卷 AI 整个不可用）
+      // 显示失效项（出题模型是硬指定，悬空意味着词卷 AI 整个不可用）。词卷暂时
+      // 下架、设置项也藏了，但这里照清，免得它重新上线时带着悬空 id 回来
       if (settingsRef.current.quiz_ai_profile_id === id) void saveSetting("quiz_ai_profile_id", "");
       if (settingsRef.current.ai_summary_profile_id === id) void saveSetting("ai_summary_profile_id", "");
       if (settingsRef.current.ai_reading_profile_id === id) void saveSetting("ai_reading_profile_id", "");
@@ -1045,27 +1046,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           checked={settings.ai_summaries_auto !== "false"}
           onChange={(enabled) => void saveSetting("ai_summaries_auto", enabled ? "true" : "false")}
           label={t("settings.ai.summariesAuto")}
-        />
-      </div>
-      <div className="mb-4 border-b border-border py-3">
-        <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.quizProfile")}</h4>
-        <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.quizProfileHint")}</p>
-        <Select
-          className="mt-2"
-          value={settings.quiz_ai_profile_id || ""}
-          onChange={(value) => void saveSetting("quiz_ai_profile_id", value)}
-          options={withDanglingOption(
-            [
-              { value: "", label: t("settings.ai.quizProfileFollow") },
-              // 与后端 pin_profile 的可路由判定对齐（enabled 且配置完整）：目录里
-              // 刚添加还没填模型的行不该能被钉住，钉了也只会报「不可用」还查无实据
-              ...profiles
-                .filter((profile) => profile.enabled && isProfileConfigComplete(profile))
-                .map((profile) => ({ value: profile.id, label: profile.label })),
-            ],
-            settings.quiz_ai_profile_id,
-            t("settings.ai.profileGone"),
-          )}
         />
       </div>
       <div className="mb-3 flex items-start justify-between gap-4">
