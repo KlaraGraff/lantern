@@ -14,6 +14,11 @@
 
 </div>
 
+<p align="center">
+  <a href="assets/promo/lantern-promo.mp4"><img src="assets/promo/poster.jpg" width="640" alt="Lantern promo video (1 min)"></a><br>
+  <sub>▶ Lantern in one minute (click to download the video, Chinese captions)</sub>
+</p>
+
 ![Lantern reading view](assets/screenshots/hero.png)
 
 ---
