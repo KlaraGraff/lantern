@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Check, Copy, MessageSquareText, ShieldAlert, PenLine } from "lucide-react";
+import { COPIED_FEEDBACK_MS } from "../../utils/clipboard";
 import Toggle from "../ui/Toggle";
 import type { SettingsProps } from "./types";
 
@@ -79,7 +80,7 @@ export default function McpSettings(_props: SettingsProps) {
         });
     navigator.clipboard.writeText(text).then(() => {
       setCopied(which);
-      setTimeout(() => setCopied(null), 1500);
+      setTimeout(() => setCopied(null), COPIED_FEEDBACK_MS);
     }).catch((err) => {
       setError(err instanceof Error ? err.message : String(err));
     });
@@ -179,7 +180,7 @@ export default function McpSettings(_props: SettingsProps) {
             disabled={!snippet}
             className="flex items-center gap-1.5 shrink-0 text-[12px] font-medium text-white bg-accent rounded-md px-2.5 py-1.5 hover:opacity-90 disabled:opacity-50 cursor-pointer transition-opacity"
           >
-            {copied === "prompt" ? <Check size={12} /> : <MessageSquareText size={12} />}
+            {copied === "prompt" ? <Check size={12} className="motion-check-pop" /> : <MessageSquareText size={12} />}
             {copied === "prompt" ? t("settings.mcp.copied") : t("settings.mcp.copyPrompt")}
           </button>
         </div>
@@ -202,7 +203,7 @@ export default function McpSettings(_props: SettingsProps) {
             disabled={!snippet}
             className="flex items-center gap-1.5 shrink-0 text-[12px] font-medium text-text-secondary border border-border rounded-md px-2.5 py-1.5 hover:bg-bg-input disabled:opacity-50 cursor-pointer transition-colors"
           >
-            {copied === "json" ? <Check size={12} /> : <Copy size={12} />}
+            {copied === "json" ? <Check size={12} className="motion-check-pop" /> : <Copy size={12} />}
             {copied === "json" ? t("settings.mcp.copied") : t("settings.mcp.copyJson")}
           </button>
         </div>

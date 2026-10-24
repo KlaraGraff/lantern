@@ -592,8 +592,8 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                 value={draftText}
                 onChange={(event) => setDraftText(event.target.value)}
                 placeholder={t("profile.yourText.placeholder")}
-                className={`min-h-[110px] w-full resize-y rounded-lg border bg-bg-surface p-3 text-[13px] leading-[1.7] text-text-primary outline-none focus:border-accent ${
-                  overHard ? "border-danger-border" : overSoft ? "border-warning/40" : "border-border"
+                className={`field-soft min-h-[110px] w-full resize-y rounded-lg border bg-bg-surface p-3 text-[13px] leading-[1.7] text-text-primary outline-none ${
+                  overHard ? "border-danger-border" : overSoft ? "border-warning/40" : "border-transparent"
                 }`}
               />
               {pendingMove && (

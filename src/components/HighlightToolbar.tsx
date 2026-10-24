@@ -180,7 +180,7 @@ export default function HighlightToolbar({
             onChange={(e) => setNoteDraft(e.target.value)}
             placeholder={t("bookmarks.highlightNotePlaceholder")}
             rows={3}
-            className="w-full resize-none rounded-md bg-bg-input px-2 py-1.5 text-[13px] text-text-primary placeholder:text-text-placeholder outline-none focus:ring-1 focus:ring-accent"
+            className="field-soft w-full resize-none rounded-md bg-bg-input px-2 py-1.5 text-[13px] text-text-primary placeholder:text-text-placeholder outline-none"
           />
           <div className="flex justify-end">
             <button

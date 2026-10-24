@@ -69,7 +69,7 @@ export default function ColorControl({
               event.preventDefault();
               commitColor();
             }}
-            className="h-8 w-[88px] rounded-md border border-border bg-bg-input px-2 font-mono text-[11px] uppercase text-text-primary outline-none focus:border-accent"
+            className="field-soft h-8 w-[88px] rounded-md bg-bg-input px-2 font-mono text-[11px] uppercase text-text-primary outline-none"
           />
         </div>
       </div>

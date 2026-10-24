@@ -760,7 +760,7 @@ function ReaderSettings({
               <p className="mt-1 text-[11px] leading-4 text-text-muted">{t("readerSettings.scope.chooseHint")}</p>
               {conflicts.length >= 6 && (
                 <>
-                  <label className="mt-3 flex h-9 items-center gap-2 rounded-md border border-border bg-bg-input px-2.5 focus-within:border-accent">
+                  <label className="field-soft mt-3 flex h-9 items-center gap-2 rounded-md bg-bg-input px-2.5">
                     <Search size={14} className="text-text-muted" />
                     <input value={conflictQuery} onChange={(event) => setConflictQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[12px] text-text-primary outline-none" placeholder={t("readerSettings.scope.searchBooks")} />
                   </label>
@@ -805,7 +805,7 @@ function ReaderSettings({
               })}
               {visibleConflicts.length === 0 && <p className="py-8 text-center text-[12px] text-text-muted">{t("readerSettings.scope.noSearchResults")}</p>}
             </div>
-            <div className="shrink-0 border-t border-border bg-bg-surface px-4 pb-3 pt-2.5 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
+            <div className="shrink-0 border-t border-border bg-bg-surface px-4 pb-3 pt-2.5 shadow-[0_-8px_20px_rgba(60,45,20,0.04)]">
               <p className="mb-2 text-center text-[11px] text-text-muted">{selectedCount > 0 ? t("readerSettings.scope.selectionTotal", { selected: selectedCount, total: conflicts.length }) : t("readerSettings.scope.noneSelected")}</p>
               <button type="button" className="h-9 w-full rounded-md bg-accent text-[12px] font-medium text-white" onClick={() => setScopeView("confirm")}>{t("readerSettings.scope.confirmSelection", { count: selectedCount })}</button>
             </div>

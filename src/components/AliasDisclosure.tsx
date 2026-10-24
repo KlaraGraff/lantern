@@ -320,7 +320,7 @@ export function AliasResolutionFooter({ message, precedingUserContent }: AliasRe
             className={CONFIRM_BUTTON}
           >
             {busy
-              ? <Loader2 size={12} className="inline-block animate-spin" />
+              ? <Loader2 size={12} className="icon-inline animate-spin" />
               : t("ai.aliasDisclosure.low.confirm", { canonical: detectedCanonical })}
           </button>
         )}

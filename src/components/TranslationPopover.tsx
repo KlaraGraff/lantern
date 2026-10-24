@@ -25,7 +25,7 @@ import { saveVocabWord } from "./vocab/collect";
 import { focusWordFor } from "./focus-word";
 import BottomSheet from "./ui/BottomSheet";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
-import { copyToClipboard } from "../utils/clipboard";
+import { COPIED_FEEDBACK_MS, copyToClipboard } from "../utils/clipboard";
 
 interface TranslationPopoverProps {
   x: number;
@@ -252,7 +252,7 @@ export default function TranslationPopover({
   const handleCopy = async () => {
     if (!await copyToClipboard(contentRef.current)) return;
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
   };
 
   // Dismiss on Escape
@@ -381,7 +381,7 @@ export default function TranslationPopover({
             disabled={saved}
             className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
           >
-            {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+            {saved ? <Check size={14} className="motion-check-pop" /> : <BookmarkPlus size={14} />}
             {saved ? t("lookup.saved") : t("lookup.saveToDict")}
           </button>
         )}
@@ -407,7 +407,7 @@ export default function TranslationPopover({
         onClick={handleCopy}
         className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70 touch:min-h-11 touch:text-[14px]"
       >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
+        {copied ? <Check size={14} className="motion-check-pop" /> : <Copy size={14} />}
         {copied ? t("translation.copied") : t("translation.copy")}
       </button>
     </div>

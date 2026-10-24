@@ -697,7 +697,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                   value={overallScore}
                   placeholder={scorePlaceholder(examScoreRules.overall)}
                   onChange={(event) => setOverallScore(event.target.value)}
-                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary placeholder:font-normal placeholder:text-text-placeholder outline-none hover:border-border focus:border-accent"
+                  className="field-soft mt-1.5 h-9 w-full min-w-0 rounded-lg bg-bg-input px-3 text-[13px] font-medium text-text-primary placeholder:font-normal placeholder:text-text-placeholder outline-none"
                 />
               </label>
               <label className="block text-[14px] font-semibold text-text-primary">
@@ -710,7 +710,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                   value={readingScore}
                   placeholder={scorePlaceholder(examScoreRules.reading)}
                   onChange={(event) => setReadingScore(event.target.value)}
-                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary placeholder:font-normal placeholder:text-text-placeholder outline-none hover:border-border focus:border-accent"
+                  className="field-soft mt-1.5 h-9 w-full min-w-0 rounded-lg bg-bg-input px-3 text-[13px] font-medium text-text-primary placeholder:font-normal placeholder:text-text-placeholder outline-none"
                 />
               </label>
               <label className="block text-[14px] font-semibold text-text-primary">
@@ -720,7 +720,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                   max={localDateInputValue()}
                   value={examDate}
                   onChange={(event) => setExamDate(event.target.value)}
-                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary outline-none hover:border-border focus:border-accent"
+                  className="field-soft mt-1.5 h-9 w-full min-w-0 rounded-lg bg-bg-input px-3 text-[13px] font-medium text-text-primary outline-none"
                 />
               </label>
             </div>
@@ -950,7 +950,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
               await saveWithFeedback(["profile.soft_limit"], () => save("profile.soft_limit", normalized));
             }
           }}
-          className={`${ROW_CONTROL_WIDTH} h-9 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary text-center outline-none hover:border-border focus:border-accent`}
+          className={`field-soft ${ROW_CONTROL_WIDTH} h-9 rounded-lg bg-bg-input px-3 text-[13px] font-medium text-text-primary text-center outline-none`}
         />
       </div>
 

@@ -46,7 +46,7 @@ export default function PanelTabs<T extends string>({ tabs, active, onChange, la
               onClick={() => onChange(tab.id)}
               className={`cursor-pointer truncate rounded-full px-1 text-[13px] font-medium tracking-[-0.1px] transition-colors ${
                 selected
-                  ? "bg-bg-surface text-text-primary shadow-[0_1px_2px_rgba(0,0,0,0.12)] ring-1 ring-black/5"
+                  ? "bg-bg-surface text-text-primary shadow-[0_1px_2px_rgba(60,45,20,0.12)] ring-1 ring-[rgba(60,45,20,0.06)]"
                   : "text-text-muted hover:text-text-body"
               }`}
             >

@@ -50,7 +50,7 @@ const ApiKeyField = forwardRef<HTMLInputElement, ApiKeyFieldProps>(
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
-          className="h-9 w-full rounded-lg border border-border bg-bg-surface px-3 font-mono text-[14px] tracking-[-0.15px] text-text-primary outline-none placeholder:font-sans placeholder:text-text-placeholder focus:border-accent touch:h-12 touch:pr-12 touch:text-[16px]"
+          className="field-soft h-9 w-full rounded-lg bg-bg-surface px-3 font-mono text-[14px] tracking-[-0.15px] text-text-primary outline-none placeholder:font-sans placeholder:text-text-placeholder touch:h-12 touch:pr-12 touch:text-[16px]"
         />
         <button
           type="button"

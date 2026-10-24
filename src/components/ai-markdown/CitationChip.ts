@@ -22,7 +22,7 @@ export default function CitationChip({
       "aria-label": `Source ${number}`,
       onClick,
       className:
-        "mx-0.5 inline-flex h-5 min-w-5 translate-y-[-1px] items-center justify-center rounded border border-accent/35 bg-accent-bg px-1 text-[10px] font-semibold leading-none text-accent-text align-super hover:opacity-75",
+        "mx-0.5 inline-flex h-5 min-w-5 translate-y-[-1px] items-center justify-center rounded bg-accent-bg px-1 text-[10px] font-semibold leading-none text-accent-text align-super hover:opacity-75",
     },
     number,
   );

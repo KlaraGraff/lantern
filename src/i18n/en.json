@@ -328,6 +328,7 @@
   "ai.stop": "Stop generating",
   "ai.thinking": "Thinking...",
   "ai.reasoning": "Reasoning",
+  "ai.thinkingSeconds": "{{seconds}}s",
   "ai.reasoningStreaming": "Reasoning...",
   "ai.prompt.summarize": "Summarize this chapter",
   "ai.prompt.themes": "Explain the main themes",

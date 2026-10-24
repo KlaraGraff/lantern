@@ -88,8 +88,8 @@ function ScopePicker({ scope, onChange }: { scope: AiChatScope; onChange: (scope
         className={`flex items-center gap-0.5 rounded-full border py-[3px] pl-2.5 pr-1.5 text-[11px] font-medium cursor-pointer transition-colors ${
           // A pinned scope changes every answer, so it never looks like the default.
           scope === "auto"
-            ? "border-border text-text-muted hover:bg-bg-input"
-            : "border-accent/40 bg-accent-bg text-accent-text"
+            ? "border-transparent bg-bg-input/60 text-text-muted hover:bg-bg-input"
+            : "border-transparent bg-accent-bg text-accent-text"
         }`}
       >
         {t("ai.scope.trigger", { scope: t(`ai.scope.${scope}`) })}
@@ -424,7 +424,7 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
   return (
     <div className="flex flex-col h-full bg-bg-muted">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 h-[63px] border-b border-border shrink-0 relative">
+      <div className="flex items-center justify-between px-4 h-[63px] shrink-0 relative">
         <div className="flex items-center gap-2.5 min-w-0">
           <Sparkles size={20} className="text-text-muted shrink-0" />
           {editingTitle ? (
@@ -640,7 +640,7 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
       </div>
 
       {/* Input */}
-      <div className="border-t border-border px-4 pt-[17px] pb-4 flex flex-col gap-2">
+      <div className="px-4 pt-3 pb-4 flex flex-col gap-2">
         {groundingStatus === "building" && (
           <p role="status" className="flex items-center gap-1.5 text-[12px] text-text-muted">
             <Loader2 size={12} className="animate-spin" />
@@ -658,7 +658,7 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
         {quoteChips.map((quote) => (
           <div
             key={quoteIdentity(quote)}
-            className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-[rgba(192,132,252,0.12)] border-l-2 border-[#c084fc]"
+            className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-mist border-l-2 border-lavender"
           >
             <div className="flex-1 min-w-0">
               {quote.kind === "reply" && (
@@ -692,7 +692,7 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
             autoCorrect="off"
             autoCapitalize="off"
             rows={2}
-            className="h-[92px] w-full resize-none rounded-[14px] border border-transparent bg-bg-input pb-10 pl-3 pr-12 pt-2 text-[14px] leading-5 tracking-[-0.15px] text-text-primary outline-none placeholder:text-text-placeholder focus:border-accent"
+            className="h-[92px] w-full resize-none field-soft rounded-[14px] bg-bg-input pb-10 pl-3 pr-12 pt-2 text-[14px] leading-5 tracking-[-0.15px] text-text-primary outline-none placeholder:text-text-placeholder"
           />
           <button
             onClick={streaming ? cancel : handleSend}

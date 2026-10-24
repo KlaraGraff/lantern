@@ -15,6 +15,7 @@ import {
   Database,
   Loader2,
 } from "lucide-react";
+import { COPIED_FEEDBACK_MS } from "../../utils/clipboard";
 import LanternLogo from "../LanternLogo";
 import { platform as platformCaps, type PlatformId } from "../../services/platform";
 import { useUpdater } from "../../hooks/useUpdater";
@@ -97,7 +98,7 @@ export default function AboutSettings() {
     try {
       await navigator.clipboard.writeText(details);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
     } catch {
       setCopied(false);
     }
@@ -226,7 +227,7 @@ export default function AboutSettings() {
             onClick={copyDiagnostics}
             className="mt-3 h-8 w-full flex items-center justify-center gap-2 rounded-lg border border-border text-[12px] text-text-secondary hover:bg-bg-input cursor-pointer touch:h-11"
           >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? <Check size={14} className="motion-check-pop" /> : <Copy size={14} />}
             {copied ? t("settings.about.copied") : t("settings.about.copyDiagnostics")}
           </button>
         </div>

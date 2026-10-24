@@ -424,7 +424,7 @@ export default function AnnotationsContent({ menuButton }: { menuButton?: ReactN
                               if (event.key === "Escape") { event.preventDefault(); stopEditing(); }
                               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.blur(); }
                             }}
-                            className="w-full resize-y rounded-lg border border-accent/40 bg-bg-surface px-3 py-2.5 text-[13px] leading-[1.7] text-text-primary outline-none focus:border-accent"
+                            className="field-soft w-full resize-y rounded-lg bg-bg-surface px-3 py-2.5 text-[13px] leading-[1.7] text-text-primary outline-none"
                           />
                           <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-accent-text">
                             {saving && <Loader2 size={11} className="animate-spin motion-reduce:animate-none" />}

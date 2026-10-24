@@ -42,7 +42,7 @@ export default function LearningCardActions({ states, onAction }: LearningCardAc
               action === "collect" ? "text-accent-text" : "text-text-secondary hover:text-accent-text"
             }`}
           >
-            <Icon size={14} aria-hidden="true" />
+            <Icon size={14} aria-hidden="true" className={completed ? "motion-check-pop" : undefined} />
             <span>{label}</span>
           </button>
         );

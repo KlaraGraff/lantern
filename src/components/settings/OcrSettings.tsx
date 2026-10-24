@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useOcrAssetsOverview, useOcrPackage } from "../../hooks/useOcrPackage";
 import { formatOcrBytes, type OcrAssetItem, type OcrPackageStatus } from "../../ocr/types";
+import { COPIED_FEEDBACK_MS } from "../../utils/clipboard";
 import Button from "../ui/Button";
 import ConfirmDialog from "./ConfirmDialog";
 import { ROW_CONTROL_WIDTH } from "./types";
@@ -172,12 +173,12 @@ export default function OcrSettings() {
                 onClick={() => {
                   void navigator.clipboard.writeText(packageError).then(() => {
                     setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1500);
+                    window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
                   });
                 }}
                 className="flex size-8 shrink-0 items-center justify-center rounded-md text-danger-text hover:bg-bg-surface"
               >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
+                {copied ? <Check size={14} className="motion-check-pop" /> : <Copy size={14} />}
               </button>
             </div>
           </div>

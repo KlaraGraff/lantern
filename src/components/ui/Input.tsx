@@ -18,7 +18,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
-          className={`w-full h-9 bg-bg-surface rounded-lg text-[14px] tracking-[-0.15px] text-text-primary placeholder:text-text-placeholder outline-none border border-border focus:border-accent ${
+          className={`w-full h-9 bg-bg-surface rounded-lg text-[14px] tracking-[-0.15px] text-text-primary placeholder:text-text-placeholder outline-none field-soft ${
             icon ? "pl-9 pr-3" : "px-3"
           }`}
           {...props}

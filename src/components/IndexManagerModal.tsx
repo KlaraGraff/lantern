@@ -461,7 +461,7 @@ export default function IndexManagerModal({
 
               <section className="mt-5">
                 <div className="mb-2 flex items-center justify-between"><h4 className="text-[13px] font-medium text-text-primary">{t("indexManager.overview")}</h4>{details.overview?.userEdited && <span className="text-[10px] text-accent-text">{t("indexManager.edited")}</span>}</div>
-                <textarea value={overviewDraft} onChange={(event) => setOverviewDraft(event.target.value)} className="min-h-28 w-full resize-y rounded-md border border-border bg-bg-input p-3 text-[13px] text-text-primary outline-none focus:border-accent" />
+                <textarea value={overviewDraft} onChange={(event) => setOverviewDraft(event.target.value)} className="field-soft min-h-28 w-full resize-y rounded-md bg-bg-input p-3 text-[13px] text-text-primary outline-none" />
                 <Button className="mt-2" size="sm" variant="secondary" disabled={!details.overview || locked} onClick={() => void run("overview", () => invoke("update_book_overview", { bookId, content: overviewDraft }))}><Save size={13} />{t("indexManager.saveOverview")}</Button>
               </section>
               <section className="mt-5 space-y-2">
@@ -476,7 +476,7 @@ export default function IndexManagerModal({
                 {details.sections.map((section) => section.sectionIndex == null ? null : (
                   <details key={section.sectionIndex} className="rounded-md border border-border p-3">
                     <summary className="cursor-pointer text-[12px] font-medium text-text-primary">{section.sectionTitle || t("indexManager.section", { index: section.sectionIndex + 1 })}{section.userEdited ? ` · ${t("indexManager.edited")}` : ""}</summary>
-                    <textarea value={sectionDrafts[section.sectionIndex] ?? ""} onChange={(event) => setSectionDrafts((current) => ({ ...current, [section.sectionIndex!]: event.target.value }))} className="mt-3 min-h-24 w-full resize-y rounded-md border border-border bg-bg-input p-3 text-[12px] text-text-primary outline-none focus:border-accent" />
+                    <textarea value={sectionDrafts[section.sectionIndex] ?? ""} onChange={(event) => setSectionDrafts((current) => ({ ...current, [section.sectionIndex!]: event.target.value }))} className="field-soft mt-3 min-h-24 w-full resize-y rounded-md bg-bg-input p-3 text-[12px] text-text-primary outline-none" />
                     <Button className="mt-2" size="sm" variant="secondary" disabled={locked} onClick={() => void run(`section-${section.sectionIndex}`, () => invoke("update_book_section_summary", { bookId, sectionIndex: section.sectionIndex, content: sectionDrafts[section.sectionIndex!] }))}><Save size={13} />{t("indexManager.saveSection")}</Button>
                   </details>
                 ))}

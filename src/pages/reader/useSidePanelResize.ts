@@ -29,6 +29,11 @@ const PANEL_MAX_WIDTH = 560;
  */
 const PANEL_DEFAULT_WIDTH = RIGHT_CARD_WIDTH;
 
+/** An inline override of the slot's stylesheet transition; "" hands it back. */
+function setSlotTransition(slot: HTMLElement, value: string) {
+  slot.style.transition = value;
+}
+
 /**
  * `resizable` is false on a viewport too narrow to split, where the panel
  * covers the reading area instead of docking beside it. There is nothing left
@@ -74,6 +79,11 @@ export function useSidePanelResize<T extends ShadowHost>(
     // insets; it follows the card so the drag ends with nothing left to move.
     const slot = slotRef?.current ?? null;
     const slotFollows = slot !== null && slot.clientWidth > 0;
+    // The slot eases its width for pin and unpin. Under a drag that easing is
+    // a lag: the page edge trails the pointer and keeps sliding after the
+    // button is up. A drag is direct manipulation — it lands on the frame the
+    // pointer lets go — so the slot drops its transition for the duration.
+    if (slotFollows) setSlotTransition(slot, "none");
     let rafId = 0;
     let latestWidth = startWidth;
     let finished = false;
@@ -115,6 +125,13 @@ export function useSidePanelResize<T extends ShadowHost>(
       } catch { /* pointer capture can already be gone */ }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      if (slotFollows) {
+        // Commit the final width with the transition still off, then hand the
+        // stylesheet its easing back; without the forced style read the two
+        // writes batch and the slot animates to where it already is.
+        void slot.offsetWidth;
+        setSlotTransition(slot, "");
+      }
       release();
     };
 
@@ -129,6 +146,7 @@ export function useSidePanelResize<T extends ShadowHost>(
       if (panelRef.current) {
         panelRef.current.style.width = `${latestWidth}px`;
       }
+      if (slotFollows) slot.style.width = `${latestWidth + CARD_INSET * 2}px`;
       cleanup();
       setPanelWidth(latestWidth);
     };

@@ -19,7 +19,7 @@ const BASE = [
   // on purpose — monospace, muted fill — so it reads correctly both as `code`
   // in a programming book and as `take up` in a collocation note; a purple
   // "term pill" would look broken the moment the content is real code.
-  "[&_code]:bg-bg-muted [&_code]:border [&_code]:border-border-light [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5",
+  "[&_code]:bg-bg-muted [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5",
   "[&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:my-2",
   "[&_pre_code]:border-0 [&_pre_code]:bg-transparent [&_pre_code]:p-0",
   // ==Highlight== and the deterministic headword highlight land here.
@@ -37,6 +37,9 @@ const BASE = [
   "[&_a]:text-accent [&_a]:underline",
   "[&_hr]:border-border [&_hr]:my-3",
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+  // Never leave one word (or one Han character) alone on a paragraph's last
+  // line; headings balance their lines instead.
+  "[&_p]:text-pretty [&_li]:text-pretty [&_h1]:text-balance [&_h2]:text-balance [&_h3]:text-balance",
 ].join(" ");
 
 // Answer prose. A wall of same-weight, same-colour 14px text is what makes a
