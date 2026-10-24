@@ -328,6 +328,7 @@
   "ai.stop": "停止生成",
   "ai.thinking": "思考中...",
   "ai.reasoning": "思考过程",
+  "ai.thinkingSeconds": "{{seconds}} 秒",
   "ai.reasoningStreaming": "正在思考...",
   "ai.prompt.summarize": "总结这一章",
   "ai.prompt.themes": "解释主要主题",

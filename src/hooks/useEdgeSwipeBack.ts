@@ -51,11 +51,11 @@ export interface UseEdgeSwipeBackResult<T extends HTMLElement> {
 
 /**
  * The same faint left-edge shadow SettingsModal's slide-in panel casts
- * (`shadow-[-12px_0_30px_rgba(0,0,0,0.12)]`), written by hand instead of as a
+ * (`shadow-[-12px_0_30px_rgba(60,45,20,0.12)]`), written by hand instead of as a
  * Tailwind class because it has to switch on and off every frame of the drag,
  * and a className toggle would mean a re-render per pointermove.
  */
-const DRAG_SHADOW = "-12px 0 30px rgba(0,0,0,0.12)";
+const DRAG_SHADOW = "-12px 0 30px rgba(60,45,20,0.12)";
 
 /**
  * Wires `EdgeBackGestureController` to one page element: the pointer handlers

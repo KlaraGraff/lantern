@@ -456,7 +456,7 @@ export default function ReaderNotesPanel({
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void commit(); }
         }}
         placeholder={t("notes.writePlaceholder")}
-        className="w-full resize-y rounded-md border border-accent/40 bg-bg-surface p-2 text-[12.5px] leading-5 text-text-primary outline-none focus:border-accent"
+        className="field-soft w-full resize-y rounded-md bg-bg-surface p-2 text-[12.5px] leading-5 text-text-primary outline-none"
       />
       <div className="mt-1 flex items-center justify-between gap-2">
         <p className="flex items-center gap-1 text-[10.5px] text-text-muted">

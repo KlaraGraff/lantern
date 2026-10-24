@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Copy, Check, FolderOpen, RefreshCw } from "lucide-react";
+import { COPIED_FEEDBACK_MS } from "../utils/clipboard";
 import { getReaderDiagnosticReport } from "../utils/readerDiagnostics";
 import { platform } from "../services/platform";
 
@@ -41,14 +42,14 @@ export default function ReaderDiagnosticsPanel({ open, onClose }: ReaderDiagnost
       .writeText(report)
       .then(() => {
         setCopied(true);
-        window.setTimeout(() => setCopied(false), 2000);
+        window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
       })
       .catch(() => {});
   };
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-4"
       role="dialog"
       aria-modal="true"
       aria-label={t("reader.diagnostics.title")}
@@ -103,7 +104,7 @@ export default function ReaderDiagnosticsPanel({ open, onClose }: ReaderDiagnost
             className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent-bg px-3 text-[13px] font-medium text-accent-text hover:opacity-80"
             onClick={copy}
           >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? <Check size={14} className="motion-check-pop" /> : <Copy size={14} />}
             {copied ? t("reader.diagnosticsCopied") : t("reader.copyDiagnostics")}
           </button>
         </div>

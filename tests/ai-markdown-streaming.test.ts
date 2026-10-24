@@ -9,6 +9,7 @@ import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 import AiMarkdown from "../src/components/ai-markdown/AiMarkdown.ts";
 import { settleStreamingTail } from "../src/components/ai-markdown/streaming-tail.ts";
+import { INK_STAGGER_MAX_MS, inkUnits } from "../src/components/ai-markdown/ink-reveal.ts";
 
 // Streaming is where a marker layer falls over: mid-stream the text ends in
 // half a marker, and a naive renderer flashes raw `==` or reshapes a line a
@@ -134,11 +135,45 @@ test("once a word has streamed in, no later chunk makes it disappear", () => {
   }
 });
 
+// The ink-reveal spans wrap every word while streaming; the semantics below
+// are about the elements around them.
+function withoutInk(html: string): string {
+  return html.replace(/<span class="ai-ink"[^>]*>([^<]*)<\/span>/g, "$1");
+}
+
 test("the finished answer renders all four semantics at once", () => {
-  const html = renderStreaming(FULL_ANSWER);
+  const html = withoutInk(renderStreaming(FULL_ANSWER));
   assert.ok(html.includes('class="answer-lead"'), "lead heading missing");
   assert.match(html, /<mark>present perfect<\/mark>/);
   assert.match(html, /<code>have taken<\/code>/);
   assert.ok(html.includes('role="note"'), "alert strip missing");
   assert.match(html, /<blockquote[\s>]/);
+});
+
+// --- ink reveal ------------------------------------------------------------
+
+test("ink units: one per Han character, one per Latin word with its space", () => {
+  assert.deepEqual(inkUnits("现在完成时"), ["现", "在", "完", "成", "时"]);
+  assert.deepEqual(inkUnits("The present perfect"), ["The ", "present ", "perfect"]);
+  assert.deepEqual(inkUnits("用 take up，不用"), ["用", " ", "take ", "up", "，", "不", "用"]);
+});
+
+test("streaming wraps prose in ink spans, staggered and capped", () => {
+  const html = renderStreaming("The present perfect links a past event to now and on and on.");
+  assert.ok(html.includes('<span class="ai-ink">The </span>'), html);
+  assert.ok(html.includes('style="animation-delay:18ms">present </span>'), html);
+  const delays = [...html.matchAll(/animation-delay:(\d+)ms/g)].map((m) => Number(m[1]));
+  assert.ok(Math.max(...delays) <= INK_STAGGER_MAX_MS, `delay past the cap: ${delays}`);
+});
+
+test("code stays whole while streaming — it is never inked letter by letter", () => {
+  const html = renderStreaming("Compare `have taken` with this.");
+  assert.match(html, /<code>have taken<\/code>/);
+});
+
+test("a settled answer carries no ink spans at all", () => {
+  const html = renderToStaticMarkup(
+    createElement(AiMarkdown, { size: "chat", streaming: false, children: "The present perfect." }),
+  );
+  assert.ok(!html.includes("ai-ink"), html);
 });

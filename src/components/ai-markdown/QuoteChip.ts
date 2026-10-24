@@ -32,7 +32,7 @@ export default function QuoteChip({
       onClick,
       className:
         "mx-0.5 inline-flex h-5 max-w-[12rem] translate-y-[-1px] items-center justify-center gap-1"
-        + " truncate rounded border border-accent/35 bg-accent-bg px-[7px] align-super"
+        + " truncate rounded bg-accent-bg px-[7px] align-super"
         + " text-[10px] font-medium leading-none tracking-[0.01em] text-accent-text hover:opacity-75",
     },
     quote.bookTitle,

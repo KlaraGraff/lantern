@@ -18,3 +18,12 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * How long a "copied" tick stays before the button goes back to "copy". Long
+ * enough to be seen after the eye returns from wherever the text was pasted,
+ * short enough that a stale tick never claims the clipboard still holds it.
+ * One number for every copy button, so none of them lingers longer than the
+ * rest.
+ */
+export const COPIED_FEEDBACK_MS = 2500;

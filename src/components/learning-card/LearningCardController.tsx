@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { useCoarsePointer } from "../../hooks/useCoarsePointer";
 import type { PanelSelectionSource } from "../../hooks/usePanelTextSelection";
+import { COPIED_FEEDBACK_MS } from "../../utils/clipboard";
 import { createUuid } from "../../utils/randomUuid";
 import type { AiErrorCode } from "../../utils/aiError";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
@@ -524,7 +525,7 @@ export default function LearningCardController({
       const content = [interaction.text, ...Object.values(result.modules).map(moduleText)].filter(Boolean).join("\n\n");
       await navigator.clipboard.writeText(content);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
+      window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
       return;
     }
     if (action === "collect") {

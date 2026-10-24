@@ -388,7 +388,7 @@ export default function ReaderXrayPanel({
             type="button"
             aria-label={t("readerXray.clear")}
             title={t("readerXray.clear")}
-            className="tap-44 grid size-7 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-black/5 hover:text-text-primary"
+            className="tap-44 grid size-7 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary"
             onClick={onClear}
           >
             <X size={15} />

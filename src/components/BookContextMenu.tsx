@@ -212,7 +212,7 @@ export default function BookContextMenu({
     <>
       <div
         ref={menuRef}
-        className="motion-pop fixed z-50 bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[220px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
+        className="motion-pop fixed z-50 bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[220px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(60,45,20,0.15),0px_8px_10px_0px_rgba(60,45,20,0.15)]"
         style={{ left: x, top: y }}
       >
         {/* Status indicator */}
@@ -368,7 +368,7 @@ export default function BookContextMenu({
       {showCollections && (
         <div
           ref={submenuRef}
-          className="motion-pop fixed z-[51] bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[200px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
+          className="motion-pop fixed z-[51] bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[200px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(60,45,20,0.15),0px_8px_10px_0px_rgba(60,45,20,0.15)]"
           style={submenuStyle}
           onMouseEnter={coarsePointer ? undefined : () => {
             if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);

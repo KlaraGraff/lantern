@@ -222,7 +222,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
             autoCorrect="off"
             autoCapitalize="off"
             rows={2}
-            className="flex-1 h-[60px] bg-bg-input rounded-lg px-3 py-2 text-[14px] text-text-primary placeholder:text-text-placeholder tracking-[-0.15px] leading-5 outline-none border border-transparent focus:border-accent resize-none"
+            className="field-soft flex-1 h-[60px] bg-bg-input rounded-lg px-3 py-2 text-[14px] text-text-primary placeholder:text-text-placeholder tracking-[-0.15px] leading-5 outline-none resize-none"
           />
           <button
             onClick={handleSend}

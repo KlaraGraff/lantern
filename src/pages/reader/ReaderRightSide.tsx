@@ -90,7 +90,7 @@ export default function ReaderRightSide({
           onPointerDown={onResizePointerDown}
           className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-accent/30 transition-colors"
         />
-        <div className="flex h-11 shrink-0 items-stretch gap-4 border-b border-border bg-bg-surface pl-4 pr-1.5">
+        <div className="flex h-11 shrink-0 items-stretch gap-4 bg-bg-surface pl-4 pr-1.5">
           <div role="tablist" aria-label={t("reader.side.rightViews")} className="flex items-stretch gap-4">
             {segment("ai", t("reader.side.conversation"))}
             {canShowTraces && segment("traces", t("reader.side.chapter"))}

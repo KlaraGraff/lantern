@@ -975,7 +975,7 @@ export default function Home() {
             {...unreachable(!drawerOpen)}
             onKeyDown={handleDrawerKeyDown}
             style={CLOSED_PANEL_STYLE}
-            className="fixed inset-y-0 left-0 z-50 w-[300px] max-w-[85%] touch-pan-y outline-none shadow-[8px_0_28px_0_rgba(0,0,0,0.22)]"
+            className="fixed inset-y-0 left-0 z-50 w-[300px] max-w-[85%] touch-pan-y outline-none shadow-[8px_0_28px_0_rgba(60,45,20,0.22)]"
           >
             <Sidebar {...sidebarProps} />
           </div>

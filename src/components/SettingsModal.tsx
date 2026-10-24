@@ -560,7 +560,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
         aria-modal="true"
         aria-label={t("settings.title")}
         tabIndex={-1}
-        className={`motion-dialog relative flex max-h-[760px] overflow-hidden rounded-lg border border-border bg-white shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] dark:bg-bg-surface ${
+        className={`motion-dialog relative flex max-h-[760px] overflow-hidden rounded-lg border border-border bg-white shadow-[0px_25px_50px_-12px_rgba(60,45,20,0.25)] dark:bg-bg-surface ${
           previewOpen
             ? "w-[min(780px,calc(100vw_-_32px))] xl:w-[min(1400px,calc(100vw_-_32px))]"
             : "w-[min(780px,calc(100vw_-_32px))]"
@@ -679,7 +679,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
             aria-modal={overlayPreviewOpen ? true : undefined}
             aria-label={toolsPreview ? t("settings.tools.preview") : t("settings.passiveVocab.preview")}
             tabIndex={overlayPreviewOpen ? -1 : undefined}
-            className="absolute inset-y-0 left-0 right-0 z-20 flex min-h-0 flex-col overflow-hidden border-l border-border bg-bg-surface p-4 shadow-[-12px_0_30px_rgba(0,0,0,0.12)] md:left-auto md:w-[min(680px,calc(100vw_-_260px))] xl:static xl:z-auto xl:min-w-[420px] xl:flex-1 xl:shadow-none"
+            className="absolute inset-y-0 left-0 right-0 z-20 flex min-h-0 flex-col overflow-hidden border-l border-border bg-bg-surface p-4 shadow-[-12px_0_30px_rgba(60,45,20,0.12)] md:left-auto md:w-[min(680px,calc(100vw_-_260px))] xl:static xl:z-auto xl:min-w-[420px] xl:flex-1 xl:shadow-none"
             style={{ scrollbarGutter: "stable" }}
           >
             <div className="mb-2 flex shrink-0 justify-end">

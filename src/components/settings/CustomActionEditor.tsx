@@ -230,7 +230,7 @@ export default function CustomActionEditor({
           placeholder={namePlaceholder}
           maxLength={MAX_CUSTOM_NAME_LENGTH}
           onChange={(event) => edit({ name: event.target.value })}
-          className="h-9 w-full rounded-md border border-border bg-bg-surface px-3 text-[12px] text-text-primary outline-none focus:border-accent"
+          className="field-soft h-9 w-full rounded-md bg-bg-surface px-3 text-[12px] text-text-primary outline-none"
         />
       </label>
       <label className="block">
@@ -242,7 +242,7 @@ export default function CustomActionEditor({
             maxLength={MAX_CUSTOM_PROMPT_LENGTH}
             rows={5}
             onChange={(event) => edit({ prompt: event.target.value })}
-            className="w-full resize-y rounded-md border border-border bg-bg-surface px-3 py-2 pr-10 text-[12px] leading-5 text-text-primary outline-none focus:border-accent touch:pr-14"
+            className="field-soft w-full resize-y rounded-md bg-bg-surface px-3 py-2 pr-10 text-[12px] leading-5 text-text-primary outline-none touch:pr-14"
           />
           <button
             type="button"
@@ -338,7 +338,7 @@ export default function CustomActionEditor({
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
-          className="h-8 min-w-0 flex-1 rounded-md border border-border bg-bg-surface px-2 text-[11px] text-text-primary outline-none focus:border-accent"
+          className="field-soft h-8 min-w-0 flex-1 rounded-md bg-bg-surface px-2 text-[11px] text-text-primary outline-none"
         />
         <Button variant="secondary" size="sm" onClick={() => onTest(testText.trim() || testPlaceholder, draft)}>
           <RotateCw size={13} />{t("settings.tools.custom.test")}

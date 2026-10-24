@@ -5,7 +5,7 @@ import type { DictionaryWord } from "../../hooks/useDictionary";
 import PronounceButton from "../speech/PronounceButton";
 import { entryClipboardText, glossOf, parseDefinition } from "./entry-text";
 import { vocabSourceText } from "./source-label";
-import { copyToClipboard } from "../../utils/clipboard";
+import { COPIED_FEEDBACK_MS, copyToClipboard } from "../../utils/clipboard";
 
 // The markdown renderer it pulls in is only worth paying for once a row is
 // actually opened — most of a vocab list never gets expanded in a session.
@@ -50,7 +50,7 @@ export default function VocabEntry({
     // what the user means when they say "copy this word".
     if (!await copyToClipboard(entryClipboardText(word, source))) return;
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
   };
 
   const handleDelete = async () => {
@@ -100,7 +100,7 @@ export default function VocabEntry({
           aria-label={t("vocab.entry.copy")}
           className="tap-44 flex size-6 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text"
         >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? <Check size={13} className="motion-check-pop" /> : <Copy size={13} />}
         </button>
         <button
           type="button"

@@ -205,7 +205,7 @@ function OpacityField({
             const typed = Number.parseInt(draft, 10);
             onChange(clampOpacity((Number.isNaN(typed) ? value : typed) + step));
           }}
-          className="h-7 w-14 rounded-md border border-border bg-bg-input pl-2 pr-5 text-[11px] tabular-nums text-text-primary outline-none focus:border-accent"
+          className="field-soft h-7 w-14 rounded-md bg-bg-input pl-2 pr-5 text-[11px] tabular-nums text-text-primary outline-none"
         />
         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-text-muted">%</span>
       </div>
@@ -300,7 +300,7 @@ function CustomColorButton({
               event.preventDefault();
               commitHex();
             }}
-            className="h-7 w-[88px] rounded-md border border-border bg-bg-input px-2 font-mono text-[11px] uppercase text-text-primary outline-none focus:border-accent"
+            className="field-soft h-7 w-[88px] rounded-md bg-bg-input px-2 font-mono text-[11px] uppercase text-text-primary outline-none"
           />
         </div>
       )}

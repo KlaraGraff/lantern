@@ -129,7 +129,7 @@ export default function OptimizeComparePanel({
               <textarea
                 value={leftText}
                 onChange={(event) => setLeftText(event.target.value)}
-                className="mt-2 min-h-[132px] w-full resize-y rounded-lg border border-border bg-bg-surface p-2.5 text-[12.3px] leading-[1.65] text-text-primary outline-none focus:border-accent"
+                className="field-soft mt-2 min-h-[132px] w-full resize-y rounded-lg bg-bg-surface p-2.5 text-[12.3px] leading-[1.65] text-text-primary outline-none"
               />
               <div className="mt-2 flex items-center gap-2">
                 <Button
@@ -156,7 +156,7 @@ export default function OptimizeComparePanel({
               <textarea
                 value={rightText}
                 onChange={(event) => setRightText(event.target.value)}
-                className="mt-2 min-h-[132px] w-full resize-y rounded-lg border border-lavender bg-bg-surface p-2.5 text-[12.3px] leading-[1.65] text-text-primary outline-none focus:border-accent"
+                className="field-soft mt-2 min-h-[132px] w-full resize-y rounded-lg border border-lavender bg-bg-surface p-2.5 text-[12.3px] leading-[1.65] text-text-primary outline-none"
               />
               <div className="mt-2 flex items-center gap-2">
                 <Button size="sm" disabled={rightText.length > hardLimit} onClick={() => onUse(rightText)}>
@@ -177,7 +177,7 @@ export default function OptimizeComparePanel({
                 value={direction}
                 onChange={(event) => setDirection(event.target.value)}
                 placeholder={t(`${prefix}.directionPlaceholder`)}
-                className="h-9 flex-1 rounded-lg border border-border bg-bg-surface px-3 text-[12.5px] text-text-primary outline-none focus:border-accent"
+                className="field-soft h-9 flex-1 rounded-lg bg-bg-surface px-3 text-[12.5px] text-text-primary outline-none"
               />
               <Button variant="secondary" size="sm" disabled={reoptimizing} onClick={() => void rerun()}>
                 {reoptimizing ? <Loader2 size={14} className="animate-spin" /> : null}

@@ -124,8 +124,8 @@ export default function ContinuousReadAloudToolbar({ state, labels, onStart, onP
     // running underneath it rather than stopping at it.
     className={`flex min-h-[62px] items-center gap-3.5 bg-bg-surface px-3.5 py-2 ${
       placement === "bottom"
-        ? "border-t border-border-light shadow-[0_-8px_20px_-14px_rgba(0,0,0,0.45)]"
-        : "border-b border-border-light shadow-[0_8px_20px_-14px_rgba(0,0,0,0.45)]"
+        ? "border-t border-border-light shadow-[0_-8px_20px_-14px_rgba(60,45,20,0.45)]"
+        : "border-b border-border-light shadow-[0_8px_20px_-14px_rgba(60,45,20,0.45)]"
     }`}
   >
     <span className={`grid size-7 shrink-0 place-items-center rounded-lg max-[720px]:hidden ${

@@ -8,7 +8,7 @@
 // sanitising pipeline — raw HTML is never parsed, URL schemes go through the
 // same transform the chat pipeline already used — and the remark plugins only
 // rearrange mdast nodes, so no marker can smuggle markup in.
-import { createElement as h, type ReactNode } from "react";
+import { createElement as h, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Info } from "lucide-react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
@@ -30,6 +30,7 @@ import {
   type LanternMarksOptions,
 } from "./plugins.ts";
 import { AI_PROSE_CHAT, AI_PROSE_COMPACT, ANSWER_LEAD_CLASS } from "./prose.ts";
+import { rehypeInkReveal } from "./ink-reveal.ts";
 import { settleStreamingTail } from "./streaming-tail.ts";
 
 export type AiProseSize = "chat" | "compact";
@@ -112,6 +113,12 @@ export default function AiMarkdown({
   quoteLabel,
   className,
 }: AiMarkdownProps) {
+  // Per-unit reveal delays for the answer now streaming; see ink-reveal.ts.
+  // A fresh list each time streaming starts, so the next answer through this
+  // surface staggers from its own first word.
+  const [ink, setInk] = useState(() => ({ streaming, delays: [] as number[] }));
+  if (ink.streaming !== streaming) setInk({ streaming, delays: [] });
+
   let text = children;
   if (streaming) text = settleStreamingTail(text);
   if (sources?.length) text = markdownWithCitationLinks(text, sources);
@@ -171,6 +178,7 @@ export default function AiMarkdown({
     },
     h(Markdown, {
       remarkPlugins: [remarkGfm, remarkLanternAlerts, [remarkLanternMarks, marksOptions]],
+      rehypePlugins: streaming ? [[rehypeInkReveal, { delays: ink.delays }]] : [],
       urlTransform: citationUrlTransform,
       components,
       ...(inline ? { allowedElements: INLINE_ELEMENTS, unwrapDisallowed: true } : {}),

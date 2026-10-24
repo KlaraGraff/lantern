@@ -16,7 +16,7 @@ import { focusWordFor } from "./focus-word";
 import { timeAgo } from "../utils/timeAgo";
 import BottomSheet from "./ui/BottomSheet";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
-import { copyToClipboard } from "../utils/clipboard";
+import { COPIED_FEEDBACK_MS, copyToClipboard } from "../utils/clipboard";
 
 interface ExplainPopoverProps {
   x: number;
@@ -371,7 +371,7 @@ export default function ExplainPopover({
   const handleCopy = async () => {
     if (!await copyToClipboard(contentRef.current)) return;
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
   };
 
   // Dismiss on Escape
@@ -487,7 +487,7 @@ export default function ExplainPopover({
             {content}
           </AiMarkdown>
           {streaming && (
-            <Loader2 size={12} className="inline-block ml-0.5 animate-spin text-text-muted" />
+            <Loader2 size={12} className="icon-inline ml-0.5 animate-spin text-text-muted" />
           )}
         </div>
       )}
@@ -507,7 +507,7 @@ export default function ExplainPopover({
             disabled={saved}
             className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
           >
-            {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+            {saved ? <Check size={14} className="motion-check-pop" /> : <BookmarkPlus size={14} />}
             {saved ? t("lookup.saved") : t("lookup.saveToDict")}
           </button>
         ) : customAction ? null : (
@@ -519,7 +519,7 @@ export default function ExplainPopover({
             disabled={!savedId || explanationSaved}
             className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
           >
-            {explanationSaved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+            {explanationSaved ? <Check size={14} className="motion-check-pop" /> : <BookmarkPlus size={14} />}
             {explanationSaved ? t("explain.explanationSaved") : t("explain.saveExplanation")}
           </button>
         )}
@@ -545,7 +545,7 @@ export default function ExplainPopover({
         onClick={handleCopy}
         className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70 touch:min-h-11 touch:text-[14px]"
       >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
+        {copied ? <Check size={14} className="motion-check-pop" /> : <Copy size={14} />}
         {copied ? t("explain.copied") : t("explain.copy")}
       </button>
     </div>

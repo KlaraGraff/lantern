@@ -108,7 +108,7 @@ export default function LearningCardNotes({
             value={draft}
             onChange={(event) => onDraftChange?.(event.target.value)}
             placeholder={t("learningCard.notes.placeholder")}
-            className="w-full resize-y rounded-md border border-border bg-bg-input px-3 py-2 text-[12px] leading-[1.5] text-text-primary outline-none placeholder:text-text-placeholder focus:border-accent"
+            className="field-soft w-full resize-y rounded-md bg-bg-input px-3 py-2 text-[12px] leading-[1.5] text-text-primary outline-none placeholder:text-text-placeholder"
           />
           {showScope ? (
             <div className="mt-2 flex w-fit rounded-md border border-border p-0.5" role="group" aria-label={t("learningCard.notes.scopeLabel")}>

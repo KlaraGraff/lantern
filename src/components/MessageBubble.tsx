@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
+import { AlertTriangle, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { AiChatRoute, ChatMessage, CitedSource, QuotedSource, SectionContextMetadata } from "../hooks/useAiChat";
@@ -65,7 +65,7 @@ function SectionContextNotice({
   const { t } = useTranslation();
   if (isViewportRoute(route)) {
     return (
-      <span className="mt-2 inline-flex rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
+      <span className="mt-2 inline-flex rounded bg-bg-muted px-1.5 py-0.5 text-[10px] text-text-muted">
         {t("ai.sectionContext.viewport")}
       </span>
     );
@@ -95,7 +95,7 @@ function SectionContextNotice({
 
   if (!context.truncated && !context.spoilerLimited) {
     return (
-      <span className="mt-2 inline-flex rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
+      <span className="mt-2 inline-flex rounded bg-bg-muted px-1.5 py-0.5 text-[10px] text-text-muted">
         {t("ai.sectionContext.source")}
       </span>
     );
@@ -149,6 +149,20 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
     reasoningWasInProgress.current = reasoningInProgress;
   }, [reasoningInProgress]);
 
+  // Seconds spent thinking, counted while it happens and kept once it ends.
+  // Only measured live: a reloaded conversation never saw the clock run, and
+  // shows the plain label rather than a guessed duration.
+  const [thinkingSeconds, setThinkingSeconds] = useState<number | null>(null);
+  useEffect(() => {
+    if (!reasoningInProgress) return;
+    const startedAt = Date.now();
+    setThinkingSeconds(0);
+    const timer = window.setInterval(() => {
+      setThinkingSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [reasoningInProgress]);
+
   useEffect(() => {
     if (!reasoningInProgress || !reasoningOpen) return;
     const element = reasoningRef.current;
@@ -170,7 +184,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
       // better signal than the guess.
       const canRetry = onRetry != null && isAiRetryableError(errorCode);
       return (
-        <div className={`bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
+        <div className={`bg-bg-surface rounded-xl px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
           <p className={`text-[14px] text-text-muted ${needsSettings || canRetry ? "mb-2" : ""}`}>
             {t(aiErrorMessageKey(errorCode))}
           </p>
@@ -226,34 +240,50 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
     };
 
     return (
-      <div ref={bubbleRef} className={`group bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
+      <div ref={bubbleRef} className={`group bg-bg-surface rounded-xl px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
         {showReasoning && (
-          <div className={msg.content ? "mb-2 border-b border-border pb-2" : ""}>
+          <div className={msg.content ? "mb-2" : ""}>
             <button
               type="button"
               aria-expanded={reasoningOpen}
               onClick={() => setReasoningExpanded(!reasoningOpen)}
               className="flex w-full items-center gap-1.5 text-left text-[12px] font-medium text-text-muted hover:text-text-primary cursor-pointer"
             >
-              {reasoningOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              <ChevronRight
+                size={13}
+                aria-hidden="true"
+                className={`shrink-0 transition-transform duration-[var(--motion-fast)] ease-[var(--ease-out-soft)] motion-reduce:transition-none ${reasoningOpen ? "rotate-90" : ""}`}
+              />
               {reasoningInProgress && <Loader2 size={12} className="shrink-0 animate-spin" aria-hidden="true" />}
               <span>{t("ai.reasoning")}</span>
+              {/* Tabular figures: the counter ticks every second and must not
+                  nudge the label beside it as 9 becomes 10. */}
+              {thinkingSeconds !== null && (
+                <span className="tabular-nums font-normal">
+                  {t("ai.thinkingSeconds", { seconds: thinkingSeconds })}
+                </span>
+              )}
             </button>
-            {reasoningOpen && (
-              <div
-                ref={reasoningRef}
-                aria-busy={reasoningInProgress}
-                className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-[12px] leading-[18px] text-text-muted"
-              >
-                {hasReasoning ? msg.reasoning : (
-                  <div role="status" aria-label={t("ai.thinking")} className="space-y-2 py-0.5">
-                    <span className="sr-only">{t("ai.thinking")}</span>
-                    <div aria-hidden="true" className="h-2.5 w-4/5 animate-pulse rounded bg-border/70" />
-                    <div aria-hidden="true" className="h-2.5 w-3/5 animate-pulse rounded bg-border/50" />
-                  </div>
-                )}
+            {/* Grows on a grid track (`.motion-collapse`) — no height is
+                measured, so it follows the reasoning as it streams in. Kept
+                mounted while closed so the track has something to animate. */}
+            <div className="motion-collapse" data-open={reasoningOpen ? "true" : "false"} aria-hidden={!reasoningOpen}>
+              <div>
+                <div
+                  ref={reasoningRef}
+                  aria-busy={reasoningInProgress}
+                  className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg bg-bg-muted px-2.5 py-2 text-[12px] leading-[18px] text-text-muted"
+                >
+                  {hasReasoning ? msg.reasoning : (
+                    <div role="status" aria-label={t("ai.thinking")} className="space-y-2 py-0.5">
+                      <span className="sr-only">{t("ai.thinking")}</span>
+                      <div aria-hidden="true" className="h-2.5 w-4/5 animate-pulse rounded bg-border/70" />
+                      <div aria-hidden="true" className="h-2.5 w-3/5 animate-pulse rounded bg-border/50" />
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
         {msg.aliasResolution && (
@@ -278,7 +308,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
               {msg.content}
             </AiMarkdown>
             {streaming && msg.content && isLast && (
-              <Loader2 size={14} className="inline-block ml-1 animate-spin text-text-muted" />
+              <Loader2 size={14} className="icon-inline ml-1 animate-spin text-text-muted" />
             )}
           </div>
         ) : null}
@@ -289,7 +319,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
             unwrapped row of chips overflows the bubble and gives the whole
             message list a horizontal scrollbar. */}
         {citedSources.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
+          <div className="mt-3 flex flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] text-text-muted">{t("ai.sources")}</span>
             {citedSources.map((source) => (
               <CitationChip key={source.marker} source={source} onClick={() => onNavigateToSource?.(source)} />
@@ -301,7 +331,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
             grounded the answer should not have to check each chip for whether
             it will take them somewhere else. */}
         {usedQuotes.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
+          <div className="mt-3 flex flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] text-text-muted">{t("ai.quotedExamples")}</span>
             {usedQuotes.map((quote) => (
               <QuoteChip
@@ -319,13 +349,13 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
         {/* A conversation that quietly loses its opening reads as the
             assistant forgetting; if the budget had to drop turns, say so. */}
         {(msg.contextBudget?.historyOmitted ?? 0) > 0 && !(streaming && isLast) && (
-          <div className="mt-2 border-t border-border pt-2 text-[11px] text-text-muted">
+          <div className="mt-3 text-[11px] text-text-muted">
             {t("ai.contextBudget.historyOmitted", { messages: msg.contextBudget?.historyOmitted })}
           </div>
         )}
         {msg.spoilerGuard?.active && !(streaming && isLast) && (
           msg.spoilerGuard.wholeBookIntent ? (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-[11px] text-text-muted">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-muted">
               <span>{t("ai.spoilerGuard.notice", { progress: msg.spoilerGuard.progress })}</span>
               {onRetryWithWholeBook && msg.dbId && isLast && (
                 <button
@@ -340,7 +370,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
           ) : (
             <span
               title={t("ai.spoilerGuard.badgeHint")}
-              className="mt-2 inline-flex rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted"
+              className="mt-2 inline-flex rounded bg-bg-muted px-1.5 py-0.5 text-[10px] text-text-muted"
             >
               {t("ai.spoilerGuard.badge")}
             </span>
@@ -370,7 +400,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
           <button
             key={`${quote.kind ?? "passage"}:${quote.text}`}
             onClick={() => quote.cfi && onNavigateToCfi?.(quote.cfi)}
-            className={`border-l-2 border-[#c084fc] pl-3 pt-0.5 text-left ${
+            className={`border-l-2 border-lavender pl-3 pt-0.5 text-left ${
               quote.cfi && onNavigateToCfi ? "cursor-pointer hover:opacity-70" : "cursor-default"
             }`}
           >
@@ -386,7 +416,7 @@ function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateTo
             </p>
           </button>
         ))}
-        <div className="bg-[rgba(192,132,252,0.15)] rounded-lg px-[13px] py-[13px]">
+        <div className="bg-bg-input rounded-xl px-[13px] py-[13px]">
           <p className="text-[14px] text-text-primary leading-5 tracking-[-0.15px]">
             {msg.content}
           </p>
