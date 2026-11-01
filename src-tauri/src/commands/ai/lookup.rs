@@ -101,7 +101,7 @@ pub(crate) fn lookup_memory(
              FROM vocab_words v
              LEFT JOIN books b ON b.id = v.book_id
              WHERE v.word = ?1 COLLATE NOCASE
-             ORDER BY CASE v.mastery WHEN 'mastered' THEN 0 WHEN 'learning' THEN 1 ELSE 2 END,
+             ORDER BY CASE v.mastery WHEN 'mastered' THEN 0 WHEN 'familiar' THEN 1 WHEN 'learning' THEN 2 ELSE 3 END,
                       v.updated_at DESC
              LIMIT 1",
             rusqlite::params![normalized],
@@ -329,6 +329,19 @@ mod tests {
 
         let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("\"mastery\":\"mastered\""), "{block}");
+    }
+
+    // `familiar` sits between `learning` and `mastered` (`mastery::Tier`): the
+    // exposure engine promotes a word there because the reader already knows it
+    // better than one they are still learning.
+    #[test]
+    fn familiar_mastery_outranks_learning() {
+        let conn = library_with_books(&["b1", "b2"]);
+        save_word(&conn, "v1", "b1", "resign", "learning");
+        save_word(&conn, "v2", "b2", "resign", "familiar");
+
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
+        assert!(block.contains("\"mastery\":\"familiar\""), "{block}");
     }
 
     // The card's marker names a book, so the mastery row and the title shown

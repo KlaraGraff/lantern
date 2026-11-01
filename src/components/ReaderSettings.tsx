@@ -373,8 +373,11 @@ function ReaderSettings({
     if (!open) return;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      // Never steal Escape from a dialog layered above us.
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      // Never steal Escape from a dialog layered above us. On the narrow layout
+      // this panel *is* such a dialog, so it has to be excluded — matching any
+      // modal dialog made Escape a no-op on a phone.
+      const layered = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]'));
+      if (layered.some((dialog) => !popoverRef.current?.contains(dialog))) return;
       const target = event.target as HTMLElement | null;
       if (
         target

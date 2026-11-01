@@ -189,28 +189,22 @@ fn enumerate_bucket_keys(
     Ok(keys.into_iter().collect())
 }
 
+/// The oldest lookup in scope. Only `lookup_records` may anchor the trend:
+/// it is the only table the buckets are filled from, and a saved word's
+/// `created_at` is the day the word was first *seen*, which can be decades
+/// before the oldest lookup the retention sweep left behind.
 fn earliest_activity(
     conn: &rusqlite::Connection,
     scope_book_id: Option<&str>,
 ) -> AppResult<Option<i64>> {
-    let earliest_lookup: Option<i64> = conn
+    Ok(conn
         .query_row(
             "SELECT MIN(created_at) FROM lookup_records WHERE (?1 IS NULL OR book_id = ?1)",
             params![scope_book_id],
-            |row| row.get(0),
+            |row| row.get::<_, Option<i64>>(0),
         )
         .optional()?
-        .flatten();
-    let earliest_word: Option<i64> = conn
-        .query_row(
-            "SELECT MIN(created_at) FROM vocab_words
-              WHERE list_status = 'confirmed' AND (?1 IS NULL OR book_id = ?1)",
-            params![scope_book_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .flatten();
-    Ok([earliest_lookup, earliest_word].into_iter().flatten().min())
+        .flatten())
 }
 
 pub(crate) fn get_vocab_learning_dashboard_inner(
@@ -670,6 +664,37 @@ mod tests {
         let dashboard = get_vocab_learning_dashboard_inner(&db, &query).unwrap();
         assert!(dashboard.trend.is_empty());
         assert_eq!(dashboard.lookup_count, 0);
+    }
+
+    /// The trend plots `lookup_records` only, so its span must be the span of
+    /// lookups. A saved word carries the date it was first *seen*, which can
+    /// be decades before the oldest surviving lookup (records are pruned),
+    /// and using it here stretches the chart into years of empty buckets.
+    #[test]
+    fn lookup_trend_ignores_saved_words_without_lookups() {
+        let (_dir, db) = test_db();
+        insert_book(&db, "b1");
+        // Saved in 2001, never looked up: a confirmed word is real activity,
+        // but it is not a lookup and so belongs to no bar on this chart.
+        insert_vocab_word(
+            &db,
+            "v1",
+            "b1",
+            "learning",
+            "confirmed",
+            978_307_200_000,
+            None,
+        );
+
+        let query = base_query(946_684_800_000, chrono::Utc::now().timestamp_millis());
+        let dashboard = get_vocab_learning_dashboard_inner(&db, &query).unwrap();
+        assert_eq!(dashboard.new_words_count, 1);
+        assert!(
+            dashboard.trend.is_empty(),
+            "no lookups means no lookup buckets, got {} buckets starting at {:?}",
+            dashboard.trend.len(),
+            dashboard.trend.first().map(|bucket| bucket.date.clone())
+        );
     }
 
     #[test]

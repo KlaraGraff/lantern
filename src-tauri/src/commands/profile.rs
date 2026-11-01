@@ -1249,26 +1249,31 @@ pub async fn run_summarize<R: Runtime>(
         .conn
         .lock()
         .map_err(|error| AppError::Other(error.to_string()))?;
-    let cards_before = active_cards_json(&conn)?;
+    // One transaction: a batch is all-or-nothing. Cards written without the
+    // revision row that explains them can never be attributed — and the
+    // failed half would show a profile the model never actually produced.
+    let tx = conn.unchecked_transaction()?;
+    let cards_before = active_cards_json(&tx)?;
     for card in &cards {
         upsert_card(
-            &conn,
+            &tx,
             &card.slot,
             &card.conclusion,
             &card.evidence,
             payloads.get(card.slot.as_str()).map(String::as_str),
             now,
         )?;
-        conn.execute(
+        tx.execute(
             "INSERT INTO profile_events (slot, event_type, user_text, created_at) VALUES (?1, 'rewrite', NULL, ?2)",
             params![card.slot, now],
         )?;
     }
-    let cards_after = active_cards_json(&conn)?;
-    conn.execute(
+    let cards_after = active_cards_json(&tx)?;
+    tx.execute(
         "INSERT INTO profile_revisions (cards_before, cards_after, reason, created_at) VALUES (?1, ?2, ?3, ?4)",
         params![cards_before, cards_after, reason, now],
     )?;
+    tx.commit()?;
     Ok(cards.len())
 }
 
@@ -1717,16 +1722,20 @@ pub fn profile_move_card_inner(
     if full_text.chars().count() as i64 > limit {
         return Err(AppError::Other("PROFILE_TEXT_TOO_LONG".to_string()));
     }
-    write_setting(&conn, USER_TEXT_KEY, full_text)?;
-    conn.execute(
+    // One transaction: the reader's text and the card must never disagree
+    // about whether the move happened.
+    let tx = conn.unchecked_transaction()?;
+    write_setting(&tx, USER_TEXT_KEY, full_text)?;
+    tx.execute(
         "UPDATE profile_cards SET inserted_text = ?1, updated_at = ?2 WHERE slot = ?3",
         params![inserted_text, now, slot],
     )?;
-    conn.execute(
+    tx.execute(
         "INSERT INTO profile_events (slot, event_type, user_text, created_at) VALUES (?1, 'move', ?2, ?3)",
         params![slot, inserted_text, now],
     )?;
-    recompute_and_store(&conn, slot, now)?;
+    recompute_and_store(&tx, slot, now)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -1783,22 +1792,26 @@ pub fn profile_undo_move_inner(db: &Db, slot: &str) -> AppResult<()> {
     if status != "moved" {
         return Err(AppError::Other("PROFILE_CARD_NOT_MOVED".to_string()));
     }
+    // One transaction: the reader's text and the card must never disagree
+    // about whether the undo happened.
+    let tx = conn.unchecked_transaction()?;
     if let Some(text) = inserted_text.as_deref().filter(|text| !text.is_empty()) {
-        let current = read_setting(&conn, USER_TEXT_KEY).unwrap_or_default();
+        let current = read_setting(&tx, USER_TEXT_KEY).unwrap_or_default();
         let updated = remove_inserted_text(&current, text);
         if updated != current {
-            write_setting(&conn, USER_TEXT_KEY, &updated)?;
+            write_setting(&tx, USER_TEXT_KEY, &updated)?;
         }
     }
-    conn.execute(
+    tx.execute(
         "UPDATE profile_cards SET inserted_text = NULL, updated_at = ?1 WHERE slot = ?2",
         params![now, slot],
     )?;
-    conn.execute(
+    tx.execute(
         "INSERT INTO profile_events (slot, event_type, user_text, created_at) VALUES (?1, 'undo', NULL, ?2)",
         params![slot, now],
     )?;
-    recompute_and_store(&conn, slot, now)?;
+    recompute_and_store(&tx, slot, now)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -1850,11 +1863,15 @@ pub fn profile_delete_all_inner(db: &Db) -> AppResult<()> {
         .conn
         .lock()
         .map_err(|error| AppError::Other(error.to_string()))?;
-    conn.execute("DELETE FROM profile_cards", [])?;
-    conn.execute("DELETE FROM profile_events", [])?;
-    conn.execute("DELETE FROM profile_revisions", [])?;
-    delete_setting(&conn, USER_TEXT_KEY)?;
-    delete_setting(&conn, DRAFT_TEXT_KEY)?;
+    // One transaction: a half-wiped profile (cards gone, the reader's own
+    // text still there) is a state no button can produce on purpose.
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM profile_cards", [])?;
+    tx.execute("DELETE FROM profile_events", [])?;
+    tx.execute("DELETE FROM profile_revisions", [])?;
+    delete_setting(&tx, USER_TEXT_KEY)?;
+    delete_setting(&tx, DRAFT_TEXT_KEY)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -2797,6 +2814,108 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // --- atomicity of the multi-statement writes ---
+
+    /// Makes every later insert into `profile_events` fail, so a test can stop
+    /// a move/undo between its writes without touching the code under test.
+    fn fail_event_inserts(db: &Db) {
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER injected_event_failure BEFORE INSERT ON profile_events
+             BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn delete_all_rolls_back_when_a_later_delete_fails() {
+        let (_dir, db) = setup();
+        let now = now_ms();
+        insert_card(&db, "vocab_explain", "active", None, now);
+        profile_save_text_inner(&db, "my notes").unwrap();
+        {
+            // Fires on the `settings` deletes, which run after the three table
+            // wipes — the farthest point from the start of the command.
+            let conn = db.conn.lock().unwrap();
+            conn.execute_batch(
+                "CREATE TRIGGER injected_settings_failure BEFORE DELETE ON settings
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+        }
+
+        assert!(profile_delete_all_inner(&db).is_err());
+
+        let view = profile_get_inner(&db).unwrap();
+        assert_eq!(
+            view.cards.len(),
+            1,
+            "a delete-all that failed must not leave the cards already wiped"
+        );
+        assert_eq!(view.user_text, "my notes");
+    }
+
+    #[test]
+    fn move_card_rolls_back_user_text_when_the_event_write_fails() {
+        let (_dir, db) = setup();
+        let now = now_ms();
+        insert_card(&db, "vocab_explain", "active", None, now);
+        profile_save_text_inner(&db, "existing notes").unwrap();
+        fail_event_inserts(&db);
+
+        let result = profile_move_card_inner(
+            &db,
+            "vocab_explain",
+            "existing notes\n词义讲解：更细致",
+            "词义讲解：更细致",
+        );
+        assert!(result.is_err());
+
+        let view = profile_get_inner(&db).unwrap();
+        assert_eq!(
+            view.user_text, "existing notes",
+            "a move that failed must not leave its inserted line in the reader's text"
+        );
+        let card = view
+            .cards
+            .iter()
+            .find(|card| card.slot == "vocab_explain")
+            .unwrap();
+        assert_eq!(card.status, CardStatus::Active);
+    }
+
+    #[test]
+    fn undo_keeps_the_inserted_line_when_the_event_write_fails() {
+        let (_dir, db) = setup();
+        let now = now_ms();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO profile_cards
+                   (slot, conclusion, evidence, status, inserted_text, created_at, updated_at)
+                 VALUES ('vocab_explain', 'conclusion', '', 'moved', '词义讲解：更细致', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            write_setting(&conn, USER_TEXT_KEY, "existing notes\n词义讲解：更细致").unwrap();
+        }
+        fail_event_inserts(&db);
+
+        assert!(profile_undo_move_inner(&db, "vocab_explain").is_err());
+
+        let view = profile_get_inner(&db).unwrap();
+        assert_eq!(
+            view.user_text, "existing notes\n词义讲解：更细致",
+            "an undo that failed must not have stripped the line out of the reader's text"
+        );
+        let card = view
+            .cards
+            .iter()
+            .find(|card| card.slot == "vocab_explain")
+            .unwrap();
+        assert_eq!(card.status, CardStatus::Moved);
+    }
+
     // --- delete_all scope ---
 
     #[test]
@@ -3117,6 +3236,48 @@ mod tests {
             })
             .unwrap();
         assert_eq!(revision_count, 1);
+    }
+
+    #[tokio::test]
+    async fn summarize_write_back_rolls_back_cards_when_the_revision_write_fails() {
+        let (_dir, db) = setup();
+        let recent = now_ms() - DAY_MS;
+        for i in 0..6 {
+            insert_followup(&db, &format!("f{i}"), "vocabulary", recent, true);
+        }
+        {
+            // Fails the *last* write of the batch, after every card and
+            // rewrite event has already been written.
+            let conn = db.conn.lock().unwrap();
+            conn.execute_batch(
+                "CREATE TRIGGER injected_revision_failure BEFORE INSERT ON profile_revisions
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+        }
+
+        let secrets = crate::secrets::Secrets::init_in_memory().unwrap();
+        let summarize_body = sse_answer(
+            r#"{"cards":[{"slot":"vocab_explain","conclusion":"Prefers contrastive nuance.","evidence":"6 follow-ups"}]}"#,
+        );
+        configure_fake_provider(&db, &secrets, summarize_body).await;
+
+        let app = tauri::test::mock_app();
+        let result = run_summarize(app.handle(), &db, &secrets, "user", "batch").await;
+        assert!(result.is_err(), "the failed revision write must surface");
+
+        let conn = db.reader();
+        let cards: i64 = conn
+            .query_row("SELECT COUNT(*) FROM profile_cards", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            cards, 0,
+            "a batch that could not record its revision must not leave its cards behind"
+        );
+        let events: i64 = conn
+            .query_row("SELECT COUNT(*) FROM profile_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(events, 0, "nor the rewrite events that describe them");
     }
 
     // --- 步骤 3: compress vs. tidy prompt construction ---

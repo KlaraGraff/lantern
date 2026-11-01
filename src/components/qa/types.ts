@@ -61,7 +61,9 @@ export function toExplanationEntry(explanation: Explanation): ExplanationQaEntry
 /** A thread only earns the "继续问了 N 轮" line once there's a real second
  * round to point at — a lone Q+A reads the same as a saved explanation. */
 export function chatRounds(chat: ChatSummary): number {
-  return Math.max(1, Math.ceil((chat.message_count ?? 0) / 2));
+  // The first question is not a round of *follow-ups*: rounding every message
+  // pair up counted it as one and left the line one too high from then on.
+  return Math.max(1, Math.ceil((chat.message_count ?? 0) / 2) - 1);
 }
 
 export function isMultiRoundChat(chat: ChatSummary): boolean {

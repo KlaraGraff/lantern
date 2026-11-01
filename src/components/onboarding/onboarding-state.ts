@@ -34,6 +34,25 @@ export function afterAdvance(step: OnboardingStep): OnboardingStep | "done" {
   return step >= 3 ? "done" : ((step + 1) as OnboardingStep);
 }
 
+/**
+ * Which of the three header sentences the card shows, and the number it needs.
+ *
+ * `onboarding.progress.stepOf` counts a fixed three ("Step 1 of 3"), but the
+ * card has a fourth step — the auto-analysis disclosure that follows a
+ * completed step 3 — so anything past the third is named as the last step
+ * rather than claiming a fourth of three.
+ */
+export function onboardingProgressLabel(
+  step: OnboardingStep,
+  phase: "steps" | "review",
+): { key: "onboarding.progress.done" }
+  | { key: "onboarding.progress.last" }
+  | { key: "onboarding.progress.stepOf"; step: number } {
+  if (phase === "review") return { key: "onboarding.progress.done" };
+  if (step >= 3) return { key: "onboarding.progress.last" };
+  return { key: "onboarding.progress.stepOf", step };
+}
+
 /** Written once the reader has been told what runs on its own. */
 export const AUTO_ANALYSIS_INTRO_KEY = "auto_analysis_intro_shown";
 

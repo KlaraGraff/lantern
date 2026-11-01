@@ -129,6 +129,23 @@ impl LearningCardRequestShape {
     }
 }
 
+/// A translation module repeats the explanation when both are written in the
+/// same language, so it is dropped from the request. Not when it is the only
+/// module left, though: a card asked for `"modules":{}` has nothing to answer
+/// and the reader gets a protocol error instead of a card.
+fn suppress_redundant_translation(
+    request: &mut LearningCardRequestShape,
+    explanation_mode: &str,
+    cefr: &str,
+    translation_language: &str,
+) {
+    if request.modules.len() > 1
+        && explanation_matches_translation(explanation_mode, cefr, translation_language)
+    {
+        request.remove_module("target_translation");
+    }
+}
+
 fn learning_modules_for_kind(kind: &str) -> Option<&'static [&'static str]> {
     match kind {
         "word" => Some(&[
@@ -914,9 +931,12 @@ pub async fn ai_learning_card(
             memory,
         )
     };
-    if explanation_matches_translation(&explanation_mode, &cefr, &translation_language) {
-        request.remove_module("target_translation");
-    }
+    suppress_redundant_translation(
+        &mut request,
+        &explanation_mode,
+        &cefr,
+        &translation_language,
+    );
     let mut system_prompt = learning_card_system_prompt(
         &kind,
         &request,
@@ -1407,5 +1427,39 @@ mod tests {
             .modules
             .iter()
             .any(|module| module.id == "context_meaning"));
+    }
+
+    // A card with only `target_translation` enabled is a valid config (the
+    // reader guard only refuses a card with no enabled module). Dropping the
+    // redundant translation must not leave the request with nothing to ask
+    // for: the prompt would then demand `"modules":{}` and every answer would
+    // be rejected as an empty card.
+    #[test]
+    fn sole_translation_module_is_not_dropped() {
+        let config = serde_json::json!({
+            "version": 2,
+            "cards": {
+                "word": {
+                    "modules": [{"id": "target_translation", "enabled": true}]
+                }
+            }
+        });
+        let mut request = learning_request_from_config("word", &config.to_string()).unwrap();
+        assert!(explanation_matches_translation("chinese", "B1", "zh"));
+
+        suppress_redundant_translation(&mut request, "chinese", "B1", "zh");
+
+        assert_eq!(
+            request
+                .modules
+                .iter()
+                .map(|module| module.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["target_translation"]
+        );
+        let prompt =
+            learning_card_system_prompt("word", &request, "chinese", "B1", "thorough", "zh")
+                .unwrap();
+        assert!(prompt.contains("\"target_translation\""), "{prompt}");
     }
 }

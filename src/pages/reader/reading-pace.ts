@@ -68,8 +68,12 @@ export function derivePaceSample(
   const elapsedMs = next.timestampMs - previous.timestampMs;
   if (elapsedMs < PACE_MIN_ELAPSED_MS || elapsedMs > PACE_MAX_ELAPSED_MS) return null;
 
+  // Zero is a real answer, not a rejection: whole-book progress is an integer
+  // percentage, so in a book long enough that one screen is under 1% most
+  // ordinary turns leave it unchanged. Rejecting those starved the window
+  // and left the time-left modes on "calculating…" for a whole session.
   const percentDelta = next.progress - previous.progress;
-  if (percentDelta <= 0) return null;
+  if (percentDelta < 0) return null;
 
   return { elapsedMs, pageDelta, percentDelta };
 }
@@ -95,7 +99,11 @@ export function averageSecondsPerPage(window: readonly PaceSample[]): number | n
   return totalPages > 0 ? totalSeconds / totalPages : null;
 }
 
-/** Average seconds per whole-book percentage point across the window. */
+/**
+ * Average seconds per whole-book percentage point across the window: all the
+ * time read over all the percent moved, so turns that left the integer percent
+ * unchanged still count their seconds toward the next point.
+ */
 export function averageSecondsPerPercent(window: readonly PaceSample[]): number | null {
   if (window.length < PACE_MIN_SAMPLES) return null;
   const totalSeconds = window.reduce((sum, sample) => sum + sample.elapsedMs / 1000, 0);
