@@ -857,7 +857,7 @@ pub fn load(db: &Db, book_id: &str) -> AppResult<BookReaderCoverage> {
         return Ok(BookReaderCoverage::empty(book_id, CoverageStatus::Pending));
     };
     if let Some(stored) = row.source_sha256.as_deref() {
-        let current = crate::ai::grounding::index::current_source_sha256(db, book_id)?;
+        let current = crate::commands::book_difficulty::current_artifact_sha256(db, book_id)?;
         row.stale = current.as_deref() != Some(stored);
     }
     Ok(row)
@@ -887,7 +887,7 @@ fn ensure_word_counts(db: &Db, book_id: &str) -> AppResult<WordList> {
         _ => {}
     }
 
-    let current = crate::ai::grounding::index::current_source_sha256(db, book_id)?;
+    let current = crate::commands::book_difficulty::current_artifact_sha256(db, book_id)?;
     let (counts, stored) = load_word_counts(db, book_id)?;
     if !counts.is_empty() && (current.is_none() || stored == current) {
         return Ok(WordList::Ready(counts, stored));

@@ -902,12 +902,15 @@ fn copy_dir_contents_with_progress(
         let entry = entry?;
         let name = entry.file_name();
         if is_icloud_placeholder(&name) {
-            let real = icloud_real_from_placeholder(src, name).ok_or_else(|| {
-                AppError::Other(format!(
-                    "invalid iCloud placeholder under {}",
+            // A stray file named `.icloud` names nothing to bring back: skip
+            // it rather than abort the whole copy-back.
+            let Some(real) = icloud_real_from_placeholder(src, name) else {
+                log::warn!(
+                    "skipping invalid iCloud placeholder under {}",
                     src.display()
-                ))
-            })?;
+                );
+                continue;
+            };
             let file_name = real.file_name().ok_or_else(|| {
                 AppError::Other(format!("invalid iCloud file path: {}", real.display()))
             })?;

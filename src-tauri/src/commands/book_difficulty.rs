@@ -548,13 +548,20 @@ pub fn load(db: &Db, book_id: &str) -> AppResult<BookDifficulty> {
         // `books.source_sha256`: a conversion book is computed from the EPUB
         // converted on this device, and the original file's hash can never
         // match it.
-        let current = match resolve_readable_source(db, book_id)? {
-            BookSource::Ready(source) => source.sha256,
-            BookSource::Missing | BookSource::Unsupported { .. } => None,
-        };
+        let current = current_artifact_sha256(db, book_id)?;
         row.stale = current.as_deref() != Some(stored);
     }
     Ok(row)
+}
+
+/// The hash of the file difficulty and coverage are computed from: the
+/// converted EPUB for a conversion book, the source otherwise. Rows store this
+/// hash, so staleness checks must compare against it, not `books.source_sha256`.
+pub(crate) fn current_artifact_sha256(db: &Db, book_id: &str) -> AppResult<Option<String>> {
+    Ok(match resolve_readable_source(db, book_id)? {
+        BookSource::Ready(source) => source.sha256,
+        BookSource::Missing | BookSource::Unsupported { .. } => None,
+    })
 }
 
 /// Read the book and write the result. Synchronous and self-contained: the
