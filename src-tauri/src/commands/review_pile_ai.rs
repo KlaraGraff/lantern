@@ -268,7 +268,11 @@ fn parse_curation_response(text: &str, live_piles: &[ReviewPile]) -> AppResult<V
         .collect();
 
     let mut groups = Vec::new();
-    for raw_group in raw.groups.into_iter().take(MAX_GROUPS) {
+    // `MAX_GROUPS` bounds what is *accepted*, so it has to be applied after
+    // the per-group validation below: cutting the raw list first would let a
+    // run of hallucinated groups at the front push every valid one past the
+    // cut, turning a usable response into "nothing to show".
+    for raw_group in raw.groups {
         let label = truncate_chars(raw_group.label.trim(), MAX_LABEL_CHARS);
         if label.is_empty() {
             continue;
@@ -300,6 +304,9 @@ fn parse_curation_response(text: &str, live_piles: &[ReviewPile]) -> AppResult<V
             continue;
         }
         groups.push(CuratedGroup { label, piles });
+        if groups.len() == MAX_GROUPS {
+            break;
+        }
     }
     Ok(groups)
 }
@@ -863,6 +870,26 @@ mod tests {
         );
         let groups = parse_curation_response(&response, &piles).unwrap();
         assert_eq!(groups[0].label.chars().count(), MAX_LABEL_CHARS);
+    }
+
+    /// The 24-group cap is a bound on what gets *accepted*, not on what the
+    /// model may have said first. Applying it to the raw list before
+    /// validation let a run of hallucinated groups at the front push a valid
+    /// group past the cut and throw it away, so a response that did contain
+    /// usable grouping surfaced as nothing at all.
+    #[test]
+    fn curation_cap_applies_after_validation_not_before() {
+        let piles = sample_live_piles();
+        let invented = r#"{"label":"invented","piles":[{"pileKey":"does_not_exist"}]}"#;
+        let valid = r#"{"label":"real","piles":[{"pileKey":"repeat_lookups_in_book:book-a"}]}"#;
+        let groups_json = std::iter::repeat_n(invented, MAX_GROUPS)
+            .chain(std::iter::once(valid))
+            .collect::<Vec<_>>()
+            .join(",");
+        let response = format!(r#"{{"groups":[{groups_json}]}}"#);
+        let groups = parse_curation_response(&response, &piles).unwrap();
+        assert_eq!(groups.len(), 1, "the one valid group must survive the cap");
+        assert_eq!(groups[0].label, "real");
     }
 
     #[test]
