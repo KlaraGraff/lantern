@@ -49,18 +49,11 @@ test("a turn that regresses whole-book progress is still rejected", () => {
 // The other half of the same defect: whole-book progress is an integer, so a
 // turn can carry no percentage at all. Charging its seconds against the percent
 // some other turn covered would inflate "time left in the book".
-test("book time only charges seconds to the samples that covered a percentage point", () => {
+test("book time spreads every turn's seconds over the percent moved", () => {
   const slow = { elapsedMs: 12_000, pageDelta: 1, percentDelta: 0 };
   const mover = { elapsedMs: 12_000, pageDelta: 1, percentDelta: 1 };
-  const window = [slow, mover, slow, mover, slow, mover];
-  // 36s of the 72s actually moved 3 percentage points -> 12s per point.
-  assert.equal(averageSecondsPerPercent(window), 12);
-});
-
-test("book time waits for enough percentage-moving samples rather than guessing", () => {
-  const slow = { elapsedMs: 12_000, pageDelta: 1, percentDelta: 0 };
-  const mover = { elapsedMs: 12_000, pageDelta: 1, percentDelta: 1 };
-  assert.equal(averageSecondsPerPercent([slow, mover, slow, mover, slow]), null);
+  // 72s of reading moved 3 percentage points -> 24s per point.
+  assert.equal(averageSecondsPerPercent([slow, mover, slow, mover, slow, mover]), 24);
 });
 
 test("book time stays null when no sample moved the percentage", () => {

@@ -100,19 +100,14 @@ export function averageSecondsPerPage(window: readonly PaceSample[]): number | n
 }
 
 /**
- * Average seconds per whole-book percentage point across the window.
- *
- * Only samples that actually moved the whole-book percentage count: that
- * figure is an integer, so an ordinary turn in a long book often leaves it
- * unchanged, and those turns' seconds belong to no percentage point. Summing
- * them here would charge one percent for several pages' worth of time and
- * roughly double the estimate.
+ * Average seconds per whole-book percentage point across the window: all the
+ * time read over all the percent moved, so turns that left the integer percent
+ * unchanged still count their seconds toward the next point.
  */
 export function averageSecondsPerPercent(window: readonly PaceSample[]): number | null {
-  const covered = window.filter((sample) => sample.percentDelta > 0);
-  if (covered.length < PACE_MIN_SAMPLES) return null;
-  const totalSeconds = covered.reduce((sum, sample) => sum + sample.elapsedMs / 1000, 0);
-  const totalPercent = covered.reduce((sum, sample) => sum + sample.percentDelta, 0);
+  if (window.length < PACE_MIN_SAMPLES) return null;
+  const totalSeconds = window.reduce((sum, sample) => sum + sample.elapsedMs / 1000, 0);
+  const totalPercent = window.reduce((sum, sample) => sum + sample.percentDelta, 0);
   return totalPercent > 0 ? totalSeconds / totalPercent : null;
 }
 
