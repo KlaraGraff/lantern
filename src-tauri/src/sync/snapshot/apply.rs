@@ -360,6 +360,23 @@ impl Snapshot {
                         continue;
                     }
                 }
+                if entity == merge::entity::CUSTOM_FONT {
+                    // A font id is the hash of its bytes, so a re-import after
+                    // this peer's delete brings the same id back with a newer
+                    // row. Like the settings above, that row outranks the
+                    // older delete: neither the font nor a tombstone beside it.
+                    let reimported: bool = tx.query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM custom_fonts
+                           WHERE id = ?1 AND updated_at > ?2
+                         )",
+                        params![t.id, t.ts],
+                        |row| row.get(0),
+                    )?;
+                    if reimported {
+                        continue;
+                    }
+                }
                 merge::cascade_delete(tx, entity, &t.id, t.ts)?;
                 merge::insert_tombstone(tx, entity, &t.id, t.ts)?;
             }
