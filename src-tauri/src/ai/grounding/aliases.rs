@@ -141,7 +141,7 @@ struct FirstAppearance {
 
 /// What a cached scan was computed from. Any alias write or reindex moves one
 /// of these, so a stale entry is never served.
-type Fingerprint = (i64, i64, i64, i64);
+type Fingerprint = (i64, i64, i64, i64, i64);
 
 type AppearanceCache = HashMap<String, (Fingerprint, std::sync::Arc<Vec<FirstAppearance>>)>;
 
@@ -149,17 +149,26 @@ static FIRST_APPEARANCES: std::sync::LazyLock<std::sync::Mutex<AppearanceCache>>
     std::sync::LazyLock::new(Default::default);
 
 fn appearance_fingerprint(conn: &Connection, book_id: &str) -> AppResult<Fingerprint> {
-    let (alias_count, alias_latest) = conn.query_row(
-        "SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM book_person_aliases WHERE book_id = ?1 AND kind = 'name'",
+    // The length sum catches a row flipped to `kind = 'name'` in place,
+    // which moves neither the count nor `created_at`.
+    let (alias_count, alias_latest, alias_length) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(MAX(created_at), 0), COALESCE(SUM(length(alias) + length(canonical)), 0)
+         FROM book_person_aliases WHERE book_id = ?1 AND kind = 'name'",
         params![book_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     let (chunk_count, chunk_latest) = conn.query_row(
         "SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM book_chunks WHERE book_id = ?1",
         params![book_id],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
-    Ok((alias_count, alias_latest, chunk_count, chunk_latest))
+    Ok((
+        alias_count,
+        alias_latest,
+        alias_length,
+        chunk_count,
+        chunk_latest,
+    ))
 }
 
 /// Everyone the reader has met by `cutoff` — the same cutoff the AI's
@@ -187,7 +196,7 @@ pub fn people_met(
     let cache_key = format!("{}\u{0}{book_id}", conn.path().unwrap_or_default());
     let cached = FIRST_APPEARANCES.lock().ok().and_then(|cache| {
         cache
-            .get(book_id)
+            .get(&cache_key)
             .filter(|(at, _)| *at == fingerprint)
             .map(|(_, list)| list.clone())
     });
@@ -3516,6 +3525,25 @@ mod tests {
         let at = |offset| people_met(&db.reader(), "b1", SpoilerCutoff::Character(offset)).unwrap();
         assert_eq!(at(150), vec![person("Jane", 0)]);
         assert_eq!(at(200), vec![person("Jane", 0), person("Lydia", 0)]);
+    }
+
+    #[test]
+    fn people_so_far_reuses_the_scan_while_nothing_changed() {
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Jane", "Jane", "auto", 1);
+        insert_chunk_at(&db, "b1", 0, 0, "Jane smiled.");
+        assert_eq!(people(&db, "b1", 0), vec![person("Jane", 0)]);
+        // Text edited under the cache without moving the fingerprint: a
+        // rescan would drop Jane, the cached scan keeps her.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE book_chunks SET text = 'Nobody here.' WHERE book_id = 'b1'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(people(&db, "b1", 0), vec![person("Jane", 0)]);
     }
 
     #[test]

@@ -404,6 +404,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   const [chapterProgress, setChapterProgress] = useState(0);
   const [pageInfo, setPageInfo] = useState<ReaderPageInfo | null>(null);
   const currentCfiRef = useRef<string | null>(null);
+  // The same location as state, for the views that must follow every move.
+  const [liveLocation, setLiveLocation] = useState<string | null>(null);
   // P1.5/P1.6 (click-cycle readout + scrubber) are scoped to paginated EPUBs —
   // the exact boundary `getReaderCapabilities` already draws between "genuine
   // EPUB" and everything that must degrade (PDF's own page/zoom readout,
@@ -857,6 +859,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     cfi: string,
   ) => {
     progressWriter.queue(targetBookId, nextProgress, cfi);
+    setLiveLocation(cfi);
   }, [progressWriter]);
 
   // The book-finished hint's own action (docs/impls/reading-flow-decisions-2026-08-06.md
@@ -3574,7 +3577,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
                 chapterTitle: currentChapterTitle ?? undefined,
                 scope: currentScope,
                 readPosition: readPeoplePosition,
-                positionKey: `${currentSectionIndex}:${Math.floor(progress)}`,
+                positionKey: liveLocation ?? undefined,
                 onNavigate: (cfi) => { navigateToCfi(cfi); },
                 onOpenChat: (chatId) => {
                   setInitialChatId(chatId);

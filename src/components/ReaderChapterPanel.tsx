@@ -39,7 +39,7 @@ interface ReaderChapterPanelProps {
    * named past it stay hidden. Absent, there is no people section.
    */
   readPosition?: () => { location: string | null; viewportText?: string };
-  /** Changes as the reader moves on (section, whole percent). */
+  /** Changes whenever the reader moves, in either direction. */
   positionKey?: string;
   onNavigate: (cfi: string) => void;
   onOpenChat: (chatId: string) => void;

@@ -110,7 +110,8 @@ pub(crate) fn locate_section_chunk_index(
 /// The cutoff for something shown beside the page rather than asked of it
 /// (the 「本章」 people list): from the reader's live `location` instead of the
 /// saved one, and failing closed. An EPUB position that cannot be pinned to a
-/// chunk admits nothing of the current section, the opposite of chat's
+/// chunk admits nothing of the current section, and the chunk under the top
+/// of the screen is not admitted either — the opposite of chat's
 /// permissive fallback, because nothing here is asked for — it is just shown.
 pub(crate) fn live_position_cutoff(
     conn: &Connection,
@@ -131,8 +132,10 @@ pub(crate) fn live_position_cutoff(
         SpoilerCutoff::Section(section) if render_format == "epub" => {
             SpoilerCutoff::SectionPrefix {
                 section,
+                // The chunk under the top of the screen runs on past it, so
+                // only the chunks before it count as read.
                 chunk_index: locate_section_chunk_index(conn, book_id, section, viewport_text)
-                    .unwrap_or(-1),
+                    .map_or(-1, |chunk_index| chunk_index - 1),
             }
         }
         other => other,
