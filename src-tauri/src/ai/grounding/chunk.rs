@@ -175,6 +175,37 @@ pub(crate) fn sentence_split(text: &str) -> Vec<String> {
     }
 }
 
+/// Break text that offers no sentence boundary at all — a PDF text layer, or
+/// a stretch of prose with no terminator — into pieces under the hard
+/// maximum. Words stay whole where the text has spaces; a script that does
+/// not use them falls back to a character cut.
+fn split_without_terminator(text: &str) -> Vec<String> {
+    let mut pieces = Vec::new();
+    let mut current = String::new();
+    for character in text.chars() {
+        let mut next = current.clone();
+        next.push(character);
+        if !current.is_empty() && estimate_tokens(&next) > CHUNK_MAX_TOKENS {
+            // Back off to the last space when there is one in the second half
+            // — otherwise a script that uses no spaces (CJK) would take the
+            // hard cut, which there costs one character rather than a word.
+            let cut = current
+                .rfind(char::is_whitespace)
+                .filter(|index| *index >= current.len() / 2);
+            let rest = cut
+                .map(|index| current.split_off(index + 1))
+                .unwrap_or_default();
+            pieces.push(current.trim().to_string());
+            current = rest;
+        }
+        current.push(character);
+    }
+    if !current.trim().is_empty() {
+        pieces.push(current.trim().to_string());
+    }
+    pieces
+}
+
 fn split_oversized_block(block: &BlockText) -> Vec<BlockText> {
     if estimate_tokens(&block.text) <= CHUNK_MAX_TOKENS {
         return vec![block.clone()];
@@ -183,6 +214,27 @@ fn split_oversized_block(block: &BlockText) -> Vec<BlockText> {
     let mut result = Vec::new();
     let mut current = String::new();
     for sentence in sentences {
+        // One "sentence" can itself exceed the hard maximum when the block
+        // contains no terminator at all — `sentence_split` then returns the
+        // whole block unchanged. Cutting it is the only way to keep the
+        // chunk under the cap it exists to enforce.
+        if estimate_tokens(&sentence) > CHUNK_MAX_TOKENS {
+            if !current.is_empty() {
+                result.push(BlockText {
+                    text: std::mem::take(&mut current),
+                    char_start: block.char_start,
+                    char_end: block.char_end,
+                });
+            }
+            for piece in split_without_terminator(&sentence) {
+                result.push(BlockText {
+                    text: piece,
+                    char_start: block.char_start,
+                    char_end: block.char_end,
+                });
+            }
+            continue;
+        }
         let next = if current.is_empty() {
             sentence.clone()
         } else {
@@ -292,6 +344,29 @@ mod tests {
         assert_eq!(chunks[0].section_index, 0);
         assert_eq!(chunks[1].section_index, 1);
         assert!(chunks[0].text.starts_with(&chunks[0].snippet));
+    }
+
+    #[test]
+    fn oversized_text_without_any_terminator_is_split_at_the_hard_max() {
+        // A PDF text layer, or a long run of dialogue with no punctuation at
+        // all, gives `sentence_split` nothing to cut at: the whole block comes
+        // back as one "sentence", so the packer used to store it whole — a
+        // single chunk of thousands of tokens against a hard cap of 500.
+        let value = "word ".repeat(4_000);
+        let chunks = chunk_sections(vec![section(0, vec![&value])]);
+        assert!(
+            chunks.len() > 1,
+            "the block must be split, not stored whole"
+        );
+        let largest = chunks
+            .iter()
+            .map(|chunk| chunk.token_estimate)
+            .max()
+            .unwrap_or(0);
+        assert!(
+            largest <= CHUNK_MAX_TOKENS,
+            "a {largest}-token chunk exceeds the hard cap of {CHUNK_MAX_TOKENS}"
+        );
     }
 
     #[test]

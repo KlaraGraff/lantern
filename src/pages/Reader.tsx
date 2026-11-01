@@ -140,6 +140,7 @@ import {
   toReaderOpenError,
   type ReaderOpenError,
 } from "./reader/reader-open-error";
+import { parseArrivalPage } from "./reader/arrival-page";
 import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { logIgnoredError } from "../utils/logIgnoredError";
@@ -2018,8 +2019,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     const fromQuery = !arrivalSpent.current.source;
     const openVocab = state?.openVocab || (fromQuery && arrivalQuery.get("openVocab") === "true");
     const cfi = state?.cfi || (fromQuery ? arrivalQuery.get("cfi") : null) || undefined;
-    const rawPage = state?.page ?? (fromQuery ? Number(arrivalQuery.get("page")) : Number.NaN);
-    const page = Number.isInteger(rawPage) && rawPage >= 0 ? rawPage : undefined;
+    const page = parseArrivalPage(state?.page, fromQuery ? arrivalQuery.get("page") : null);
     if (!bookReady || (!openVocab && !cfi && page == null)) return;
     arrivalSpent.current.source = true;
     if (openVocab) {

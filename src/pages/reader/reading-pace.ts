@@ -68,8 +68,12 @@ export function derivePaceSample(
   const elapsedMs = next.timestampMs - previous.timestampMs;
   if (elapsedMs < PACE_MIN_ELAPSED_MS || elapsedMs > PACE_MAX_ELAPSED_MS) return null;
 
+  // Zero is a real answer, not a rejection: whole-book progress is an integer
+  // percentage, so in a book long enough that one screen is under 1% most
+  // ordinary turns leave it unchanged. Rejecting those starved the window
+  // and left the time-left modes on "calculating…" for a whole session.
   const percentDelta = next.progress - previous.progress;
-  if (percentDelta <= 0) return null;
+  if (percentDelta < 0) return null;
 
   return { elapsedMs, pageDelta, percentDelta };
 }
@@ -95,11 +99,20 @@ export function averageSecondsPerPage(window: readonly PaceSample[]): number | n
   return totalPages > 0 ? totalSeconds / totalPages : null;
 }
 
-/** Average seconds per whole-book percentage point across the window. */
+/**
+ * Average seconds per whole-book percentage point across the window.
+ *
+ * Only samples that actually moved the whole-book percentage count: that
+ * figure is an integer, so an ordinary turn in a long book often leaves it
+ * unchanged, and those turns' seconds belong to no percentage point. Summing
+ * them here would charge one percent for several pages' worth of time and
+ * roughly double the estimate.
+ */
 export function averageSecondsPerPercent(window: readonly PaceSample[]): number | null {
-  if (window.length < PACE_MIN_SAMPLES) return null;
-  const totalSeconds = window.reduce((sum, sample) => sum + sample.elapsedMs / 1000, 0);
-  const totalPercent = window.reduce((sum, sample) => sum + sample.percentDelta, 0);
+  const covered = window.filter((sample) => sample.percentDelta > 0);
+  if (covered.length < PACE_MIN_SAMPLES) return null;
+  const totalSeconds = covered.reduce((sum, sample) => sum + sample.elapsedMs / 1000, 0);
+  const totalPercent = covered.reduce((sum, sample) => sum + sample.percentDelta, 0);
   return totalPercent > 0 ? totalSeconds / totalPercent : null;
 }
 
