@@ -1,12 +1,14 @@
 # 人物别名与分级路由
 
+**状态：已上线（Status: shipped）**
+
 样张：[`alias-routing-mockup.html`](alias-routing-mockup.html)（已定稿，8 屏）
 
 ## 要解决的问题
 
 问「达西第一次向伊丽莎白求婚」，书里写的是 Darcy 和 Elizabeth。关键词检索按 token 对，两边一个词都对不上。
 
-上一轮 A/B（[`contextual-retrieval-ab-pnp.md`](contextual-retrieval-ab-pnp.md)）已经确认：定位句在关键词这条路上只是个平局裁判（权重 0.3），救不了差几十名的查询。别名解析走的是另一条路——它不改排序，它改查询本身。
+上一轮 A/B（[`contextual-retrieval-ab-pnp.md`](../contextual-retrieval-ab-pnp.md)）已经确认：定位句在关键词这条路上只是个平局裁判（权重 0.3），救不了差几十名的查询。别名解析走的是另一条路——它不改排序，它改查询本身。
 
 ## 分两层，只做第一层
 
