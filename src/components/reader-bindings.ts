@@ -158,9 +158,13 @@ export function formatReaderBinding(
     return labels[button] ?? (locale.startsWith("zh") ? `鼠标键 ${button + 1}` : `Mouse ${button + 1}`);
   }
   const value = binding.startsWith("key:") ? binding.slice("key:".length) : binding;
-  const parts = value.split("+");
-  const key = parts[parts.length - 1];
-  const held = new Set(parts.slice(0, -1));
+  // `+` is both the separator and a key of its own: "Shift++" is Shift held
+  // with the "+" key, and a bare "+" binding is that key alone. Splitting as if
+  // the last piece were always the key printed a dangling "Shift+".
+  const keyIsPlus = value.endsWith("+");
+  const parts = (keyIsPlus ? value.slice(0, -1) : value).split("+");
+  const key = keyIsPlus ? "+" : parts[parts.length - 1];
+  const held = new Set(keyIsPlus ? parts : parts.slice(0, -1));
   const order = apple ? APPLE_MODIFIER_ORDER : OTHER_MODIFIER_ORDER;
   const modifiers = order
     .filter((name) => held.has(name))
