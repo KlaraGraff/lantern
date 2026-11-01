@@ -6,36 +6,19 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 
 ## Active — still owes work
 
-- [Responsive and touch foundation](responsive-foundation.md) —
-  the `md:` / `touch:` vocabulary and the safe-area insets are in place and invisible on
-  desktop. The 16px floor that stops iOS zooming on focus landed here too, as one rule
-  rather than 25 identical component edits. It owes its first consumers: nothing reads the
-  insets yet, and `100vh` is still the shell on every route, which belongs to the pages.
-- [On-demand book download](on-demand-book-download.md) —
-  the backend ships (`faf43ee`); the shelf badge and in-reader progress are P2 item 8 and
-  owed. The metered-connection gate (D-016) is marked at its call site and not built.
-- [The iCloud metadata watcher](icloud-metadata-watcher.md) —
-  design only. P5 item 3, unimplemented: it needs two `objc2-foundation` Cargo features
-  this repo does not enable yet, and its one real risk is unverifiable off hardware.
 - [Built-in AI model catalog and automatic routing](built-in-ai-model-catalog-and-routing.md) —
   Phases 1–3 shipped, and the DeepSeek connect path passed a manual run on 2026-08-03.
   Seven acceptance items are still open because that run could not reach them (clean
   install, exhausted quota, revoked key, English UI, logs and exports) — see §11.
   Phase 4 (an online catalog) is deliberately deferred, not owed.
-- [q243 — Update Experience: Pill, App-Menu Check, Formal About](q243-update-experience.md) —
-  **deferred, and needs rebasing before anyone starts.** It was written against Quill, whose
-  update UI Lantern never inherited: there is no updater plugin, no `UpdateToast`, no
-  `useUpdateChecker` here. The plan reads as "extend what exists"; the real job is "build it
-  from nothing."
-- [Auto-update signing setup](auto-update-setup.md) —
-  keys and GitHub Secrets are in place; every line of code is still owed. The plan half
-  lives in q243 above.
 - [Mockup gap audit, 2026-08-06](mockup-gap-audit-2026-08-06.md) —
-  open decision list G-00–G-I: credential sync on iOS, network gating, OPDS for book
-  sources, the auto-analysis console mismatch, and two authoring-page gaps. Its two
-  unapproved mockups stay beside it:
+  open decision list G-A, G-C, G-D, G-E, G-H, G-I, G-J: credential sync on iOS, OPDS for
+  book sources, the auto-analysis console mismatch, and the authoring-page gaps. G-00 and
+  G-B (network/cellular gating) are done. Its two unapproved mockups stay beside it:
   [mobile-authoring-pages-mockup.html](mobile-authoring-pages-mockup.html) and
   [auto-analysis-console-mockup.html](auto-analysis-console-mockup.html).
+- [Contextual retrieval](contextual-retrieval.md) — phase 1 shipped; phase 2 (the manual
+  "regenerate identity sentences" entry and the 3-segment progress display) is not built.
 
 Reference, not a plan: [lantern-feature-flow-map.html](lantern-feature-flow-map.html) —
 six diagrams of how the shipped features hand off to each other, the companion picture to
@@ -46,6 +29,20 @@ six diagrams of how the shipped features hand off to each other, the companion p
 - [q257 — Explain 结果持久化](archive/q257-persist-explanations.md) — 三期全部上线（2026-08-07，
   Phase 2/3 为 7f2bd06）；样张 [q257-explanations-mockup.html](archive/q257-explanations-mockup.html)
   经三轮修订获批后随文归档。
+- Shipped line, archived 2026-11-01 (audit confirmed in code, mockups moved alongside):
+  [q243 — Update Experience: Pill, App-Menu Check, Formal About](archive/q243-update-experience.md) ·
+  [auto-update signing setup](archive/auto-update-setup.md) ·
+  [on-demand book download](archive/on-demand-book-download.md) ·
+  [the iCloud metadata watcher](archive/icloud-metadata-watcher.md) ·
+  [responsive foundation](archive/responsive-foundation.md) ·
+  [user profile](archive/user-profile.md) ·
+  [EPUB quote anchoring](archive/epub-quote-anchoring.md) ·
+  [person aliases](archive/person-aliases.md) ·
+  [handoff: coverage and aliases](archive/handoff-coverage-and-aliases.md) ·
+  [settings IA reorg](archive/settings-reorg.md) ·
+  [Home IA consolidation](archive/home-ia-consolidation.md) ·
+  [reader chrome restructure](archive/reader-chrome-restructure.md) ·
+  [dictionary glance mastery](archive/dictionary-glance-mastery.md)
 - [1 — Grounded Book Chat: Overview](archive/1-grounded-book-chat-overview.md)
   - [Phase 1 — Indexing + Retrieval](archive/1-grounded-book-chat-phase1-indexing-retrieval.md)
   - [Phase 2 — Summaries + Citations](archive/1-grounded-book-chat-phase2-summaries-citations.md)

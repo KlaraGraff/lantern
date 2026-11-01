@@ -1967,6 +1967,17 @@ fn apply_custom_font_delete(tx: &Transaction, event: &Event, id: &str) -> AppRes
 /// that re-creates the row, and an orphaned content-addressed file is both
 /// small and harmlessly overwritten by a later import of the same bytes.
 fn cascade_delete_custom_font(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
+    // Same clearable-tombstone rule as `apply_custom_font_delete`: the id is
+    // the hash of the bytes, so a font re-imported after this delete marker
+    // was written outranks it — and its selection must survive too.
+    let reimported: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM custom_fonts WHERE id = ?1 AND updated_at > ?2)",
+        params![id, ts],
+        |row| row.get(0),
+    )?;
+    if reimported {
+        return Ok(());
+    }
     tx.execute("DELETE FROM custom_fonts WHERE id = ?1", params![id])?;
     tx.execute(
         "UPDATE settings SET value = 'system', updated_at = MAX(updated_at, ?2)
@@ -5385,6 +5396,44 @@ mod tests {
             )],
         );
         assert_eq!(font_family(&conn).as_deref(), Some("Current"));
+    }
+
+    /// A font id is a hash of its bytes, so "delete once, never import that
+    /// file again" would be wrong: the tombstone is clearable and
+    /// `apply_custom_font_delete` loses to a newer row. The snapshot
+    /// tombstone pass reaches `cascade_delete` directly with the marker's
+    /// stored ts, which can predate a re-import on another device — that
+    /// older marker must lose the same way instead of deleting the row.
+    #[test]
+    fn custom_font_snapshot_tombstone_spares_a_newer_reimport() {
+        let mut conn = open_db();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('font_family', ?1)",
+            params![FONT_ID],
+        )
+        .unwrap();
+        apply_all(&mut conn, &[ev(3_000, "dev-b", font_event("Reimported"))]);
+        {
+            let tx = conn.transaction().unwrap();
+            cascade_delete(&tx, entity::CUSTOM_FONT, FONT_ID, 1_000).unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            font_family(&conn).as_deref(),
+            Some("Reimported"),
+            "a peer tombstone older than the re-import must not delete the font"
+        );
+        let selected: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'font_family'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            selected, FONT_ID,
+            "the reader's chosen font must not be reset to 'system'"
+        );
     }
 
     // -----------------------------------------------------------------------

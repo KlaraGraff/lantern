@@ -841,8 +841,8 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
           <input
             type="search"
             placeholder={t("vocab.search")}
-            defaultValue=""
-            onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"

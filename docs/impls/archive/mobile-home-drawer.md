@@ -1,7 +1,7 @@
 # Home 的侧边栏在窄屏变成抽屉
 
 > P2 第 2 项。样张：[`mobile-home-drawer-mockup.html`](mobile-home-drawer-mockup.html)（8 屏，含跟手中间态）。
-> 地基（安全区、`touch:` 变体、断点约定）是 P2 第 1 项，见 [`responsive-foundation.md`](../responsive-foundation.md)。
+> 地基（安全区、`touch:` 变体、断点约定）是 P2 第 1 项，见 [`responsive-foundation.md`](../archive/responsive-foundation.md)。
 
 ## 一句话
 

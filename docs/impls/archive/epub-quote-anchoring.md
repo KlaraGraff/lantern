@@ -1,7 +1,9 @@
 # 真句锚定 — 让 EPUB 也能跳到那一句
 
-配套样张：`docs/impls/user-profile-quotes-mockup.html`
-规格来源：`docs/impls/user-profile-mockup.html` 附录甲「真句检索（第三步）」
+**状态：已上线（Status: shipped）**
+
+配套样张：`docs/impls/archive/user-profile-quotes-mockup.html`
+规格来源：`docs/impls/archive/user-profile-mockup.html` 附录甲「真句检索（第三步）」
 
 ## 为什么
 

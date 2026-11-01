@@ -1,8 +1,10 @@
 # 用户画像 · 实施计划(第二步:后端)
 
-> 产品形态以 `docs/impls/user-profile-mockup.html`(v6,已拍板)为准,尤其附录甲。
+**状态：已上线（Status: shipped）** —— 后端与前端页面均已落地(本文为第二步后端方案)。
+
+> 产品形态以 `docs/impls/archive/user-profile-mockup.html`(v6,已拍板)为准,尤其附录甲。
 > 本文只写代码级方案。第三步(注入下游 + 真句检索)另起批次;前端页面在后端测试通过后开工。
-> 设计依据调研见 `docs/impls/user-profile-research-notes.md`(过程文件,落地后删除)。
+> 设计依据调研笔记为过程文件,已按约定删除。
 
 ## 范围
 
