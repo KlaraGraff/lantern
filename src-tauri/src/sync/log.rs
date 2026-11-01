@@ -353,9 +353,11 @@ fn truncate_torn_tail(path: &Path) -> AppResult<()> {
         .iter()
         .rposition(|&byte| byte == b'\n')
         .map_or(0, |index| index + 1);
-    if serde_json::from_slice::<Event>(&bytes[keep..]).is_ok() {
-        // A whole event that merely lacks its terminator: keep it and add the
-        // newline, so the next append starts on a line of its own.
+    // Any complete JSON value is a whole line that merely lacks its
+    // terminator — including an event from a newer build this one cannot
+    // read, which `parse_log_bytes` must still see and refuse rather than
+    // have silently cut here. Only a fragment fails to parse as a value.
+    if serde_json::from_slice::<serde_json::Value>(&bytes[keep..]).is_ok() {
         return naive_append(path, b"\n").map_err(AppError::Io);
     }
     let file = OpenOptions::new().write(true).open(path)?;
@@ -507,6 +509,17 @@ mod tests {
     fn open_log(tmp: &TempDir) -> EventLog {
         let p = tmp.path().join("logs").join("dev-A.jsonl");
         EventLog::open(&p, "dev-A", false).unwrap()
+    }
+
+    #[test]
+    fn an_unterminated_event_of_a_newer_type_is_kept_not_truncated() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("dev-A.jsonl");
+        let future = r#"{"id":"e9","device":"dev-A","v":99,"type":"future.thing","ts":5}"#;
+        std::fs::write(&path, future).unwrap();
+        truncate_torn_tail(&path).unwrap();
+        let bytes = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(bytes, format!("{future}\n"), "a complete line must survive");
     }
 
     #[test]
