@@ -2853,6 +2853,7 @@ fn delete_book_removes_the_converted_epub_artifact() {
         app.state::<Db>(),
         app.state::<SyncWriter>(),
         app.state::<crate::LocalDir>(),
+        app.handle().clone(),
     )
     .unwrap();
 

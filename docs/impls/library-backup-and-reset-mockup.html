@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>书库备份与重置样张 — Lantern</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ececf0; color: #18181b; padding: 40px 16px 80px;
+  }
+  .page { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #71717b; font-size: 13px; margin-bottom: 32px; line-height: 1.7; max-width: 820px; }
+  .screen { margin-bottom: 48px; }
+  .screen > h2 { font-size: 15px; margin-bottom: 4px; }
+  .screen > .desc { color: #71717b; font-size: 12.5px; margin-bottom: 14px; max-width: 820px; line-height: 1.7; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+  .label { font-size: 11px; font-weight: 600; color: #a1a1aa; letter-spacing: .05em; margin-bottom: 8px; }
+
+  .pane { background: #fff; border-radius: 14px; box-shadow: 0 8px 40px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06); padding: 6px 22px; }
+  .pane-title { font-size: 15px; font-weight: 600; padding: 16px 0 6px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 73px; border-top: 1px solid rgba(0,0,0,.10); padding: 12px 0; }
+  .row:first-of-type { border-top: 0; }
+  .row .t { font-size: 14px; font-weight: 500; }
+  .row .d { font-size: 12px; color: #71717b; margin-top: 3px; line-height: 1.6; }
+  .row .d.err { color: #b91c1c; }
+  .row .d.ok { color: #15803d; }
+  .btn { font-size: 13px; padding: 7px 14px; border-radius: 8px; border: 1px solid rgba(0,0,0,.14); background: #fff; color: #18181b; white-space: nowrap; }
+  .btn.primary { background: #18181b; color: #fff; border-color: #18181b; }
+  .btn.danger { background: #fff; color: #b91c1c; border-color: #fca5a5; }
+  .btn.danger-solid { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .btn[disabled] { opacity: .45; }
+  .path { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #3f3f46; background: #f4f4f5; padding: 2px 6px; border-radius: 5px; }
+  .toggle { width: 38px; height: 22px; border-radius: 999px; background: #d4d4d8; position: relative; flex-shrink: 0; }
+  .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .toggle.on { background: #18181b; }
+  .toggle.on::after { left: 19px; }
+  .bar { height: 6px; background: #f4f4f5; border-radius: 999px; overflow: hidden; margin-top: 8px; width: 220px; max-width: 100%; }
+  .bar > i { display: block; height: 100%; width: 42%; background: #18181b; border-radius: 999px; }
+  .danger-zone { margin-top: 10px; border-top: 1px solid rgba(0,0,0,.10); }
+  .danger-zone .zone { font-size: 11px; font-weight: 600; color: #b91c1c; letter-spacing: .05em; padding: 14px 0 0; }
+
+  .dialog { background: #fff; border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,.18); padding: 22px; max-width: 440px; }
+  .dialog h3 { font-size: 16px; margin-bottom: 10px; }
+  .dialog p { font-size: 13px; color: #3f3f46; line-height: 1.7; margin-bottom: 10px; }
+  .dialog ul { font-size: 13px; color: #3f3f46; line-height: 1.9; padding-left: 18px; margin-bottom: 10px; }
+  .note { font-size: 12.5px; background: #fef3c7; color: #92400e; padding: 9px 11px; border-radius: 8px; line-height: 1.6; margin-bottom: 12px; }
+  .input { width: 100%; border: 1px solid rgba(0,0,0,.18); border-radius: 8px; padding: 9px 11px; font-size: 14px; font-family: ui-monospace, Menlo, monospace; margin: 4px 0 14px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .why { font-size: 12px; color: #52525b; background: #fff; border-radius: 10px; padding: 12px 14px; line-height: 1.8; margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>书库备份 与 重置全部数据 · 样张</h1>
+  <p class="sub">两个都是保护数据的功能。「书库备份」放在 设置 → 书库与同步，「重置全部数据」放在 设置 → 通用 最下面的「危险操作」区。下面把每个状态都画出来：没设置、正常、正在进行、出错、确认步骤。文案都是草稿，可以直接改。</p>
+
+  <!-- ============ BACKUP ============ -->
+  <div class="screen">
+    <h2>一、书库备份（设置 → 书库与同步）</h2>
+    <p class="desc">把书的原文件和封面单向复制到你选的文件夹（移动硬盘、NAS、Dropbox 都行）。只复制新增的，已经在那边的跳过。划线、生词、阅读进度不在备份里——那些靠 iCloud 同步。</p>
+    <div class="grid">
+      <div>
+        <div class="label">A · 还没选备份位置</div>
+        <div class="pane">
+          <div class="row"><div><div class="t">书库备份</div><div class="d">把书的原文件和封面复制到另一个文件夹，硬盘坏了也找得回来。</div></div><button class="btn">选择文件夹…</button></div>
+          <div class="row"><div><div class="t">导入或删除书后自动备份</div><div class="d">选好备份位置后才能打开。</div></div><div class="toggle" style="opacity:.45"></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="label">B · 已设置，平时的样子</div>
+        <div class="pane">
+          <div class="row"><div><div class="t">书库备份</div><div class="d"><span class="path">/Volumes/NAS/Lantern 备份</span> · <a href="#" style="color:#52525b">更换</a></div><div class="d ok">上次备份：今天 14:32 · 128 本书都已备份</div></div><button class="btn primary">立即备份</button></div>
+          <div class="row"><div><div class="t">导入或删除书后自动备份</div><div class="d">删书时，备份里的那一份会保留。</div></div><div class="toggle on"></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="label">C · 正在备份</div>
+        <div class="pane">
+          <div class="row"><div><div class="t">书库备份</div><div class="d">正在复制 23 / 54 个新文件…</div><div class="bar"><i></i></div></div><button class="btn">停止</button></div>
+          <div class="row"><div><div class="t">导入或删除书后自动备份</div></div><div class="toggle on"></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="label">D · 备份位置不在线</div>
+        <div class="pane">
+          <div class="row"><div><div class="t">书库备份</div><div class="d"><span class="path">/Volumes/NAS/Lantern 备份</span></div><div class="d err">找不到这个文件夹：移动硬盘或 NAS 可能没接上。接上后再点「立即备份」。</div></div><button class="btn primary">立即备份</button></div>
+          <div class="row"><div><div class="t">导入或删除书后自动备份</div><div class="d">位置不在线时自动备份会先跳过，接上后补上。</div></div><div class="toggle on"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RESET ============ -->
+  <div class="screen">
+    <h2>二、重置全部数据（设置 → 通用 → 危险操作）</h2>
+    <p class="desc">把这台设备上的 Lantern 恢复成刚装好的样子：书、划线、生词、对话、阅读进度、设置和 API Key 全部删掉。两步确认，任何一步取消都不会删任何东西。iCloud 里的那份不删。</p>
+    <div class="grid">
+      <div>
+        <div class="label">E · 设置里的入口</div>
+        <div class="pane">
+          <div class="row"><div><div class="t">界面语言</div></div><button class="btn">简体中文</button></div>
+          <div class="danger-zone">
+            <div class="zone">危险操作</div>
+            <div class="row"><div><div class="t">重置全部数据</div><div class="d">删除这台设备上的所有书、笔记、生词、对话、设置和 API Key，恢复到刚安装的样子。</div></div><button class="btn danger">重置…</button></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="label">F · 第一步：说清楚会删什么（开着 iCloud 同步时）</div>
+        <div class="dialog">
+          <h3>重置这台设备上的全部数据？</h3>
+          <p>以下内容会从这台设备上永久删除：</p>
+          <ul><li>书库里的 128 本书和封面</li><li>划线、笔记、书签、生词和复习记录</li><li>AI 对话和解释记录</li><li>所有设置和 API Key</li></ul>
+          <div class="note">iCloud 同步已开启：重置会先关掉这台设备的同步，iCloud 里的那份不会被删。以后重新打开同步，数据会再下载回来。</div>
+          <p>想先留一份？可以先去「书库与同步」做一次书库备份。</p>
+          <div class="actions"><button class="btn primary">取消</button><button class="btn danger">继续</button></div>
+        </div>
+      </div>
+      <div>
+        <div class="label">G · 第二步：输入 RESET 才能按下</div>
+        <div class="dialog">
+          <h3>最后确认</h3>
+          <p>这一步不能撤销。请输入 <b>RESET</b> 确认：</p>
+          <input class="input" value="RES" />
+          <div class="actions"><button class="btn">取消</button><button class="btn danger-solid" disabled>重置全部数据</button></div>
+        </div>
+      </div>
+      <div>
+        <div class="label">H · 正在重置 → 自动重启</div>
+        <div class="dialog">
+          <h3>正在重置…</h3>
+          <p>正在删除数据并恢复默认设置。完成后 Lantern 会自动重新打开，进入首次使用的引导。</p>
+          <div class="bar" style="width:100%"><i style="width:70%"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="why"><b>为什么这样画：</b>入口放在通用的最底部、单独一个「危险操作」区，平时不会误碰；第一步把会删的东西按用户能认出的名字列出来（不写数据库文件名），开着同步时专门说明 iCloud 那份不删；第二步要求输入 RESET（中英文界面都一样），默认焦点在「取消」上。备份和重置互相提一句，但不强制先备份。</div>
+  </div>
+</div>
+</body>
+</html>

@@ -187,6 +187,26 @@ const MCP_BINARY_PATH = "/Applications/Lantern.app/Contents/MacOS/lantern";
 /** 三个开关的当前值。真机上两个存在客户端配置文件里、一个存在 settings 表。 */
 const MCP_STATE = { claude_code: false, codex: false, write_enabled: false };
 
+/**
+ * 书库备份（`commands/library_backup.rs` 的 `LibraryBackupStatus`）。默认是已设置、
+ * 平时的样子；`?backup=none|running|offline` 换成另外三种状态，方便截图。按钮会改
+ * 这份状态，所以点下去界面有反应。
+ */
+const LIBRARY_BACKUP_SCENE =
+  typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("backup") ?? "");
+const LIBRARY_BACKUP_STATE = {
+  dir: LIBRARY_BACKUP_SCENE === "none" ? null : "/Volumes/NAS/Lantern 备份",
+  online: LIBRARY_BACKUP_SCENE !== "offline" && LIBRARY_BACKUP_SCENE !== "none",
+  auto: LIBRARY_BACKUP_SCENE !== "none",
+  running: LIBRARY_BACKUP_SCENE === "running",
+  copied: LIBRARY_BACKUP_SCENE === "running" ? 23 : 0,
+  total: LIBRARY_BACKUP_SCENE === "running" ? 54 : 0,
+  last_at: LIBRARY_BACKUP_SCENE === "none" ? null : Date.now() - 3 * 60 * 60 * 1000,
+  books_backed_up: LIBRARY_BACKUP_SCENE === "none" ? 0 : 128,
+  books_unavailable: 0,
+  error: null as string | null,
+};
+
 /** Same split for chats: the shot shelf gets conversations about its own books. */
 const SHELF_CHATS = isShooting() ? PROMO_CHATS : CHATS;
 
@@ -1168,6 +1188,21 @@ export const FIXTURES: Record<string, Fixture> = {
     return null;
   },
   mcp_list_pending_approvals: [],
+  library_backup_status: () => ({ ...LIBRARY_BACKUP_STATE }),
+  // The native picker, cancelled: nothing changes.
+  library_backup_choose_dir: null,
+  library_backup_run: () => {
+    if (LIBRARY_BACKUP_STATE.online) LIBRARY_BACKUP_STATE.last_at = Date.now();
+    return { ...LIBRARY_BACKUP_STATE };
+  },
+  library_backup_cancel: () => {
+    LIBRARY_BACKUP_STATE.running = false;
+    return null;
+  },
+  library_backup_set_auto: (a: Args) => {
+    LIBRARY_BACKUP_STATE.auto = Boolean(a.enabled);
+    return { ...LIBRARY_BACKUP_STATE };
+  },
   // 形状和 `mcp_config_snippet` 一样：serde 的 pretty JSON，两个空格。
   mcp_config_snippet: JSON.stringify(
     { mcpServers: { lantern: { command: MCP_BINARY_PATH, args: ["mcp"] } } },

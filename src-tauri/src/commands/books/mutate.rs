@@ -140,12 +140,13 @@ pub(crate) fn do_delete_book_with_note_policy(
 }
 
 #[tauri::command]
-pub fn delete_book(
+pub fn delete_book<R: tauri::Runtime>(
     id: String,
     preserve_notes: Option<bool>,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
     local_dir: State<'_, LocalDir>,
+    app: tauri::AppHandle<R>,
 ) -> AppResult<()> {
     do_delete_book_with_note_policy(&id, preserve_notes.unwrap_or(false), &db, &sync)?;
     let prepared_path = prepared_document_path(&local_dir.0, &id);
@@ -162,6 +163,10 @@ pub fn delete_book(
     if let Ok(temporary_path) = convert_prepare::converted_temporary_path(&converted_path) {
         let _ = fs::remove_file(temporary_path);
     }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    crate::commands::library_backup::schedule_auto(&app);
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let _ = app;
     Ok(())
 }
 
