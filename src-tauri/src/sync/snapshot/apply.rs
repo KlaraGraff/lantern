@@ -403,6 +403,25 @@ impl Snapshot {
                         continue;
                     }
                 }
+                if entity == merge::entity::COLLECTION_BOOK {
+                    // Same clearable-tombstone rule as `book_setting`: removing
+                    // a book and adding it back is a normal edit, so a newer
+                    // local membership row outranks this peer's older removal.
+                    let Some((collection_id, book_id)) = t.id.split_once(':') else {
+                        continue;
+                    };
+                    let readded: bool = tx.query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM collection_books
+                           WHERE collection_id = ?1 AND book_id = ?2 AND updated_at > ?3
+                         )",
+                        params![collection_id, book_id, t.ts],
+                        |row| row.get(0),
+                    )?;
+                    if readded {
+                        continue;
+                    }
+                }
                 merge::cascade_delete(tx, entity, &t.id, t.ts)?;
                 merge::insert_tombstone(tx, entity, &t.id, t.ts)?;
             }
@@ -519,12 +538,24 @@ impl Snapshot {
             upsert_collection(tx, id, row)?;
         }
         for (key, row) in &self.state.collection_books {
-            if merge::is_tombstoned(tx, merge::entity::COLLECTION_BOOK, key)?
-                || merge::is_tombstoned(tx, merge::entity::COLLECTION, &row.collection_id)?
+            if merge::is_tombstoned(tx, merge::entity::COLLECTION, &row.collection_id)?
                 || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
             {
                 continue;
             }
+            // Own membership tombstone is clearable, like `book_setting`: a
+            // remove followed by a later re-add is a normal edit, so a
+            // tombstone at or after this row outranks it and only a strictly
+            // older one is superseded.
+            if merge::tombstone_timestamp(tx, merge::entity::COLLECTION_BOOK, key)?
+                .is_some_and(|timestamp| timestamp >= row.updated_at)
+            {
+                continue;
+            }
+            tx.execute(
+                "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![merge::entity::COLLECTION_BOOK, key],
+            )?;
             upsert_collection_book(tx, row)?;
         }
         for (id, row) in &self.state.chats {

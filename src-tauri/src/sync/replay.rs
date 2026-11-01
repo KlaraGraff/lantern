@@ -701,6 +701,14 @@ impl ReplayEngine {
 /// bulk-deleted from the outbox. If the batch write fails, no rows are
 /// deleted and the entire batch retries on the next call.
 ///
+/// A row whose serialised log line exceeds
+/// `MAX_LOG_LINE_BYTES` is retired from the outbox without being
+/// published. Such a row is unpublishable by construction — the writer
+/// refuses the batch and any reader would refuse the whole file — so
+/// leaving it queued would fail every flush forever and pin every event
+/// behind it in the outbox. Dropping it (with a warning) is the only
+/// move that keeps the rest of the outbox flowing.
+///
 /// Shared between `ReplayEngine::tick` (Phase 0) and `SyncWriter::with_tx`
 /// (post-commit step) so the publish-retry guarantee holds end-to-end.
 ///
@@ -709,6 +717,8 @@ impl ReplayEngine {
 /// otherwise both read the same pending rows, both append, and both
 /// delete — duplicating events in the device log. The mutex sits
 /// outside `db.conn` so a flush in flight does not block UI writes.
+///
+/// Returns how many events actually reached the log.
 pub fn flush_outbox(db: &Db, log: &EventLog) -> AppResult<usize> {
     let _guard = FLUSH_OUTBOX_MUTEX
         .lock()
@@ -736,14 +746,35 @@ pub fn flush_outbox(db: &Db, log: &EventLog) -> AppResult<usize> {
         })
         .collect::<AppResult<_>>()?;
 
+    // Split off rows that cannot become a legal log line. Measuring here,
+    // rather than letting `append_batch_varied` reject the whole batch,
+    // is what stops one oversized event from blocking every other event
+    // and every later tick.
+    let mut publishable: Vec<(EventBody, i64)> = Vec::with_capacity(entries.len());
+    for (row, entry) in pending.iter().zip(entries) {
+        let line_len = log.line_len(&entry.0, entry.1)?;
+        if line_len > super::log::MAX_LOG_LINE_BYTES {
+            ::log::warn!(
+                "sync: dropping outbox row {} (SYNC_EVENT_TOO_LARGE: {line_len} bytes, over the {}-byte log line limit)",
+                row.id,
+                super::log::MAX_LOG_LINE_BYTES,
+            );
+            continue;
+        }
+        publishable.push(entry);
+    }
+
     // Single coordinated write for all events — one NSFileCoordinator
     // call instead of N. This is the big win: 500 pending events go
     // from 500 × bird-latency to 1 × bird-latency.
-    log.append_batch_varied(entries)?;
+    let published = publishable.len();
+    if !publishable.is_empty() {
+        log.append_batch_varied(publishable)?;
+    }
 
     // Bulk delete from outbox. The batch append already succeeded so
-    // all rows are published; deleting them prevents re-publish on
-    // the next flush.
+    // all rows are either published or dropped as unpublishable above;
+    // deleting them prevents re-publish on the next flush.
     let conn = db
         .conn
         .lock()
@@ -756,7 +787,7 @@ pub fn flush_outbox(db: &Db, log: &EventLog) -> AppResult<usize> {
     }
     drop(conn);
 
-    Ok(pending.len())
+    Ok(published)
 }
 
 // ---------------------------------------------------------------------------
@@ -1284,6 +1315,117 @@ mod tests {
             log_events.len(),
             1,
             "single-flight guard must prevent duplicate device-log events",
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Outbox flush vs. the per-line size cap
+    // -----------------------------------------------------------------------
+
+    /// Insert an outbox row directly, the way a `with_tx` that committed
+    /// before its log append failed would leave one.
+    fn push_outbox_row(env: &Env, ts: i64, body: &EventBody) {
+        env.conn()
+            .execute(
+                "INSERT INTO _pending_publish (id, ts, body_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    ts,
+                    serde_json::to_string(body).unwrap(),
+                    chrono::Utc::now().timestamp_millis(),
+                ],
+            )
+            .unwrap();
+    }
+
+    /// A `note.upsert` whose serialised log line clears the per-line cap.
+    /// Notes are the one entity that can legitimately carry long prose.
+    fn oversized_note(id: &str) -> EventBody {
+        EventBody::NoteUpsert(NotePayload {
+            id: id.into(),
+            book_id: None,
+            anchor_kind: "position".into(),
+            normalized_word: None,
+            scope: "book".into(),
+            location: None,
+            selected_text: None,
+            content: "x".repeat(super::super::log::MAX_LOG_LINE_BYTES),
+            content_format: "plain".into(),
+            created_at: 1_000,
+        })
+    }
+
+    /// An oversized row must not wedge the outbox: it is retired on its own
+    /// and every other pending event still reaches the log. Before this,
+    /// `append_batch_varied` rejected the whole batch, nothing was deleted,
+    /// and every later tick retried the same oversized event forever.
+    #[test]
+    fn flush_outbox_skips_oversized_event_and_publishes_the_rest() {
+        let env = setup("self");
+        push_outbox_row(&env, 1_000, &import("b1"));
+        push_outbox_row(&env, 1_100, &oversized_note("n-big"));
+        push_outbox_row(&env, 1_200, &import("b2"));
+
+        let flushed = flush_outbox(&env.db, &env.engine.own_log).unwrap();
+        assert_eq!(flushed, 2, "the two legal events must be published");
+
+        let n: i64 = env
+            .conn()
+            .query_row("SELECT COUNT(*) FROM _pending_publish", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            n, 0,
+            "the oversized row must be retired, not left to retry forever",
+        );
+
+        let log_events = env.engine.own_log.read_all().unwrap();
+        assert_eq!(log_events.len(), 2);
+        assert!(
+            !log_events
+                .iter()
+                .any(|e| matches!(&e.body, EventBody::NoteUpsert(p) if p.id == "n-big")),
+            "the oversized event must not appear in the log",
+        );
+
+        // A second flush is a no-op rather than a retry of the dropped row.
+        assert_eq!(flush_outbox(&env.db, &env.engine.own_log).unwrap(), 0);
+    }
+
+    /// The oversized-only case: the flush must not error out (which would
+    /// abort `ReplayEngine::tick` before peers are even read) and must not
+    /// append anything.
+    #[test]
+    fn flush_outbox_with_only_an_oversized_event_publishes_nothing() {
+        let env = setup("self");
+        push_outbox_row(&env, 1_000, &oversized_note("n-big"));
+
+        assert_eq!(flush_outbox(&env.db, &env.engine.own_log).unwrap(), 0);
+        assert_eq!(env.engine.own_log.read_all().unwrap().len(), 0);
+        assert_eq!(
+            env.conn()
+                .query_row("SELECT COUNT(*) FROM _pending_publish", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0,
+        );
+    }
+
+    /// Control: a normal outbox drains exactly as before, so the size gate
+    /// did not change behaviour for events under the cap.
+    #[test]
+    fn flush_outbox_still_publishes_normal_events() {
+        let env = setup("self");
+        push_outbox_row(&env, 1_000, &import("b1"));
+        push_outbox_row(&env, 1_100, &import("b2"));
+
+        assert_eq!(flush_outbox(&env.db, &env.engine.own_log).unwrap(), 2);
+        assert_eq!(env.engine.own_log.read_all().unwrap().len(), 2);
+        assert_eq!(
+            env.conn()
+                .query_row("SELECT COUNT(*) FROM _pending_publish", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0,
         );
     }
 

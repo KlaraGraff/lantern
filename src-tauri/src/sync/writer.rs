@@ -769,6 +769,23 @@ mod tests {
         assert_eq!(MUTATION_DEPTH.with(|depth| depth.get()), 0);
     }
 
+    /// A `note.upsert` whose serialised log line clears the per-line cap.
+    /// Notes are the one entity that can legitimately carry long prose.
+    fn oversized_note(id: &str) -> EventBody {
+        EventBody::NoteUpsert(crate::sync::events::NotePayload {
+            id: id.into(),
+            book_id: None,
+            anchor_kind: "position".into(),
+            normalized_word: None,
+            scope: "book".into(),
+            location: None,
+            selected_text: None,
+            content: "x".repeat(crate::sync::log::MAX_LOG_LINE_BYTES),
+            content_format: "plain".into(),
+            created_at: 1_000,
+        })
+    }
+
     fn import_body(id: &str) -> EventBody {
         EventBody::BookImport(BookImportPayload {
             id: id.into(),
@@ -1024,6 +1041,54 @@ mod tests {
             EventBody::BookImport(p) => assert_eq!(p.id, "b-orphan"),
             other => panic!("expected the orphan event to flush, got {other:?}"),
         }
+    }
+
+    /// The flush path must not let one oversized event starve the outbox.
+    /// An event too big to become a legal log line is retired on its own:
+    /// the `with_tx` call still commits, the peer-visible log only holds
+    /// events the reader will accept, and the outbox is left empty so the
+    /// next flush is not a re-run of the same failure.
+    ///
+    /// Without that, every subsequent `with_tx` would re-append the same
+    /// oversized row, hit `SYNC_EVENT_TOO_LARGE`, and publish nothing at
+    /// all — a permanently stalled device log that no retry can clear.
+    #[test]
+    fn oversized_event_is_skipped_without_stalling_the_outbox() {
+        let (dir, db) = setup_db();
+        let writer = SyncWriter::new("dev-A".into());
+        let log = enable_sync(&writer, dir.path());
+
+        writer
+            .with_tx(&db, 1_000, |tx, events| {
+                insert_book_row(tx, "b1", 1_000, "dev-A")?;
+                events.push(oversized_note("n-big"));
+                events.push(import_body("b1"));
+                Ok(())
+            })
+            .unwrap();
+
+        // The SQL half of the command is unaffected: an unpublishable event
+        // is a sync-layer problem, not a reason to fail the user's write.
+        assert_eq!(book_count(&db.conn.lock().unwrap()), 1);
+        assert_eq!(
+            outbox_count(&db.conn.lock().unwrap()),
+            0,
+            "the oversized row must be retired so it cannot block later flushes"
+        );
+
+        let events = log.read_all().unwrap();
+        assert_eq!(events.len(), 1, "the sibling event still reaches the log");
+        assert!(matches!(events[0].body, EventBody::BookImport(_)));
+
+        // And a later write flushes normally — no stuck retry loop.
+        writer
+            .with_tx(&db, 2_000, |tx, events| {
+                insert_book_row(tx, "b2", 2_000, "dev-A")?;
+                events.push(import_body("b2"));
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(log.read_all().unwrap().len(), 2);
     }
 
     /// Regression for the sixth-round review on PR #192: when migration
