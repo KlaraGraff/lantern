@@ -82,8 +82,8 @@ export function chapterQuestions(messages: readonly ChatMessageRow[], scope: Cha
 export interface PersonSoFar {
   canonical: string;
   /** The spine section of their first mention. */
-  first_section: number;
-  mentions_in_section: number;
+  firstSection: number;
+  mentionsInSection: number;
 }
 
 /**
@@ -96,7 +96,7 @@ export function chapterPeople(people: readonly PersonSoFar[], scope: ChapterScop
   const newcomers: PersonSoFar[] = [];
   const earlier: PersonSoFar[] = [];
   for (const person of people) {
-    if (scope.start !== undefined && person.first_section >= scope.start) newcomers.push(person);
+    if (scope.start !== undefined && person.firstSection >= scope.start) newcomers.push(person);
     else earlier.push(person);
   }
   return { newcomers, earlier };

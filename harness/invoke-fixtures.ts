@@ -1003,7 +1003,7 @@ export const FIXTURES: Record<string, Fixture> = {
       ["Sir William Lucas", 6], ["Charlotte Lucas", 6], ["Mary", 6], ["Mr. Collins", 14], ["Wickham", 16],
     ]
       .filter(([, first]) => (first as number) <= section)
-      .map(([canonical, first]) => ({ canonical, first_section: first, mentions_in_section: 1 }));
+      .map(([canonical, first]) => ({ canonical, firstSection: first, mentionsInSection: 1 }));
   },
   delete_person_alias: null,
   clear_person_aliases: null,

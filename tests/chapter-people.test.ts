@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chapterPeople, type PersonSoFar } from "../src/pages/reader/chapter-traces.ts";
 
-const person = (canonical: string, first_section: number): PersonSoFar => ({ canonical, first_section, mentions_in_section: 0 });
+const person = (canonical: string, firstSection: number): PersonSoFar => ({ canonical, firstSection, mentionsInSection: 0 });
 
 test("people first met in this chapter lead, earlier ones follow, both in arrival order", () => {
   const people = [person("Mr. Bennet", 2), person("Elizabeth", 2), person("Mr. Bingley", 3), person("Mr. Darcy", 4)];
