@@ -18,13 +18,17 @@
 
 /** Lower-cased, stripped of the inline Markdown and edge punctuation models add. */
 function normalise(text: string) {
-  return text
-    .replace(/[*`=]/g, "")
-    .replace(/\s+/g, "")
-    .replace(/^[「『“"'（(【[]+|[」』”"'）)】\]]+$/g, "")
-    .replace(/[:：.。!！?？、,，]+$/g, "")
-    .toLowerCase()
-    .trim();
+  let value = text.replace(/[*`=]/g, "").replace(/\s+/g, "");
+  // Punctuation and a closing quote/bracket arrive in either order
+  // (「语境含义」：), so stripping one can expose the other: repeat until stable.
+  let previous: string;
+  do {
+    previous = value;
+    value = value
+      .replace(/^[「『“"'（(【[]+|[」』”"'）)】\]]+$/g, "")
+      .replace(/[:：.。!！?？、,，]+$/g, "");
+  } while (value !== previous);
+  return value.toLowerCase().trim();
 }
 
 export function isRedundantHeading(heading: string | undefined, title: string | undefined) {

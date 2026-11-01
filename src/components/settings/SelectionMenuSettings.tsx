@@ -119,7 +119,10 @@ export default function SelectionMenuSettings({
     const label = isDraft
       ? t("settings.tools.custom.newAction")
       : custom?.name ?? t(definition!.labelKey);
-    const total = value.length + (newAction ? 1 : 0);
+    // The unsaved draft is rendered after the list but is not in `value`, and
+    // the arrows only reorder `value` — counting it here left the last saved
+    // row's down arrow enabled and inert.
+    const total = value.length;
     return (
       <div className="border-t border-border-light first:border-t-0">
         <div className="group flex min-h-12 items-center gap-1 py-1">

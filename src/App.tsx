@@ -96,7 +96,9 @@ export default function App() {
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
-      if (!document.documentElement.dataset.themeOverride) {
+      // Only a reader who chose 跟随系统 follows the OS. Every theme control
+      // mirrors the pick into localStorage.
+      if ((localStorage.getItem("lantern-theme") ?? "system") === "system") {
         applyTheme("system");
       }
     };
