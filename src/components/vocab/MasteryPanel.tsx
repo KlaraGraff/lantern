@@ -95,6 +95,8 @@ export default function MasteryPanel({ word, onSetMastery, sharedBookCount, shar
   // "nothing happened on this device yet", not an error, so it fails silent.
   useEffect(() => {
     let cancelled = false;
+    // Switching word must not show the previous word's timeline meanwhile.
+    setEvents([]);
     invoke<MasteryEvent[]>("list_mastery_events", { vocabWordId: word.id })
       .then((rows) => {
         if (!cancelled) setEvents(rows);

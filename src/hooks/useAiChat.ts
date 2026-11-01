@@ -1585,9 +1585,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     ));
   }, [stopActiveStream]);
 
-  const deleteChat = useCallback(async (id: string) => {
+  const deleteChat = useCallback(async (id: string): Promise<boolean> => {
     const currentBookId = bookId;
-    if (!currentBookId) return;
+    if (!currentBookId) return false;
 
     // Cancel active stream if deleting the streaming chat
     if (id === chatIdRef.current && streamingRef.current) {
@@ -1601,7 +1601,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       await invoke("delete_chat", { chatId: id });
     } catch (err) {
       console.error("Failed to delete chat:", err);
-      return;
+      return false;
     }
     const updatedChats = await refreshChats(currentBookId);
 
@@ -1618,6 +1618,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         updateMessages([]);
       }
     }
+    return true;
   }, [bookId, refreshChats, loadChat, stopActiveStream]);
 
   const renameChat = useCallback(async (id: string, title: string) => {

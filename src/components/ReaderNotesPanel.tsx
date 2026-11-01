@@ -164,6 +164,9 @@ export default function ReaderNotesPanel({
   const [search, setSearch] = useState("");
   const [cfiModule, setCfiModule] = useState<CfiModule | null>(null);
   const [editing, setEditing] = useState<EditTarget | null>(null);
+  // Read after an await: the editor that started a save may not be the one open now.
+  const editingRef = useRef(editing);
+  useEffect(() => { editingRef.current = editing; }, [editing]);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -361,8 +364,12 @@ export default function ReaderNotesPanel({
       writeDraft(readerNoteDraftKey(bookId, target.noteId, target.anchor), "");
       await refreshNotes();
       notifyNotesChanged(bookId);
-      setEditing(null);
-      setDraft("");
+      // Another note may have been opened while this one saved; leave its
+      // editor and draft alone.
+      if (editingRef.current === target) {
+        setEditing(null);
+        setDraft("");
+      }
     } catch {
       setSaveFailed(true);
     } finally {

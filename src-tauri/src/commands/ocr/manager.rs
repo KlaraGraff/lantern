@@ -54,6 +54,10 @@ pub(crate) struct OcrAssetItem {
     byte_size: i64,
     created_at: i64,
     availability: String,
+    /// Whether "remove only this device's copy" can leave a copy elsewhere:
+    /// true only for a file iCloud keeps. A local-only library has no other
+    /// copy, so releasing it would delete the result for good.
+    can_release_local: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -606,7 +610,7 @@ pub(crate) fn ocr_job_status(book_id: String, db: State<'_, Db>) -> AppResult<Op
 pub(crate) fn ocr_assets_overview(db: State<'_, Db>) -> AppResult<OcrAssetsOverview> {
     let conn = db.reader();
     let mut statement = conn.prepare(
-        "SELECT a.id, a.book_id, b.title, a.byte_size, a.created_at,
+        "SELECT a.id, a.book_id, b.title, a.byte_size, a.created_at, a.relative_path,
                 COALESCE(s.availability, 'remote_only') AS availability
          FROM book_assets a JOIN books b ON b.id = a.book_id
          LEFT JOIN book_asset_local_state s ON s.asset_id = a.id
@@ -621,6 +625,9 @@ pub(crate) fn ocr_assets_overview(db: State<'_, Db>) -> AppResult<OcrAssetsOverv
                 byte_size: row.get("byte_size")?,
                 created_at: row.get("created_at")?,
                 availability: row.get("availability")?,
+                can_release_local: db
+                    .resolve_path(&row.get::<_, String>("relative_path")?)
+                    .is_ok_and(|path| crate::icloud::is_ubiquitous_file(&path)),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -662,14 +669,14 @@ fn delete_local_asset(
             .ok_or_else(|| ocr_error("OCR_ASSET_NOT_FOUND"))?
     };
     if let Ok(path) = db.resolve_path(&asset.relative_path) {
-        if crate::icloud::is_ubiquitous_file(&path) {
-            if !crate::icloud::evict_downloaded_file(&path) {
-                return Err(ocr_error("OCR_ASSET_LOCAL_RELEASE_FAILED"));
-            }
-        } else if let Err(error) = fs::remove_file(path) {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                return Err(error.into());
-            }
+        // Only iCloud keeps another copy to come back to. Outside iCloud the
+        // file on this device is the only one, so "remove this device's copy"
+        // would delete the result for good while recording it as remote-only.
+        if !crate::icloud::is_ubiquitous_file(&path) {
+            return Err(ocr_error("OCR_ASSET_LOCAL_RELEASE_FAILED"));
+        }
+        if !crate::icloud::evict_downloaded_file(&path) {
+            return Err(ocr_error("OCR_ASSET_LOCAL_RELEASE_FAILED"));
         }
     }
     let conn = db
@@ -882,16 +889,16 @@ mod tests {
         assert_eq!(overview.items.len(), 1);
         assert_eq!(overview.items[0].availability, "available_verified");
 
+        // A library outside iCloud holds the only copy: "remove this device's
+        // copy" is not offered, and the command refuses rather than delete
+        // the result for good while recording it as remote-only.
+        assert!(!overview.items[0].can_release_local);
         let sync = SyncWriter::new("dev-a".into());
-        delete_local_asset(&app.state::<Db>(), &sync, "asset-1").unwrap();
-        assert_eq!(
-            ocr_assets_overview(app.state::<Db>()).unwrap().total_bytes,
-            0
-        );
+        assert!(delete_local_asset(&app.state::<Db>(), &sync, "asset-1").is_err());
         let overview = ocr_assets_overview(app.state::<Db>()).unwrap();
-        assert_eq!(overview.items.len(), 1);
-        assert_eq!(overview.items[0].availability, "remote_only");
-        assert!(!dir.path().join("books/book-1.ocr.asset-1.pdf").exists());
+        assert_eq!(overview.total_bytes, 4);
+        assert_eq!(overview.items[0].availability, "available_verified");
+        assert!(dir.path().join("books/book-1.ocr.asset-1.pdf").exists());
 
         let db = app.state::<Db>();
         let relative = super::super::assets::expected_relative_path("book-1", "asset-2");

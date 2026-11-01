@@ -68,6 +68,8 @@ pub fn current_platform() -> &'static str {
         "windows"
     } else if cfg!(target_os = "linux") {
         "linux"
+    } else if cfg!(target_os = "ios") {
+        "ios"
     } else {
         "unknown"
     }
