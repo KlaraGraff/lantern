@@ -223,11 +223,15 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
     initialize();
   }, [initialize]);
 
-  // Load specific chat when navigating from ChatsPage
+  // Load specific chat when navigating from ChatsPage. Spent once per id:
+  // `chats` also grows when the reader sends the first message of a brand-new
+  // chat, and reloading the arrival chat then would cancel that answer.
+  const arrivalChatLoadedRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (initialChatId && chats.length > 0) {
-      loadChat(initialChatId);
-    }
+    if (!initialChatId || chats.length === 0) return;
+    if (arrivalChatLoadedRef.current === initialChatId) return;
+    arrivalChatLoadedRef.current = initialChatId;
+    loadChat(initialChatId);
   }, [initialChatId, chats.length, loadChat]);
 
   // Focus title input when editing

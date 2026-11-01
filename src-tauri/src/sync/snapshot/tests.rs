@@ -2738,3 +2738,200 @@ fn snapshot_cover_change_invalidates_only_the_replaced_identity() {
         .unwrap();
     assert_eq!(data, b"new cover");
 }
+
+/// A font re-imported after a peer deleted it keeps its id (the hash of its
+/// bytes) and a newer row. The peer's older snapshot must leave that font in
+/// place and must not file its tombstone next to it — a stored tombstone would
+/// keep later snapshots from ever upserting the font again, and travel on in
+/// this device's own snapshot to devices that then never receive it.
+#[test]
+fn a_reimported_font_outranks_an_older_snapshot_tombstone() {
+    const FONT_ID: &str = "custom-aa00000000000000000000000000000000000000000000000000000000ff00";
+    let mut snapshot = Snapshot::from_events("dev-B", &[]).unwrap();
+    snapshot.state.tombstones.insert(
+        merge::entity::CUSTOM_FONT.to_string(),
+        vec![TombstoneRow {
+            id: FONT_ID.into(),
+            ts: 1_000,
+        }],
+    );
+
+    let mut local = open_db();
+    local
+        .execute(
+            "INSERT INTO custom_fonts (id, family_name, file_name, format, file_size, created_at, updated_at, updated_by_device)
+             VALUES (?1, 'Reimported', 'reimported.ttf', 'truetype', 10, 3000, 3000, 'dev-A')",
+            params![FONT_ID],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+    }
+    let family: Option<String> = local
+        .query_row(
+            "SELECT family_name FROM custom_fonts WHERE id = ?1",
+            params![FONT_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(family.as_deref(), Some("Reimported"));
+    let tombstone: Option<i64> = local
+        .query_row(
+            "SELECT ts FROM _tombstones WHERE entity = ?1 AND id = ?2",
+            params![merge::entity::CUSTOM_FONT, FONT_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(
+        tombstone, None,
+        "an outranked peer delete must not be recorded"
+    );
+}
+
+/// A dismissal of a derived highlight is synced state, so it must survive the
+/// snapshot path too. Compaction folds the event into an in-memory DB, dumps
+/// the state and truncates the log; if the dump forgets the row, the reader's
+/// "do not show me this again" is gone from every later snapshot and the
+/// highlight is derived again on any device that bootstraps from one.
+#[test]
+fn snapshot_carries_dismissed_auto_highlights() {
+    let anchor = "lookup:record-1";
+    let dismissal = ev(
+        1_100,
+        "dev-A",
+        EventBody::AutoHighlightDismissalSet(AutoHighlightDismissalPayload {
+            id: auto_highlight_dismissal_id("b1", anchor),
+            book_id: "b1".into(),
+            anchor: anchor.into(),
+            dismissed: true,
+            created_at: 1_000,
+        }),
+    );
+    let undo = ev(
+        1_200,
+        "dev-A",
+        EventBody::AutoHighlightDismissalSet(AutoHighlightDismissalPayload {
+            id: auto_highlight_dismissal_id("b1", anchor),
+            book_id: "b1".into(),
+            anchor: anchor.into(),
+            dismissed: false,
+            created_at: 1_200,
+        }),
+    );
+    let events = vec![ev(1_000, "dev-A", import("b1")), dismissal, undo.clone()];
+
+    let mut direct = open_db();
+    apply_to(&mut direct, &events);
+
+    let snap = Snapshot::from_events("dev-A", &events).unwrap();
+    let mut bootstrapped = open_db();
+    {
+        let tx = bootstrapped.transaction().unwrap();
+        snap.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let read = |conn: &Connection| -> (i64, i64, String) {
+        conn.query_row(
+            "SELECT dismissed, updated_at, updated_by_device
+             FROM auto_highlight_dismissals WHERE book_id = 'b1' AND anchor = ?1",
+            params![anchor],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap()
+    };
+    assert_eq!(read(&direct), (0, 1_200, "dev-A".into()));
+    assert_eq!(
+        read(&bootstrapped),
+        read(&direct),
+        "a bootstrapped device must keep the dismissal (and its undo)"
+    );
+}
+
+/// `vocab.card.set` persists the paid-for learning card in `card_snapshot`.
+/// A snapshot that omits the column silently hands the bootstrapping device a
+/// word with no card, and the reader pays to generate it again.
+#[test]
+fn snapshot_carries_vocab_card_snapshot() {
+    let card = r#"{"senses":[{"text":"到那里"}]}"#;
+    let events = vec![
+        ev(1_000, "dev-A", import("b1")),
+        ev(
+            1_100,
+            "dev-A",
+            EventBody::VocabAdd(VocabPayload {
+                id: "v1".into(),
+                book_id: Some("b1".into()),
+                word: "thither".into(),
+                definition: "to that place".into(),
+                context_sentence: None,
+                cfi: None,
+                mastery: "new".into(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
+                list_status: "confirmed".into(),
+                card_snapshot: None,
+                source: "book".into(),
+                source_label: None,
+            }),
+        ),
+        ev(
+            1_200,
+            "dev-A",
+            EventBody::VocabCardSet {
+                id: "v1".into(),
+                definition: "到那里".into(),
+                context_explanation: Some("在旧式英语里表示去那儿".into()),
+                card_snapshot: Some(card.into()),
+            },
+        ),
+    ];
+
+    let mut direct = open_db();
+    apply_to(&mut direct, &events);
+
+    let snap = Snapshot::from_events("dev-A", &events).unwrap();
+    let mut bootstrapped = open_db();
+    {
+        let tx = bootstrapped.transaction().unwrap();
+        snap.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let read = |conn: &Connection| -> (String, Option<String>, Option<String>) {
+        conn.query_row(
+            "SELECT definition, context_explanation, card_snapshot
+             FROM vocab_words WHERE id = 'v1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        read(&direct),
+        (
+            "到那里".into(),
+            Some("在旧式英语里表示去那儿".into()),
+            Some(card.into())
+        )
+    );
+    assert_eq!(
+        read(&bootstrapped),
+        read(&direct),
+        "the learning card must survive a snapshot bootstrap"
+    );
+}

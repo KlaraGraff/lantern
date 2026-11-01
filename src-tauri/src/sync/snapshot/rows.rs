@@ -52,6 +52,12 @@ pub struct SnapshotState {
     pub word_mark_exceptions: BTreeMap<String, WordMarkExceptionRow>,
     #[serde(default)]
     pub lookup_occurrence_marks: BTreeMap<String, LookupOccurrenceMarkRow>,
+    /// One reader decision per derived highlight — "do not show me this one".
+    /// Synced as `auto_highlight.dismissal.set`, so a snapshot that omitted it
+    /// would resurrect every dismissed highlight on the device that bootstraps
+    /// from it.
+    #[serde(default)]
+    pub auto_highlight_dismissals: BTreeMap<String, AutoHighlightDismissalRow>,
     #[serde(default)]
     pub book_summaries: BTreeMap<String, BookSummaryRow>,
     #[serde(default)]
@@ -237,6 +243,11 @@ pub struct VocabRow {
     /// to the formal vocab list.
     #[serde(default = "default_list_status")]
     pub list_status: String,
+    /// The serialised learning card (migration 067). Without it in the
+    /// snapshot, `vocab.card.set` would be the one synced column a
+    /// bootstrapping device never receives and the reader pays to regenerate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_snapshot: Option<String>,
     /// 'book' or 'quiz' (migration 074). Snapshots written before the column
     /// existed only ever held book-sourced words.
     #[serde(default = "default_source")]
@@ -295,6 +306,16 @@ pub struct LookupOccurrenceMarkRow {
     pub display_word: String,
     pub location: String,
     pub enabled: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AutoHighlightDismissalRow {
+    pub book_id: String,
+    pub anchor: String,
+    pub dismissed: bool,
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_device: String,

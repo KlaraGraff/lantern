@@ -151,6 +151,9 @@ fn request_body(
             mark_cache_control(&mut api_messages[len - 1]);
         }
     }
+    // The profile form shares OpenAI's 0..=2 range, but the Messages API only
+    // accepts 0..=1 and rejects the whole request otherwise.
+    let temperature = temperature.clamp(0.0, 1.0);
     let mut body = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens.unwrap_or(4096),
@@ -223,6 +226,7 @@ pub async fn stream_chat<R: Runtime>(
 
     let mut stream = response.bytes_stream();
     let mut decoder = crate::ai::sse::SseDecoder::new();
+    let mut state = ChatStreamState::default();
 
     while let Some(chunk) = tokio::time::timeout(crate::ai::STREAM_IDLE_TIMEOUT, stream.next())
         .await
@@ -230,19 +234,47 @@ pub async fn stream_chat<R: Runtime>(
     {
         let chunk = chunk.map_err(|e| AppError::Ai(e.to_string()))?;
         for data in decoder.push(&chunk)? {
-            if process_data(app, event_name, &data, &emitted, &usage)? {
+            if process_data(app, event_name, &data, &emitted, &usage, &mut state)? {
                 return Ok(());
             }
         }
     }
 
     for data in decoder.finish()? {
-        if process_data(app, event_name, &data, &emitted, &usage)? {
+        if process_data(app, event_name, &data, &emitted, &usage, &mut state)? {
             return Ok(());
         }
     }
 
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
+}
+
+#[derive(Default)]
+struct ChatStreamState {
+    saw_text: bool,
+    saw_tool_use: bool,
+    stop_reason: Option<String>,
+}
+
+/// The same verdicts the OpenAI-shaped channels apply to their finish reason:
+/// a stream that was cut off (or refused) is not a complete answer, and a
+/// stream that never produced text is not an answer at all. Without this an
+/// Anthropic reply truncated at `max_tokens` was reported as success.
+fn validate_completion(state: &ChatStreamState) -> AppResult<()> {
+    if matches!(
+        state.stop_reason.as_deref(),
+        Some("max_tokens") | Some("refusal")
+    ) {
+        return Err(AppError::Ai("AI_RESPONSE_INCOMPLETE".to_string()));
+    }
+    if state.saw_text {
+        return Ok(());
+    }
+    Err(AppError::Ai(if state.saw_tool_use {
+        "AI_TOOL_CALL_UNSUPPORTED".to_string()
+    } else {
+        "AI_EMPTY_RESPONSE".to_string()
+    }))
 }
 
 fn process_data<R: Runtime>(
@@ -251,6 +283,7 @@ fn process_data<R: Runtime>(
     data: &str,
     emitted: &AtomicBool,
     usage: &Mutex<Option<serde_json::Value>>,
+    state: &mut ChatStreamState,
 ) -> AppResult<bool> {
     let parsed: serde_json::Value = serde_json::from_str(data)
         .map_err(|_| AppError::Ai("AI_STREAM_PROTOCOL_ERROR: invalid JSON event".to_string()))?;
@@ -267,6 +300,14 @@ fn process_data<R: Runtime>(
         "message_delta" => {
             if let Some(value) = parsed.get("usage") {
                 crate::ai::usage::merge_into(usage, value.clone());
+            }
+            if let Some(reason) = parsed["delta"]["stop_reason"].as_str() {
+                state.stop_reason = Some(reason.to_string());
+            }
+        }
+        "content_block_start" => {
+            if parsed["content_block"]["type"] == "tool_use" {
+                state.saw_tool_use = true;
             }
         }
         "content_block_delta" => {
@@ -291,6 +332,9 @@ fn process_data<R: Runtime>(
                 .filter(|value| !value.is_empty())
             {
                 emitted.store(true, Ordering::Relaxed);
+                if !text.trim().is_empty() {
+                    state.saw_text = true;
+                }
                 let _ = app.emit(
                     event_name,
                     AiStreamChunk {
@@ -310,6 +354,7 @@ fn process_data<R: Runtime>(
             return Err(crate::ai::stream_event_error("Anthropic", &parsed["error"]));
         }
         "message_stop" => {
+            validate_completion(state)?;
             let _ = app.emit(
                 event_name,
                 AiStreamChunk {
@@ -728,6 +773,85 @@ mod tests {
         assert!(blocks[0]["cache_control"].is_null());
         assert_eq!(blocks[1]["text"], "extract the words");
         assert_eq!(blocks[1]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn temperature_is_clamped_to_the_supported_range() {
+        // The profile form and the settings slider share the OpenAI range
+        // (0..=2), but the Messages API rejects anything above 1.0 with a 400
+        // — every request on that profile fails, not just this one.
+        let body = request_body(
+            "model",
+            1.5,
+            &[system("stable".into(), "system")],
+            None,
+            None,
+            false,
+        );
+        assert_eq!(body["temperature"], 1.0);
+        let body = request_body(
+            "model",
+            0.3,
+            &[system("stable".into(), "system")],
+            None,
+            None,
+            false,
+        );
+        assert_eq!(body["temperature"], 0.3);
+    }
+
+    #[test]
+    fn truncated_response_is_an_error_not_success() {
+        let app = tauri::test::mock_app();
+        let emitted = AtomicBool::new(false);
+        let usage = Mutex::new(None);
+        let mut state = ChatStreamState::default();
+        for event in [
+            r#"{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}"#,
+            r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"half an ans"}}"#,
+            r#"{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":64}}"#,
+        ] {
+            let _ = process_data(app.handle(), "bh", event, &emitted, &usage, &mut state);
+        }
+        let result = process_data(
+            app.handle(),
+            "bh",
+            r#"{"type":"message_stop"}"#,
+            &emitted,
+            &usage,
+            &mut state,
+        );
+        assert!(
+            result.is_err(),
+            "a stream cut off by max_tokens must not be reported as a complete answer"
+        );
+    }
+
+    #[test]
+    fn empty_stream_is_an_error_not_a_done() {
+        let app = tauri::test::mock_app();
+        let emitted = AtomicBool::new(false);
+        let usage = Mutex::new(None);
+        let mut state = ChatStreamState::default();
+        for event in [
+            r#"{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}"#,
+            r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t","name":"n","input":{}}}"#,
+            r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}"#,
+        ] {
+            let _ = process_data(app.handle(), "bh", event, &emitted, &usage, &mut state);
+        }
+        let result = process_data(
+            app.handle(),
+            "bh",
+            r#"{"type":"message_stop"}"#,
+            &emitted,
+            &usage,
+            &mut state,
+        );
+        assert!(
+            result.is_err(),
+            "a stream that never produced text must not end as a successful empty answer"
+        );
     }
 
     #[test]

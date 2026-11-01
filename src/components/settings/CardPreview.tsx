@@ -189,7 +189,7 @@ export default function CardPreview({
       const bilingualDetails = explanationMode === "adaptive_bilingual"
         ? beginnerAdaptive
           ? adaptivePreview.beginnerEnglish
-          : level === "B1"
+          : level === "B2"
             ? adaptivePreview.intermediateChinese
             : null
         : null;

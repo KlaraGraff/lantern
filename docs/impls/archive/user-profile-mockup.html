@@ -230,7 +230,7 @@ td code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var
     <li><b>结论审核：产卡后同批再发一道请求逐卡审。</b>规则清单 R1–R5（语言 / 水平 / 引用 / 无指令价值 / 证据脱节），拒卡必须引用规则编号，引不出编号代码判 keep；被拒的卡沿用上一批结论。实测 3 轮：两张坏卡全部踢中，好卡 15 判仅 1 次可辩护的误杀。「防」与「审」叠加，不是二选一。</li>
     <li><b>修正状态措辞实测校准。</b>「结论必须与裁决方向一致」会让删过的维度永久长不出新卡（4/4 轮复现——正是调研笔记里的过度压制失败模式）；改为「样本全部晚于删除时间，若足以支撑应当产出全新结论」后恢复正常（3/3 轮）。维度数量本身实测无害：空维度对模型不可见，合并反而稀释裁决，<b>7 格保持</b>。</li>
   </ol>
-  <p><b>沿用 v5 定稿（依据见 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">docs/impls/user-profile-research-notes.md</code>）：</b></p>
+  <p><b>沿用 v5 定稿（依据见 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">调研笔记（过程文件，已按约定删除）</code>）：</b></p>
   <ol>
     <li><b>锁格子，不锁句子。</b>系统段的卡片按<b>固定维度</b>组织，共 7 个：词义讲解 / 句法讲解 / 指代讲解 / 文化背景 / 查词取向 / 举例来源 / 回答节奏。每个维度最多一张卡，没攒出结论的维度不显示。维度名固定（走 i18n），是删除水位线和移动排除的锚点；<b>卡上的结论句完全自由</b>——个性化住在句子里。维度清单只随新数据源的版本更新一起长。</li>
     <li><b>修正信号：存原始台账，喂派生状态。</b>用户的每次删除 / 移动 / 撤回 / 改写记进只增不改的事件日志（<code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">profile_events</code>），但<b>台账永不进提示词</b>。每次总结前由普通代码按「同一维度上最新的显式动作说了算」压成每维度一行的裁决状态，只把这几行给总结器。用户自相矛盾不需要 AI 去理解——时间戳排序就是答案。</li>

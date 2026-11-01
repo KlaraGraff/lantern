@@ -1,5 +1,7 @@
 # 主页信息架构收拢 — 实施计划
 
+**状态：已上线（Status: shipped）**
+
 样张（唯一视觉依据）：[`home-ia-consolidation-mockup.html`](home-ia-consolidation-mockup.html)，12 屏。
 本文件是把样张翻译成代码任务的清单。**样张和本文冲突时以样张为准。**
 

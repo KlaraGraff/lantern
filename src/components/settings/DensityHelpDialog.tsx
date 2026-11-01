@@ -14,8 +14,8 @@ interface DensityHelpDialogProps {
 }
 
 const rows: Record<LearningCardKind, LearningModuleId[]> = {
-  word: ["word_info", "context_meaning", "common_senses", "morphology", "grammar_role", "tone"],
-  phrase: ["context_meaning", "common_senses", "collocations", "grammar_analysis", "idioms", "tone"],
+  word: ["word_info", "context_meaning", "common_senses", "morphology", "grammar_role"],
+  phrase: ["context_meaning", "common_senses", "collocations", "grammar_analysis", "idioms"],
   passage: ["context_meaning", "grammar_analysis", "key_terms", "idioms", "references", "tone"],
 };
 

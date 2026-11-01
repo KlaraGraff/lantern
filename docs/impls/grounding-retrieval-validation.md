@@ -239,4 +239,4 @@ comment 记了选书理由和已知的不完美处。`every_ab_query_anchor_reso
 - `AutoAnalysisJobView` 的 `layer` 字段与功能/个性化分组
 - 几处 i18n 键改名
 - `docs/impls/` 下未归档的样张：`book-metadata-ai-mockup.html`、
-  `user-profile-and-auto-analysis-mockup.html`、`user-profile-research-notes.md`
+  `user-profile-and-auto-analysis-mockup.html`

@@ -12,10 +12,27 @@ const PAIRED_MARKERS = ["`", "**", "==", "~~"] as const;
 
 function countOccurrences(text: string, marker: string): number {
   let count = 0;
-  let at = text.indexOf(marker);
-  while (at >= 0) {
-    count += 1;
-    at = text.indexOf(marker, at + marker.length);
+  let inCode = false;
+  let at = 0;
+  while (at < text.length) {
+    // An inline code span renders its content literally, so a marker inside one
+    // is text: counting it would "close" a span the answer never opened.
+    if (text[at] === "`") {
+      inCode = !inCode;
+      if (marker === "`") count += 1;
+      at += 1;
+      continue;
+    }
+    if (!inCode && text.startsWith(marker, at)) {
+      // `===` (or any longer run) stays literal text — `splitOnMarkers` never
+      // opens a mark on it, so its `==` must not balance against anything.
+      const partOfLongerRun = marker === "=="
+        && (text[at - 1] === "=" || text[at + 2] === "=");
+      if (!partOfLongerRun) count += 1;
+      at += marker.length;
+      continue;
+    }
+    at += 1;
   }
   return count;
 }

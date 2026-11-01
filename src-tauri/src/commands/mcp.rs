@@ -174,7 +174,7 @@ pub(crate) fn codex_is_enabled_at(path: &Path) -> AppResult<bool> {
         .map_err(|e| AppError::Other(format!("parse {}: {e}", path.display())))?;
     Ok(doc
         .get("mcp_servers")
-        .and_then(|v| v.as_table())
+        .and_then(|v| v.as_table_like())
         .and_then(|t| t.get(SERVER_KEY))
         .is_some())
 }
@@ -195,11 +195,12 @@ pub(crate) fn codex_write_at(path: &Path, enabled: bool, binary_path: &str) -> A
     };
 
     if enabled {
-        if !doc.contains_table("mcp_servers") {
+        if doc.get("mcp_servers").is_none() {
             doc["mcp_servers"] = toml_edit::Item::Table(toml_edit::Table::new());
         }
-        let servers = doc["mcp_servers"]
-            .as_table_mut()
+        let servers = doc
+            .get_mut("mcp_servers")
+            .and_then(|v| v.as_table_like_mut())
             .ok_or_else(|| AppError::Other("mcp_servers is not a table".to_string()))?;
 
         let mut entry = toml_edit::Table::new();
@@ -207,8 +208,11 @@ pub(crate) fn codex_write_at(path: &Path, enabled: bool, binary_path: &str) -> A
         let mut args = toml_edit::Array::new();
         args.push("mcp");
         entry["args"] = toml_edit::value(args);
-        servers[SERVER_KEY] = toml_edit::Item::Table(entry);
-    } else if let Some(servers) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
+        servers.insert(SERVER_KEY, toml_edit::Item::Table(entry));
+    } else if let Some(servers) = doc
+        .get_mut("mcp_servers")
+        .and_then(|v| v.as_table_like_mut())
+    {
         servers.remove(SERVER_KEY);
         // Leave an empty `[mcp_servers]` table behind rather than
         // deleting it — preserves the user's section ordering if they
@@ -469,6 +473,52 @@ mod tests {
         let err = codex_write_at(&path, true, "/test/lantern").unwrap_err();
         assert!(err.to_string().contains("parse"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "[unclosed-table");
+    }
+
+    #[test]
+    fn codex_enable_preserves_an_inline_mcp_servers_table() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        // A valid spelling of the same table, written inline by some tools.
+        std::fs::write(
+            &path,
+            "model = \"gpt-5\"\nmcp_servers = { github = { command = \"gh-mcp\" } }\n",
+        )
+        .unwrap();
+
+        codex_write_at(&path, true, "/test/lantern").unwrap();
+        let after: toml_edit::DocumentMut =
+            std::fs::read_to_string(&path).unwrap().parse().unwrap();
+        assert_eq!(
+            after["mcp_servers"]["github"]["command"].as_str(),
+            Some("gh-mcp"),
+            "enabling lantern must not drop the user's other MCP servers"
+        );
+        assert_eq!(
+            after["mcp_servers"]["lantern"]["command"].as_str(),
+            Some("/test/lantern")
+        );
+    }
+
+    #[test]
+    fn codex_disable_removes_the_entry_from_an_inline_mcp_servers_table() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "mcp_servers = { lantern = { command = \"/test/lantern\", args = [\"mcp\"] } }\n",
+        )
+        .unwrap();
+        assert!(codex_is_enabled_at(&path).unwrap());
+
+        codex_write_at(&path, false, "/test/lantern").unwrap();
+        let after: toml_edit::DocumentMut =
+            std::fs::read_to_string(&path).unwrap().parse().unwrap();
+        assert!(
+            after["mcp_servers"].get("lantern").is_none(),
+            "disabling must actually remove the entry, not silently leave it"
+        );
+        assert!(!codex_is_enabled_at(&path).unwrap());
     }
 
     #[test]

@@ -194,8 +194,9 @@ fn embedding_state(
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
     let embedded_chunks = conn
         .query_row(
-            "SELECT COUNT(*) FROM book_chunk_embeddings WHERE book_id = ?1",
-            rusqlite::params![book_id],
+            "SELECT COUNT(*) FROM book_chunk_embeddings
+             WHERE book_id = ?1 AND model = ?2",
+            rusqlite::params![book_id, model],
             |row| row.get(0),
         )
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
@@ -570,6 +571,61 @@ mod tests {
     use super::*;
     use crate::db::Db;
     use crate::mcp::McpState;
+
+    fn embedding_test_handler(dir: &tempfile::TempDir) -> LanternMcpHandler {
+        let db = Db::init(dir.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress, created_at, updated_at)
+                 VALUES ('book', 'Book', 'Author', 'books/book.epub', 'epub', 'reading', 10, 1, 1)",
+                [],
+            )
+            .unwrap();
+            for (id, chunk_index) in [("c1", 0_i64), ("c2", 1)] {
+                conn.execute(
+                    "INSERT INTO book_chunks
+                     (id, book_id, chunk_index, section_index, char_start, char_end,
+                      text, snippet, token_estimate, created_at)
+                     VALUES (?1, 'book', ?2, 0, ?2, ?2, 'text', 'text', 1, 1)",
+                    rusqlite::params![id, chunk_index],
+                )
+                .unwrap();
+            }
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES
+                 ('ai_embedding_configured', 'true'), ('ai_embedding_model', 'model-b')",
+                [],
+            )
+            .unwrap();
+            for (chunk_id, model) in [("c1", "model-a"), ("c2", "model-a")] {
+                conn.execute(
+                    "INSERT INTO book_chunk_embeddings
+                     (chunk_id, book_id, embedding, dimensions, model, source_sha256, created_at)
+                     VALUES (?1, 'book', x'00', 3, ?2, 'hash', 1)",
+                    rusqlite::params![chunk_id, model],
+                )
+                .unwrap();
+            }
+        }
+        LanternMcpHandler::new(McpState::new(db, None, None))
+    }
+
+    /// Vectors for a previous embedding model are not usable by the configured
+    /// one, so a book whose vectors all moved on must not read as complete.
+    #[test]
+    fn embedding_state_ignores_vectors_from_another_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let handler = embedding_test_handler(&dir);
+        let state = embedding_state(&handler, "book").unwrap();
+        assert_eq!(state.indexed_chunks, 2);
+        assert_eq!(
+            state.embedded_chunks, 0,
+            "vectors written by the old model must not count as this book's embeddings"
+        );
+        assert!(!state.complete, "a fully stale book is not complete");
+    }
 
     #[test]
     fn visible_section_listing_obeys_character_cutoff() {
