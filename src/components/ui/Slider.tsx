@@ -51,6 +51,7 @@ export default function Slider({
         onChange={(e) => onChange(Number(e.target.value))}
         onMouseUp={(e) => onChangeEnd?.(Number((e.target as HTMLInputElement).value))}
         onTouchEnd={(e) => onChangeEnd?.(Number((e.target as HTMLInputElement).value))}
+        onKeyUp={(e) => onChangeEnd?.(Number((e.target as HTMLInputElement).value))}
         className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-dark bg-border"
       />
       {hint && (

@@ -361,7 +361,7 @@ const MAX_SCALE: f64 = 1.5;
 /// cleared) returns exactly `1.0` — guardrail 1: unmeasured means
 /// unchanged, never guessed at.
 pub fn lookup_rate_scale(rate_per_1000: Option<f64>) -> f64 {
-    let Some(rate) = rate_per_1000.filter(|r| r.is_finite() && *r > 0.0) else {
+    let Some(rate) = rate_per_1000.filter(|r| r.is_finite() && *r >= 0.0) else {
         return 1.0;
     };
     let clamped = rate.clamp(LOW_RATE_PER_1000, HIGH_RATE_PER_1000);

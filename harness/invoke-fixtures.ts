@@ -1180,6 +1180,7 @@ export const FIXTURES: Record<string, Fixture> = {
         byteSize: 12_400_000,
         createdAt: nowMs(),
         availability: "local",
+        canReleaseLocal: true,
       },
     ],
   },

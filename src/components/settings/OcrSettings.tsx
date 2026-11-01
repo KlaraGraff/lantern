@@ -213,6 +213,7 @@ export default function OcrSettings() {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
+{item.canReleaseLocal && (
               <button
                 type="button"
                 title={t("ocr.storage.deleteLocal")}
@@ -225,6 +226,7 @@ export default function OcrSettings() {
                   ? <Loader2 size={14} className="animate-spin" />
                   : <Trash2 size={14} />}
               </button>
+              )}
               <button
                 type="button"
                 title={t("ocr.storage.deleteAll")}

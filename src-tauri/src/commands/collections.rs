@@ -179,7 +179,9 @@ pub fn reorder_collections(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
+    // Monotonic, like every other field-clock write: two reorders in one
+    // millisecond must not tie on peers.
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(&db, now, |tx, events| {
         for (i, id) in ids.iter().enumerate() {

@@ -41,6 +41,8 @@ export interface OcrAssetItem {
   byteSize: number;
   createdAt: number;
   availability: string;
+  /** False outside iCloud, where this device holds the only copy. */
+  canReleaseLocal: boolean;
 }
 
 export interface OcrAssetsOverview {

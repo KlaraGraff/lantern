@@ -376,3 +376,20 @@ fn reading_speed_median_ignores_page_turn_screens() {
         "median should be the 200 wpm of real reading, got {wpm}"
     );
 }
+
+/// A measured zero lookup rate is the strongest "read without looking up"
+/// signal there is; it lands on the floor scale like any rate below the low
+/// bound, not back on the neutral 1.0 that means "not measured yet".
+#[test]
+fn zero_lookup_rate_gets_the_lowest_scale() {
+    let (_dir, db) = fixture();
+    insert_screen(&db, "s1", MIN_WORDS_FOR_LOOKUP_RATE, 1_700_000_000_000);
+
+    let conn = db.reader();
+    let calibration = compute(&conn, 1_700_000_100_000).unwrap();
+    assert_eq!(calibration.lookup_rate_per_1000, Some(0.0));
+    assert_eq!(
+        lookup_rate_scale(calibration.lookup_rate_per_1000),
+        MIN_SCALE
+    );
+}

@@ -70,9 +70,9 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
     setEditingTitle(false);
   };
 
-  const handleDelete = () => {
-    deleteChat(chat.id);
-    onChatDeleted(chat.id);
+  const handleDelete = async () => {
+    // Close the thread only once it is really gone; a failed delete keeps it.
+    if (await deleteChat(chat.id)) onChatDeleted(chat.id);
   };
 
   const currentTitle = chats.find((c) => c.id === chatId)?.title || chat.title;
