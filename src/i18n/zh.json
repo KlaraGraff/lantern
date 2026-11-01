@@ -1774,6 +1774,8 @@
   "settings.reset.itemAi": "AI 对话和解释记录",
   "settings.reset.itemSettings": "所有设置和 API Key",
   "settings.reset.syncNote": "iCloud 同步已开启：重置会先关掉这台设备的同步，iCloud 里的那份不会被删。以后重新打开同步，数据会再下载回来。",
+  "settings.reset.backupHint": "想先留一份书？",
+  "settings.reset.backupLink": "先去做一次书库备份",
   "settings.reset.cancel": "取消",
   "settings.reset.continue": "继续",
   "settings.reset.step2Title": "最后确认",

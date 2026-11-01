@@ -1774,6 +1774,8 @@
   "settings.reset.itemAi": "AI chats and explanations",
   "settings.reset.itemSettings": "All settings and API keys",
   "settings.reset.syncNote": "iCloud sync is on: resetting turns sync off on this device first, and the copy in iCloud is not deleted. Turn sync back on later and your data downloads again.",
+  "settings.reset.backupHint": "Want to keep a copy of your books first?",
+  "settings.reset.backupLink": "Run a library backup",
   "settings.reset.cancel": "Cancel",
   "settings.reset.continue": "Continue",
   "settings.reset.step2Title": "Final confirmation",

@@ -18,6 +18,7 @@ import { ONBOARDING_STATE_KEY } from "../onboarding/onboarding-state";
 import i18n from "../../i18n";
 import { createSettingsSaveFeedback, runSettingsSave } from "./settings-save-feedback";
 import ResetDataDialog from "./ResetDataDialog";
+import { openSettings } from "../settings-open";
 import { runReset, type ResetDataSummary, type ResetStep } from "./reset-data";
 
 /**
@@ -269,6 +270,14 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           onCancel={closeReset}
           onContinue={() => setResetStep("confirm")}
           onConfirm={(typed) => void confirmReset(typed)}
+          onOpenBackup={
+            platform.hasFileReveal
+              ? () => {
+                  closeReset();
+                  openSettings("library");
+                }
+              : undefined
+          }
         />
       )}
     </div>
