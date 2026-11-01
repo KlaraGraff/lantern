@@ -711,6 +711,16 @@ pub fn run() {
             app.manage(SyncState::new(None, None));
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.manage(ocr_manager);
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                use tauri::Listener;
+                app.manage(commands::library_backup::LibraryBackup::default());
+                let handle = app.handle().clone();
+                app.listen("book-imported", move |_| {
+                    commands::library_backup::schedule_auto(&handle);
+                });
+                commands::library_backup::spawn_watcher(app.handle().clone());
+            }
 
             // TXT, Markdown, and HTML books keep their source files in the
             // library, while their reader documents are local derived caches.
@@ -794,6 +804,16 @@ pub fn run() {
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::app_update::update_install,
             // Books
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_backup_status,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_backup_choose_dir,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_backup_run,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_backup_cancel,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_backup_set_auto,
             commands::books::import_book_from_dialog,
             commands::books::list_books,
             commands::books::move_book,

@@ -23,6 +23,9 @@ pub mod fonts;
 pub mod language_assessments;
 pub mod level_observation;
 pub mod level_word_class;
+// Desktop-only: it needs a native folder chooser and a folder the user owns.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod library_backup;
 pub mod lookup_history;
 pub mod mastery_events;
 pub mod mcp;

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import BookSourcesSettings from "./BookSourcesSettings";
 import LibrarySyncSettings from "./LibrarySyncSettings";
+import LibraryBackupSection from "./LibraryBackupSection";
 import { platform } from "../../services/platform";
 import type { SettingsProps } from "./types";
 
@@ -31,6 +32,19 @@ export default function LibrarySettings(props: SettingsProps) {
           </div>
           <div className="h-px bg-border-light" />
           <LibrarySyncSettings {...props} />
+        </>
+      )}
+
+      {/* A one-way copy to a folder the user picks. Desktop only (Windows
+          included, which has no folder sync): it needs a native folder
+          chooser and a folder the user owns. */}
+      {platform.hasFileReveal && (
+        <>
+          <div className="mt-8 mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+            {t("settings.library.backupGroupHeader")}
+          </div>
+          <div className="h-px bg-border-light" />
+          <LibraryBackupSection />
         </>
       )}
     </div>
