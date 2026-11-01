@@ -1,7 +1,7 @@
 # 自动更新（Tauri Updater）接入方案
 
 > **给谁看：** 负责发 v2.9 的那条线。
-> **状态（2026-08-06）：** 密钥和 GitHub Secrets 已就位，代码改动**一行未动**，全部待做。
+> **状态：已上线（Status: shipped）。** 密钥与 GitHub Secrets 已就位，接入代码已随 updater 落地。
 > **为什么代码没动：** 要改的 `tauri.conf.json` / `Cargo.toml` / `package.json` 正是发版必改的三个文件，两条线同时改必撞。所以这边只做了不碰文件的部分，剩下的随 v2.9 一起落地。
 
 ---

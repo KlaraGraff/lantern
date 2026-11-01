@@ -1,5 +1,7 @@
 # Replacing the `notify` watcher with `NSMetadataQuery`
 
+**Status: shipped** — built as `src-tauri/src/sync/icloud_query.rs`, wired into `watcher.rs`.
+
 Implementation design for **P5 item 3** of `docs/roadmap/mobile-ios.md` — "Replace the
 `notify` watcher with `NSMetadataQuery`; kqueue does not observe iCloud-initiated downloads".
 
@@ -316,7 +318,7 @@ Three real roots are "anywhere else" today:
 2. **macOS, right now.** `sync/migration.rs` still resolves the desktop root through
    `icloud_drive_root()` → `~/Library/Mobile Documents/com~apple~CloudDocs/…`, a *user-picked*
    folder that is not this app's container. Only `ubiquity_sync_root()` — `#[cfg(target_os = "ios")]`
-   — points at the container. P5 item 2 and [D-015](../roadmap/mobile-ios.md) move macOS over;
+   — points at the container. P5 item 2 and [D-015](../../roadmap/mobile-ios.md) move macOS over;
    until that lands, macOS must keep working.
 3. **iOS with no container.** `ubiquity_container_dir()` returns `None` on a device with iCloud
    Drive off or no account — the doc comment on it already calls that "an ordinary answer, not an
@@ -492,7 +494,7 @@ future progress surface. It does **not** gate the tick. An item reported as
 `sync/snapshot/compact.rs:75`, `commands/sync.rs:919,969`.
 
 Triggering downloads from inside the watcher would be a behaviour change, not a mechanism
-change, and it would be the wrong one: [D-013](../roadmap/mobile-ios.md) says books download on
+change, and it would be the wrong one: [D-013](../../roadmap/mobile-ios.md) says books download on
 demand, and the query reports every book placeholder in the container. A watcher that downloaded
 what it saw would pull the user's entire library onto their phone the first time it started.
 Acting on download state is P5 item 4's job and belongs in its own change.
@@ -508,7 +510,7 @@ a `#[cfg(not(target_vendor = "apple"))]` stub returning `false` next to its real
 pattern `icloud.rs` uses nine times — and the whole `sync/metadata.rs` module is gated. Windows
 and Linux compile the same `notify` path they compile today, with one extra always-false branch.
 
-Per [D-007](../roadmap/mobile-ios.md) Windows sync is out of scope regardless; this is about
+Per [D-007](../../roadmap/mobile-ios.md) Windows sync is out of scope regardless; this is about
 keeping the build green, not about behaviour.
 
 ---
@@ -522,7 +524,7 @@ at each step, as P5 item 1 did.
 **Step 0 — prerequisite, owned by P5 item 2.** `icloud::ubiquity_container_dir` is
 `#[cfg(target_os = "ios")]` today. The backend selector needs it on macOS too. Item 2 widens it
 to `target_vendor = "apple"` as part of relocating the desktop root into the container
-([D-015](../roadmap/mobile-ios.md)). **Item 3 should land after item 2.** If it lands first,
+([D-015](../../roadmap/mobile-ios.md)). **Item 3 should land after item 2.** If it lands first,
 widen the gate in `src-tauri/src/icloud.rs` as step 0 and accept that the selector returns `false` on macOS
 until the root actually moves — which is correct, not a workaround.
 

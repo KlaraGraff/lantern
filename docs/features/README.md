@@ -11,6 +11,8 @@ A spec's number is its issue number here. A `q` prefix marks a number inherited 
 - [q32 — Library Backup](q32-library-backup.md)
 - [q276 - Reset All App Data](q276-reset-all-data.md)
 
-## Deferred
+## Archive
 
-- [用户画像 — 查看原始记录](profile-source-records.md) — 样张里画了链接，功能没做；用户明确先搁置
+- [用户画像 — 查看原始记录](archive/profile-source-records.md) — 已实现（`src/components/profile/CardEvidencePanel.tsx`）
+- [q21 — AI Auto-Sort Books into Collections](archive/q21-ai-auto-sort-collections.md) — 继承自上游，未实现
+- [q22 — AI Book Recommendations](archive/q22-book-recommendations.md) — 继承自上游，未实现

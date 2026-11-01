@@ -15,7 +15,7 @@ Save and restore AI chats per book. Multiple chat threads per book, each message
 This line bundled two jobs and was marked Complete on the strength of one of them. Split, as of 2026-08-03:
 
 - **DB migration — Complete.** The version-tracked migration system is in `db.rs`, 31 migrations deep, and has carried schema changes across every release.
-- **In-app auto-update — Not started, deferred.** There is no `tauri-plugin-updater` in `Cargo.toml` or `package.json`, no `UpdateToast`, no update checker. The `hasUpdater` capability flag in `services/platform.ts` says as much in its own doc comment. Every update is a manual download today. [`impls/q243-update-experience.md`](../impls/q243-update-experience.md) is the plan, but it was written against Quill's existing update UI and has to be rebased onto "build it from nothing" before anyone starts.
+- **In-app auto-update — Complete.** `tauri-plugin-updater`, `UpdateToast.tsx`, the app-menu "Check for Updates" item and the About settings page all ship; [`impls/archive/q243-update-experience.md`](../impls/archive/q243-update-experience.md) and [`impls/archive/auto-update-setup.md`](../impls/archive/auto-update-setup.md) are the record.
 
 - **Issue:** [#45](https://github.com/yicheng47/quill/issues/45)
 
@@ -28,7 +28,7 @@ Externalize all UI strings, add language switcher (English / 简体中文), adap
 ### AI Translation
 Passage-level translation and bilingual reading mode for reading foreign-language books. Passage translation via context menu streams ephemerally with copy from the popover. Bilingual mode injects translations inline below each paragraph in the reader; any future cache should be scoped to that mode rather than saved translation history.
 
-- **Status:** Complete
+- **Status:** Passage translation complete. Bilingual whole-book (inline per-paragraph) translation is **not built**.
 - **Issue:** [#73](https://github.com/yicheng47/quill/issues/73)
 
 ### Notes (AI-Assisted)

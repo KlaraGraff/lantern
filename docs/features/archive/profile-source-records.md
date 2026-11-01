@@ -2,7 +2,7 @@
 
 GitHub issue: 尚未开（动工时补一个，并按 `README.md` 的规则把编号写进文件名）
 
-**Status:** Deferred — 用户 2026-08-08 明确「先记下来，现在不做」
+**Status: shipped** — 已实现（`src/components/profile/CardEvidencePanel.tsx`）
 
 ## Motivation
 
@@ -12,7 +12,7 @@ GitHub issue: 尚未开（动工时补一个，并按 `README.md` 的规则把�
 
 这句话本身是模型写的。读者要判断这张卡该不该信、该不该改，唯一能依靠的就是这句概括——而它恰恰是最需要被核对的那一环。「查看原始记录」把这条链补上：点开就能看到这条结论背后真正的那些查词、追问、标注。
 
-样张（`docs/impls/user-profile-mockup.html:297`）里这个链接是画着的，功能没做。**链接留着就是一句承诺**，所以要么补上，要么把链接撤掉——不能长期停在画而不做的状态。
+样张（`docs/impls/archive/user-profile-mockup.html:297`）里这个链接是画着的，功能没做。**链接留着就是一句承诺**，所以要么补上，要么把链接撤掉——不能长期停在画而不做的状态。
 
 ## Scope
 
