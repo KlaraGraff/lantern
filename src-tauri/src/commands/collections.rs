@@ -205,17 +205,30 @@ pub(crate) fn do_add_book_to_collection(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<bool> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         let key = format!("{collection_id}:{book_id}");
         // A stale peer add must not resurrect a removed membership, and a local
         // re-add must clear the tombstone its own removal left behind — the
         // same clearable-tombstone rule `apply_collection_book_add` applies.
+        // Only strictly older tombstones are cleared; whatever survives is at
+        // or after `now` and outranks this add.
         tx.execute(
-            "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
-            params![entity::COLLECTION_BOOK, key],
+            "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2 AND ts < ?3",
+            params![entity::COLLECTION_BOOK, key, now],
         )?;
+        let tombstoned: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM _tombstones WHERE entity = ?1 AND id = ?2)",
+            params![entity::COLLECTION_BOOK, key],
+            |row| row.get(0),
+        )?;
+        if tombstoned {
+            // This add lost to a remove that peers already rank higher, so
+            // inserting the row would leave this device disagreeing with
+            // every peer. Publish nothing and report that nothing was added.
+            return Ok(false);
+        }
         let changed = tx.execute(
             "INSERT OR IGNORE INTO collection_books (collection_id, book_id, created_at, updated_at, updated_by_device) VALUES (?1, ?2, ?3, ?3, ?4)",
             params![collection_id, book_id, now, device],
@@ -247,7 +260,7 @@ pub(crate) fn do_remove_book_from_collection(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<bool> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     sync.with_tx(db, now, |tx, events| {
         let changed = tx.execute(
             "DELETE FROM collection_books WHERE collection_id = ?1 AND book_id = ?2",
@@ -459,6 +472,113 @@ mod tests {
             membership_tombstone_ts(&db, "c1", "b1"),
             None,
             "the local re-add must clear its own tombstone"
+        );
+    }
+
+    /// The events this writer parked in `_pending_publish`, in log order,
+    /// paired with the timestamp peers will order them by. Requires the test
+    /// to call `set_should_queue(true)` first.
+    fn published_events(db: &Db) -> Vec<(i64, EventBody)> {
+        let conn = db.reader();
+        let mut stmt = conn
+            .prepare("SELECT ts, body_json FROM _pending_publish ORDER BY rowid")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        rows.into_iter()
+            .map(|(ts, body)| (ts, serde_json::from_str::<EventBody>(&body).unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn same_millisecond_remove_then_add_converges() {
+        let (_dir, db, sync) = setup();
+        sync.set_should_queue(true);
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+        {
+            // Seed the membership directly so the only published events are
+            // the remove and the re-add of this test.
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO collection_books (collection_id, book_id, created_at, updated_at)
+                 VALUES ('c1', 'b1', 1704067200000, 1704067200000)",
+                [],
+            )
+            .unwrap();
+        }
+
+        // Two user actions back to back: peers must see distinct, increasing
+        // stamps or the older remove outlives the newer add on every peer.
+        assert!(do_remove_book_from_collection("c1", "b1", &db, &sync).unwrap());
+        assert!(
+            do_add_book_to_collection("c1", "b1", &db, &sync).unwrap(),
+            "the local re-add is newer than the remove it must beat"
+        );
+
+        let events = published_events(&db);
+        assert_eq!(
+            events.len(),
+            2,
+            "remove and re-add must each publish, got {events:?}"
+        );
+        let stamps: Vec<i64> = events.iter().map(|(ts, _)| *ts).collect();
+        assert!(
+            stamps.windows(2).all(|pair| pair[0] < pair[1]),
+            "remove then add must publish strictly increasing timestamps, got {stamps:?}"
+        );
+        assert!(matches!(
+            events[0].1,
+            EventBody::CollectionBookRemove { .. }
+        ));
+        assert!(matches!(events[1].1, EventBody::CollectionBookAdd { .. }));
+
+        assert_eq!(membership_count(&db, "c1", "b1"), 1, "the row must exist");
+        assert_eq!(
+            membership_tombstone_ts(&db, "c1", "b1"),
+            None,
+            "the newer add must clear the remove's tombstone"
+        );
+    }
+
+    #[test]
+    fn add_older_than_a_peer_remove_does_not_insert() {
+        let (_dir, db, sync) = setup();
+        sync.set_should_queue(true);
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+
+        // A peer's remove lands with a stamp the logical clock has not yet
+        // passed, so this device's add is the older of the two. The tombstone
+        // is written directly: `apply` uses ULID-shaped ids whose hex suffix
+        // cannot carry a timestamp this far ahead.
+        let peer_remove_ts = sync.next_logical_timestamp() + 60_000;
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO _tombstones (entity, id, ts) VALUES (?1, ?2, ?3)",
+                params![entity::COLLECTION_BOOK, "c1:b1", peer_remove_ts],
+            )
+            .unwrap();
+        }
+
+        assert!(
+            !do_add_book_to_collection("c1", "b1", &db, &sync).unwrap(),
+            "an add older than the remove must not report success"
+        );
+        assert_eq!(
+            membership_count(&db, "c1", "b1"),
+            0,
+            "the outranked add must not insert the row"
+        );
+        assert!(
+            published_events(&db).is_empty(),
+            "the losing add publishes nothing"
         );
     }
 

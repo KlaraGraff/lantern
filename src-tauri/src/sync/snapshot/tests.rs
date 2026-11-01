@@ -1866,6 +1866,210 @@ fn snapshot_older_membership_tombstone_keeps_newer_local_readd() {
     );
 }
 
+/// The mirror image of the tombstone pass above: this device saw the remove
+/// first and holds the older tombstone, then catches up from a snapshot that
+/// already contains the later re-add. The snapshot row must win — the same
+/// state a device that saw the events in order would end up in — so the
+/// tombstone has to go too, or it would block the pair from then on.
+#[test]
+fn snapshot_row_newer_than_local_membership_tombstone_wins() {
+    let mut local = open_db();
+    apply_to(
+        &mut local,
+        &[
+            ev(1000, "dev-A", import("b1")),
+            ev(
+                1100,
+                "dev-A",
+                EventBody::CollectionCreate {
+                    id: "c1".into(),
+                    name: "Top".into(),
+                    sort_order: 0,
+                },
+            ),
+            ev(
+                2000,
+                "dev-A",
+                EventBody::CollectionBookRemove {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+        ],
+    );
+    let tombstones_after_local_remove: i64 = local
+        .query_row(
+            "SELECT COUNT(*) FROM _tombstones WHERE entity = ?1 AND id = 'c1:b1'",
+            params![merge::entity::COLLECTION_BOOK],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        tombstones_after_local_remove, 1,
+        "precondition: this device saw the remove and holds the tombstone"
+    );
+
+    let snapshot = Snapshot::from_events(
+        "dev-B",
+        &[
+            ev(900, "dev-B", import("b1")),
+            ev(
+                950,
+                "dev-B",
+                EventBody::CollectionCreate {
+                    id: "c1".into(),
+                    name: "Top".into(),
+                    sort_order: 0,
+                },
+            ),
+            ev(
+                3000,
+                "dev-B",
+                EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot
+            .state
+            .collection_books
+            .get("c1:b1")
+            .map(|row| row.updated_at),
+        Some(3000),
+        "precondition: the snapshot carries the later re-add row"
+    );
+
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let n: i64 = local
+        .query_row(
+            "SELECT COUNT(*) FROM collection_books WHERE collection_id = 'c1' AND book_id = 'b1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        n, 1,
+        "a snapshot row newer than this device's membership tombstone must re-add the book"
+    );
+    let tombstone: Option<i64> = local
+        .query_row(
+            "SELECT ts FROM _tombstones WHERE entity = ?1 AND id = 'c1:b1'",
+            params![merge::entity::COLLECTION_BOOK],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(
+        tombstone, None,
+        "the outranked local tombstone must be dropped, not left to block later adds"
+    );
+}
+
+/// The reverse ordering must not resurrect anything: a tombstone at or after
+/// the snapshot row keeps the pair removed and stays in place to keep
+/// suppressing it.
+#[test]
+fn snapshot_row_older_than_local_membership_tombstone_is_skipped() {
+    let mut local = open_db();
+    apply_to(
+        &mut local,
+        &[
+            ev(1000, "dev-A", import("b1")),
+            ev(
+                1100,
+                "dev-A",
+                EventBody::CollectionCreate {
+                    id: "c1".into(),
+                    name: "Top".into(),
+                    sort_order: 0,
+                },
+            ),
+            ev(
+                3000,
+                "dev-A",
+                EventBody::CollectionBookRemove {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+        ],
+    );
+
+    let snapshot = Snapshot::from_events(
+        "dev-B",
+        &[
+            ev(900, "dev-B", import("b1")),
+            ev(
+                950,
+                "dev-B",
+                EventBody::CollectionCreate {
+                    id: "c1".into(),
+                    name: "Top".into(),
+                    sort_order: 0,
+                },
+            ),
+            ev(
+                2000,
+                "dev-B",
+                EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot
+            .state
+            .collection_books
+            .get("c1:b1")
+            .map(|row| row.updated_at),
+        Some(2000),
+        "precondition: the snapshot's re-add is older than the local tombstone"
+    );
+
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let n: i64 = local
+        .query_row(
+            "SELECT COUNT(*) FROM collection_books WHERE collection_id = 'c1' AND book_id = 'b1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        n, 0,
+        "an older snapshot row must not outrank this device's newer removal"
+    );
+    let tombstone: Option<i64> = local
+        .query_row(
+            "SELECT ts FROM _tombstones WHERE entity = ?1 AND id = 'c1:b1'",
+            params![merge::entity::COLLECTION_BOOK],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(
+        tombstone,
+        Some(3000),
+        "the newer local tombstone must survive the older snapshot row"
+    );
+}
+
 #[test]
 fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
     // Apply event set X directly to DB1; build snapshot from X and apply

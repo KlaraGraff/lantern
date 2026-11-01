@@ -146,7 +146,11 @@ impl EventLog {
         // sort before an existing line.
         //
         // `last_id` is staged locally and only committed to `inner` once the
-        // batch is accepted, so a refused batch leaves no trace at all.
+        // batch passes the size check below, so a refused batch leaves `inner`
+        // untouched. It is committed *before* `append_bytes`, not after: a
+        // write can put a line on disk and still fail in `sync_all`, and if
+        // `inner` still held the old id the next append could reuse a smaller
+        // ULID than the line already on disk.
         let now = SystemTime::now();
         let mut last_id = inner.last_id;
         let mut events = Vec::with_capacity(entries.len());
@@ -177,8 +181,11 @@ impl EventLog {
                 )));
             }
         }
-        append_bytes(&self.path, &buf, self.use_coordinator)?;
+        // Committed before the write: once bytes may reach the file, an id
+        // that is ever reused has to stay ahead of them, even if
+        // `append_bytes` fails after a partial or fsync-failed write.
         inner.last_id = last_id;
+        append_bytes(&self.path, &buf, self.use_coordinator)?;
 
         Ok(events)
     }
@@ -680,8 +687,11 @@ mod tests {
             on_disk.len(),
             "line_len must equal the newline-terminated line actually written"
         );
-        // The cap is on the line without its newline; a line of exactly
-        // MAX_LOG_LINE_BYTES bytes of JSON is still readable.
+        // The cap the writer enforces counts the trailing newline: `line_len`
+        // includes it, so the largest line it accepts is MAX_LOG_LINE_BYTES
+        // bytes *with* the newline — at most MAX_LOG_LINE_BYTES - 1 bytes of
+        // JSON. That is why `line_len_matches_the_written_line` compares
+        // against the newline-terminated length, not the JSON alone.
         assert_eq!(on_disk.last(), Some(&b'\n'));
     }
 

@@ -480,10 +480,17 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
         params![id],
     )?;
     tx.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
-    // Device-local per-book rows (migrations 043/054/055/059/060/066/076).
-    // None of these syncs, so no tombstone is owed for any of them; they are
-    // still keyed on a book that no longer exists, and the DDL's ON DELETE
-    // CASCADE never runs (replay opens with `foreign_keys=OFF`).
+    // Per-book rows (migrations 043/054/055/059/060/066/076). They are still
+    // keyed on a book that no longer exists, and the DDL's ON DELETE CASCADE
+    // never runs (replay opens with `foreign_keys=OFF`), so the delete has to
+    // happen here. `auto_highlight_dismissals` DOES sync — peers receive every
+    // dismissal as an `auto_highlight.dismissal.set` event, and snapshots
+    // carry the rows — but it still owes no tombstone: both inbound paths drop
+    // a dismissal whose book is tombstoned, so the delete converges without
+    // one. The rest (`book_manual_order`, `book_person_*`,
+    // `book_reader_coverage`, `book_word_counts`, `pending_book_reviews`,
+    // `level_word_classifications`) never sync; no tombstone is owed for any
+    // of them.
     tx.execute(
         "DELETE FROM auto_highlight_dismissals WHERE book_id = ?1",
         params![id],
@@ -1774,10 +1781,18 @@ fn apply_collection_book_add(
         "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
         params![entity::COLLECTION_BOOK, key],
     )?;
+    // Newest-write-wins, matching `upsert_collection_book` on the snapshot
+    // path: a re-add must move `updated_at` forward, otherwise a later remove
+    // ordered after the original add would outrank it and delete the row.
     tx.execute(
-        "INSERT OR IGNORE INTO collection_books
+        "INSERT INTO collection_books
          (collection_id, book_id, created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?3, ?4)",
+         VALUES (?1, ?2, ?3, ?3, ?4)
+         ON CONFLICT(collection_id, book_id) DO UPDATE SET
+           updated_at=excluded.updated_at,
+           updated_by_device=excluded.updated_by_device
+         WHERE (collection_books.updated_at, collection_books.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
         params![collection, book, event.ts, event.device],
     )?;
     Ok(())
@@ -1790,6 +1805,24 @@ fn apply_collection_book_remove(
     book: &str,
 ) -> AppResult<()> {
     let key = format!("{collection}:{book}");
+    let current: Option<(i64, String)> = tx
+        .query_row(
+            "SELECT updated_at, updated_by_device FROM collection_books
+             WHERE collection_id = ?1 AND book_id = ?2",
+            params![collection, book],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    // Same rule as `apply_custom_font_delete`: a remove older than the row's
+    // current state loses. A peer that re-added the book after this remove was
+    // issued expressed the later intent, so neither the row nor the tombstone
+    // may be touched.
+    if current
+        .as_ref()
+        .is_some_and(|(ts, device)| (*ts, device.as_str()) > (event.ts, event.device.as_str()))
+    {
+        return Ok(());
+    }
     cascade_delete(tx, entity::COLLECTION_BOOK, &key, event.ts)?;
     insert_tombstone(tx, entity::COLLECTION_BOOK, &key, event.ts)?;
     Ok(())
@@ -4750,6 +4783,222 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 0, "a re-add older than the remove must stay suppressed");
+    }
+
+    // -----------------------------------------------------------------------
+    // collection_book: remove must not undo a newer add
+    // -----------------------------------------------------------------------
+
+    /// `(created_at, updated_at, updated_by_device, membership_tombstoned)` —
+    /// the full observable state of one membership, so two replay orders can be
+    /// compared for convergence rather than just for row presence.
+    fn collection_book_state(db: &Connection) -> Option<(i64, i64, String, bool)> {
+        let row = db
+            .query_row(
+                "SELECT created_at, updated_at, updated_by_device FROM collection_books
+                 WHERE collection_id = 'c1' AND book_id = 'b1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .unwrap()?;
+        let tombstoned: bool = db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _tombstones
+                 WHERE entity = 'collection_book' AND id = 'c1:b1')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        Some((row.0, row.1, row.2, tombstoned))
+    }
+
+    /// Shared fixture for the two arrival orders: a book and a collection, then
+    /// the three membership events B:remove@1800, B:add@3000, A:remove@2000.
+    fn replay_collection_book_events(order: usize) -> Option<(i64, i64, String, bool)> {
+        let mut db = open_db();
+        let setup = [
+            ev(1000, "dev-A", import_book("b1")),
+            ev(
+                1100,
+                "dev-A",
+                EventBody::CollectionCreate {
+                    id: "c1".into(),
+                    name: "Top".into(),
+                    sort_order: 0,
+                },
+            ),
+        ];
+        let remove_1800 = ev(
+            1800,
+            "dev-B",
+            EventBody::CollectionBookRemove {
+                collection: "c1".into(),
+                book: "b1".into(),
+            },
+        );
+        let add_3000 = ev(
+            3000,
+            "dev-B",
+            EventBody::CollectionBookAdd {
+                collection: "c1".into(),
+                book: "b1".into(),
+            },
+        );
+        let remove_2000 = ev(
+            2000,
+            "dev-A",
+            EventBody::CollectionBookRemove {
+                collection: "c1".into(),
+                book: "b1".into(),
+            },
+        );
+        let membership = match order {
+            // (B, B, A): remove@1800, add@3000, remove@2000
+            0 => vec![remove_1800, add_3000, remove_2000],
+            // (A, B, B): remove@2000, add@3000, remove@1800
+            _ => vec![remove_2000, add_3000, remove_1800],
+        };
+        apply_all(&mut db, &setup);
+        apply_all(&mut db, &membership);
+        collection_book_state(&db)
+    }
+
+    /// A remove issued before a peer's newer add must not delete the membership
+    /// on a device that receives the events in (B,B,A) order.
+    #[test]
+    fn order_remove_then_newer_add_keeps_membership() {
+        let state = replay_collection_book_events(0).expect("membership must survive the replay");
+        assert_eq!(
+            (state.1, state.2.as_str()),
+            (3000, "dev-B"),
+            "the surviving row must keep the newer add's write stamp"
+        );
+        assert!(!state.3, "the add cleared the removal tombstone");
+    }
+
+    /// The same events in the other arrival order must reach the same state.
+    #[test]
+    fn order_remove_then_newer_add_keeps_membership_reversed() {
+        let state = replay_collection_book_events(1).expect("membership must survive the replay");
+        assert_eq!(
+            (state.1, state.2.as_str()),
+            (3000, "dev-B"),
+            "the surviving row must keep the newer add's write stamp"
+        );
+        assert!(!state.3, "the add cleared the removal tombstone");
+    }
+
+    /// Convergence: both arrival orders of the same three events end identically.
+    #[test]
+    fn order_arrival_orders_converge_on_the_same_membership_state() {
+        let forward = replay_collection_book_events(0);
+        let reversed = replay_collection_book_events(1);
+        assert!(forward.is_some(), "row must be present in both orders");
+        assert_eq!(forward, reversed, "both orders must converge");
+    }
+
+    /// A remove with no newer write behind it still deletes, and tombstones.
+    #[test]
+    fn order_plain_remove_after_add_still_deletes() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::CollectionCreate {
+                        id: "c1".into(),
+                        name: "Top".into(),
+                        sort_order: 0,
+                    },
+                ),
+                ev(
+                    1500,
+                    "dev-A",
+                    EventBody::CollectionBookAdd {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+                ev(
+                    2000,
+                    "dev-A",
+                    EventBody::CollectionBookRemove {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+            ],
+        );
+        assert!(
+            collection_book_state(&db).is_none(),
+            "a remove newer than the add must delete the row"
+        );
+        let tombstoned: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones
+                 WHERE entity = 'collection_book' AND id = 'c1:b1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstoned, 1, "the removal must still tombstone the key");
+    }
+
+    /// A later re-add moves `updated_at` forward, so a remove ordered after the
+    /// original add can no longer outrank it.
+    #[test]
+    fn order_readd_advances_updated_at_past_an_older_remove() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::CollectionCreate {
+                        id: "c1".into(),
+                        name: "Top".into(),
+                        sort_order: 0,
+                    },
+                ),
+                ev(
+                    1200,
+                    "dev-A",
+                    EventBody::CollectionBookAdd {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+                ev(
+                    3000,
+                    "dev-A",
+                    EventBody::CollectionBookAdd {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+                // A stale duplicate must not drag the stamp backwards.
+                ev(
+                    1500,
+                    "dev-A",
+                    EventBody::CollectionBookAdd {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+            ],
+        );
+        let state = collection_book_state(&db).expect("membership stays present");
+        assert_eq!(
+            (state.1, state.2.as_str()),
+            (3000, "dev-A"),
+            "a re-add must move updated_at forward and a stale add must not move it back"
+        );
     }
 
     // -----------------------------------------------------------------------

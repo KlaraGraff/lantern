@@ -538,12 +538,24 @@ impl Snapshot {
             upsert_collection(tx, id, row)?;
         }
         for (key, row) in &self.state.collection_books {
-            if merge::is_tombstoned(tx, merge::entity::COLLECTION_BOOK, key)?
-                || merge::is_tombstoned(tx, merge::entity::COLLECTION, &row.collection_id)?
+            if merge::is_tombstoned(tx, merge::entity::COLLECTION, &row.collection_id)?
                 || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
             {
                 continue;
             }
+            // Own membership tombstone is clearable, like `book_setting`: a
+            // remove followed by a later re-add is a normal edit, so a
+            // tombstone at or after this row outranks it and only a strictly
+            // older one is superseded.
+            if merge::tombstone_timestamp(tx, merge::entity::COLLECTION_BOOK, key)?
+                .is_some_and(|timestamp| timestamp >= row.updated_at)
+            {
+                continue;
+            }
+            tx.execute(
+                "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![merge::entity::COLLECTION_BOOK, key],
+            )?;
             upsert_collection_book(tx, row)?;
         }
         for (id, row) in &self.state.chats {
