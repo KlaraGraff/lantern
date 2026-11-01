@@ -874,6 +874,7 @@ pub fn run() {
             commands::ai::update_book_section_summary,
             commands::ai::ai_regenerate_book_summaries,
             commands::ai::list_person_aliases,
+            commands::ai::list_people_so_far,
             commands::ai::build_person_aliases,
             commands::ai::add_person_alias,
             commands::ai::teach_description_alias,

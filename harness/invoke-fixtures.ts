@@ -991,6 +991,21 @@ export const FIXTURES: Record<string, Fixture> = {
   // receipt only offers 撤销 when it gets a row id back.
   teach_description_alias: () => `pa-harness-${harnessAliasWrites++}`,
   add_person_alias: () => `pa-harness-${harnessAliasWrites++}`,
+  /**
+   * 「本章」's people: first-appearance sections as a real index would give
+   * them for the promo book, cut at the section in the live location the same
+   * way the backend's cutoff does.
+   */
+  list_people_so_far: (args: Args) => {
+    const match = /^epubcfi\(\/6\/(\d+)/.exec(String(args?.location ?? ""));
+    const section = match ? Number(match[1]) / 2 - 1 : 0;
+    return [
+      ["Mr. Bennet", 2], ["Mrs. Bennet", 2], ["Mr. Bingley", 2], ["Elizabeth", 3], ["Jane", 3], ["Mr. Darcy", 4],
+      ["Sir William Lucas", 6], ["Charlotte Lucas", 6], ["Mary", 6], ["Mr. Collins", 14], ["Wickham", 16],
+    ]
+      .filter(([, first]) => (first as number) <= section)
+      .map(([canonical, first]) => ({ canonical, firstSection: first }));
+  },
   delete_person_alias: null,
   clear_person_aliases: null,
   build_person_aliases: () => PERSON_ALIAS_GROUPS.map((group) => ({ ...group })),

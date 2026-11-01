@@ -407,6 +407,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   const [chapterProgress, setChapterProgress] = useState(0);
   const [pageInfo, setPageInfo] = useState<ReaderPageInfo | null>(null);
   const currentCfiRef = useRef<string | null>(null);
+  // The same location as state, for the views that must follow every move.
+  const [liveLocation, setLiveLocation] = useState<string | null>(null);
   // P1.5/P1.6 (click-cycle readout + scrubber) are scoped to paginated EPUBs —
   // the exact boundary `getReaderCapabilities` already draws between "genuine
   // EPUB" and everything that must degrade (PDF's own page/zoom readout,
@@ -613,6 +615,12 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       return undefined;
     }
   }, []);
+  // 「本章」's people list reads the same live position the AI's unread-pages
+  // guard does, so nobody shows before the page that names them.
+  const readPeoplePosition = useCallback(() => ({
+    location: currentCfiRef.current,
+    viewportText: getViewportText()?.slice(0, 2000),
+  }), [getViewportText]);
   // The reader's live selection, for the AI composer to attach on its own.
   // Without this a selected sentence reached the model only if the reader
   // explicitly quoted it; a plain selection fell through to the whole viewport,
@@ -854,6 +862,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     cfi: string,
   ) => {
     progressWriter.queue(targetBookId, nextProgress, cfi);
+    setLiveLocation(cfi);
   }, [progressWriter]);
 
   // The book-finished hint's own action (docs/impls/reading-flow-decisions-2026-08-06.md
@@ -3588,6 +3597,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
                 bookId,
                 chapterTitle: currentChapterTitle ?? undefined,
                 scope: currentScope,
+                readPosition: readPeoplePosition,
+                positionKey: liveLocation ?? undefined,
                 onNavigate: (cfi) => { navigateToCfi(cfi); },
                 onOpenChat: (chatId) => {
                   setInitialChatId(chatId);

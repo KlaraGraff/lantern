@@ -107,6 +107,41 @@ pub(crate) fn locate_section_chunk_index(
     locate_visible_context_chunk(&chunks, visible_context)
 }
 
+/// The cutoff for something shown beside the page rather than asked of it
+/// (the 「本章」 people list): from the reader's live `location` instead of the
+/// saved one, and failing closed. An EPUB position that cannot be pinned to a
+/// chunk admits nothing of the current section, and the chunk under the top
+/// of the screen is not admitted either — the opposite of chat's
+/// permissive fallback, because nothing here is asked for — it is just shown.
+pub(crate) fn live_position_cutoff(
+    conn: &Connection,
+    book_id: &str,
+    location: Option<&str>,
+    viewport_text: Option<&str>,
+) -> AppResult<SpoilerCutoff> {
+    let render_format: String = conn
+        .query_row(
+            "SELECT COALESCE(render_format, format) FROM books WHERE id = ?1",
+            params![book_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .unwrap_or_default();
+    let cutoff = cutoff_for_position(&render_format, location);
+    Ok(match cutoff {
+        SpoilerCutoff::Section(section) if render_format == "epub" => {
+            SpoilerCutoff::SectionPrefix {
+                section,
+                // The chunk under the top of the screen runs on past it, so
+                // only the chunks before it count as read.
+                chunk_index: locate_section_chunk_index(conn, book_id, section, viewport_text)
+                    .map_or(-1, |chunk_index| chunk_index - 1),
+            }
+        }
+        other => other,
+    })
+}
+
 struct BookPosition {
     render_format: String,
     current_cfi: Option<String>,
