@@ -54,7 +54,7 @@ test("a consent answer still reaches the waiting caller when the setting write f
       setOpen: () => {},
       resolverRef: { current: (value: string) => resolved.push(value) },
       CELLULAR_CONSENT_SETTING_KEY: "icloud_download_on_cellular",
-      invoke: async (cmd: string, args: { key: string; value: string }) => {
+      invoke: async (_cmd: string, args: { key: string; value: string }) => {
         writes.push(args);
         throw new Error("database is locked");
       },
