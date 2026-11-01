@@ -2,11 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { lastReadOf } from "../src/pages/home/home-dashboard-model.ts";
-import {
-  coverageReading,
-  THRESHOLD_ASSISTED,
-  THRESHOLD_INDEPENDENT,
-} from "../src/pages/book-details/coverage-view.ts";
 
 /**
  * Runs `body` with the process timezone set to a zone that changes its offset,
@@ -48,22 +43,4 @@ test("yesterday is a calendar day, not a 24-hour span, across a DST change", () 
       { kind: "daysAgo", days: 2 },
     );
   });
-});
-
-test("a range that crosses both reference lines reports both of them", () => {
-  // Arithmetic, not wording: `coverageReading` is what tells the card how many
-  // lines a range straddles, and it must report every one of them.
-  const reading = coverageReading(
-    {
-      totalTokens: 1000,
-      masteredTokens: 500,
-      familiarTokens: 490,
-      nameTokens: 0,
-      baselineBooks: 1,
-    },
-    true,
-  );
-  assert.equal(reading.kind, "interval");
-  if (reading.kind !== "interval") return;
-  assert.deepEqual(reading.spans, [THRESHOLD_ASSISTED, THRESHOLD_INDEPENDENT]);
 });

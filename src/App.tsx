@@ -26,6 +26,7 @@ import {
   type CustomFontRecord,
 } from "./components/custom-fonts";
 import { loadEnhancedFontFace } from "./components/enhanced-fonts";
+import { themePreferenceOf } from "./components/settings/theme-preference";
 
 const isMainWindow = getCurrentWebviewWindow().label === "main";
 
@@ -98,7 +99,7 @@ export default function App() {
     const handler = () => {
       // Only a reader who chose 跟随系统 follows the OS. Every theme control
       // mirrors the pick into localStorage.
-      if ((localStorage.getItem("lantern-theme") ?? "system") === "system") {
+      if (themePreferenceOf(localStorage.getItem("lantern-theme") ?? undefined) === "system") {
         applyTheme("system");
       }
     };

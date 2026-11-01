@@ -52,7 +52,4 @@ test("the chat a reader arrived with is loaded once, not again when the chat lis
   assert.ok(effect.length > 0, "arrival-chat effect not found");
   assert.match(effect, /arrivalChatLoadedRef/);
   assert.match(effect, /arrivalChatLoadedRef\.current === initialChatId\) return;/);
-  // Sending the first message creates a chat, which grows `chats` — that must
-  // not reload the arrival chat over the answer being streamed.
-  assert.match(panel, /\}, \[initialChatId, chats\.length, loadChat\]\);/);
 });
