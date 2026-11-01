@@ -367,6 +367,9 @@ function parseMenu(
     if (!isObject(item) || typeof item.id !== "string") continue;
     const id = item.id as SelectionMenuActionId;
     const fallback = defaultById.get(id);
+    // One id, one row — the same rule `parseModules` keeps. A repeated id
+    // otherwise draws the action twice, in opposite states.
+    if (seen.has(id)) continue;
     const custom = isCustomId(id) ? parseCustomDefinition(item) : null;
     if (custom && parsed.filter((entry) => isCustomId(entry.id)).length >= MAX_CUSTOM_MENU_ACTIONS) continue;
     if ((!allowed.has(id) || !fallback) && !custom) continue;

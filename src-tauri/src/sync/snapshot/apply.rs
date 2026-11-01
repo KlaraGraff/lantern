@@ -138,6 +138,11 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_BOOK_ASSET_INVALID".to_string(),
             ));
         }
+        if self.v < 11 && !self.state.auto_highlight_dismissals.is_empty() {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_AUTO_HIGHLIGHT_DISMISSAL_INVALID".to_string(),
+            ));
+        }
         if self.v < 8
             && (!self.state.custom_fonts.is_empty()
                 || !self.state.settings.is_empty()
@@ -263,6 +268,27 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_LOOKUP_OCCURRENCE_MARK_INVALID",
             )?;
         }
+        for (id, dismissal) in &self.state.auto_highlight_dismissals {
+            validation::validate_entity_id(id)?;
+            validation::validate_entity_id(&dismissal.book_id)?;
+            if dismissal.anchor.trim().is_empty()
+                || dismissal.anchor.len() > 512
+                || dismissal.anchor.chars().any(char::is_control)
+                || id.as_str()
+                    != crate::sync::events::auto_highlight_dismissal_id(
+                        &dismissal.book_id,
+                        &dismissal.anchor,
+                    )
+            {
+                return Err(AppError::Other(
+                    "SYNC_AUTO_HIGHLIGHT_DISMISSAL_INVALID".to_string(),
+                ));
+            }
+            validation::ensure_valid_sync_timestamp(
+                dismissal.updated_at,
+                "SYNC_AUTO_HIGHLIGHT_DISMISSAL_INVALID",
+            )?;
+        }
         for (entity, tombstones) in &self.state.tombstones {
             validation::validate_tombstone_entity(entity)?;
             for tombstone in tombstones {
@@ -357,6 +383,23 @@ impl Snapshot {
                         |row| row.get(0),
                     )?;
                     if newer_setting_exists {
+                        continue;
+                    }
+                }
+                if entity == merge::entity::CUSTOM_FONT {
+                    // A font id is the hash of its bytes, so a re-import after
+                    // this peer's delete brings the same id back with a newer
+                    // row. Like the settings above, that row outranks the
+                    // older delete: neither the font nor a tombstone beside it.
+                    let reimported: bool = tx.query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM custom_fonts
+                           WHERE id = ?1 AND updated_at > ?2
+                         )",
+                        params![t.id, t.ts],
+                        |row| row.get(0),
+                    )?;
+                    if reimported {
                         continue;
                     }
                 }
@@ -456,6 +499,12 @@ impl Snapshot {
                 continue;
             }
             upsert_lookup_occurrence_mark(tx, id, row)?;
+        }
+        for (id, row) in &self.state.auto_highlight_dismissals {
+            if merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)? {
+                continue;
+            }
+            upsert_auto_highlight_dismissal(tx, id, row)?;
         }
         for (id, row) in &self.state.book_summaries {
             if merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)? {
@@ -894,9 +943,9 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
          (id, book_id, word, definition, context_sentence, context_explanation, cfi,
           mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
-          fsrs_stability, fsrs_difficulty, fsrs_version, list_status, source, source_label,
-          created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+          fsrs_stability, fsrs_difficulty, fsrs_version, list_status, card_snapshot, source,
+          source_label, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
          ON CONFLICT(id) DO UPDATE SET
            definition=excluded.definition,
            context_explanation=CASE
@@ -917,6 +966,7 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
            fsrs_difficulty=excluded.fsrs_difficulty,
            fsrs_version=excluded.fsrs_version,
            list_status=excluded.list_status,
+           card_snapshot=COALESCE(excluded.card_snapshot, vocab_words.card_snapshot),
            source=excluded.source,
            source_label=excluded.source_label,
            updated_at=excluded.updated_at,
@@ -943,6 +993,7 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
             r.fsrs_difficulty,
             r.fsrs_version,
             r.list_status,
+            r.card_snapshot,
             r.source,
             r.source_label,
             r.created_at,
@@ -1154,6 +1205,33 @@ fn upsert_lookup_occurrence_mark(
             row.created_at,
             row.updated_at,
             row.updated_by_device,
+        ],
+    )?;
+    Ok(())
+}
+
+fn upsert_auto_highlight_dismissal(
+    tx: &Transaction,
+    id: &str,
+    r: &AutoHighlightDismissalRow,
+) -> AppResult<()> {
+    tx.execute(
+        "INSERT INTO auto_highlight_dismissals
+         (id, book_id, anchor, dismissed, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(book_id, anchor) DO UPDATE SET
+           id=excluded.id, dismissed=excluded.dismissed,
+           updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+         WHERE (auto_highlight_dismissals.updated_at, auto_highlight_dismissals.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            id,
+            r.book_id,
+            r.anchor,
+            r.dismissed as i64,
+            r.created_at,
+            r.updated_at,
+            r.updated_by_device,
         ],
     )?;
     Ok(())
@@ -1437,7 +1515,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 last_reviewed_at, last_review_rating,
                 fsrs_stability, fsrs_difficulty, fsrs_version,
                 created_at, updated_at, updated_by_device, context_explanation,
-                mastery_source, mastery_reason, list_status, source, source_label
+                mastery_source, mastery_reason, list_status, card_snapshot, source, source_label
            FROM vocab_words",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -1465,6 +1543,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 mastery_source: r.get("mastery_source")?,
                 mastery_reason: r.get("mastery_reason")?,
                 list_status: r.get("list_status")?,
+                card_snapshot: r.get("card_snapshot")?,
                 source: r.get("source")?,
                 source_label: r.get("source_label")?,
             },
@@ -1616,6 +1695,31 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     for row in rows {
         let (id, mark) = row?;
         state.lookup_occurrence_marks.insert(id, mark);
+    }
+    drop(stmt);
+
+    // One reader decision per derived highlight. Device-local by nature? No:
+    // the decision is what a peer has to know to stop re-deriving it.
+    let mut stmt = conn.prepare(
+        "SELECT id, book_id, anchor, dismissed, created_at, updated_at, updated_by_device
+         FROM auto_highlight_dismissals",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>("id")?,
+            AutoHighlightDismissalRow {
+                book_id: r.get("book_id")?,
+                anchor: r.get("anchor")?,
+                dismissed: r.get::<_, i64>("dismissed")? != 0,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, dismissal) = row?;
+        state.auto_highlight_dismissals.insert(id, dismissal);
     }
     drop(stmt);
 

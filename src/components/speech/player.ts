@@ -523,6 +523,9 @@ export async function speak(
 
   generation += 1;
   const token = generation;
+  // A pause still waiting for the previous request's first clip has nothing
+  // left to park — the queue it belonged to can never run now.
+  pausePending = null;
   publish({ status: "loading", ownerId, detached });
 
   let steps: PlaybackStep[];
@@ -530,6 +533,7 @@ export async function speak(
     steps = await plan();
   } catch {
     if (token === generation) {
+      pausePending = null;
       publishProgress(null);
       publish({ status: "error", ownerId, detached });
       errorTimer = setTimeout(() => {
@@ -540,6 +544,7 @@ export async function speak(
   }
   if (token !== generation) return;
   if (steps.length === 0) {
+    pausePending = null;
     publishProgress(null);
     publish({ status: "error", ownerId, detached });
     errorTimer = setTimeout(() => {

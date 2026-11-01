@@ -50,7 +50,10 @@ pub const COMPACT_AGE_THRESHOLD_MS: i64 = 30 * 24 * 60 * 60 * 1_000; // 30 days
 /// `validate_tombstone_entity`; moving the constant makes it reject the envelope
 /// up front instead, which is the same outcome named honestly.
 // Version 10 carries book field clocks for lossless field-wise merging.
-pub const SNAPSHOT_SCHEMA_VERSION: u32 = 10;
+// Version 11 adds `auto_highlight_dismissals`: a build reading at 10 does not
+// know the map, so it must reject the envelope rather than advance its
+// watermark past decisions it silently dropped.
+pub const SNAPSHOT_SCHEMA_VERSION: u32 = 11;
 pub const MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 

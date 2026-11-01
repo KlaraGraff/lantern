@@ -154,7 +154,15 @@ fn current_variant(conn: &rusqlite::Connection) -> String {
         _ => "adaptive_bilingual",
     };
     let cefr = get("cefr_level").unwrap_or_else(|| "B1".to_string());
-    format!("{mode}|{cefr}")
+    // Style belongs to the prompt too (`prompt::explanation_strategy` appends
+    // a different block per style), so it belongs to the fingerprint: replaying
+    // a thorough explanation to a reader who just chose essential is the same
+    // defect as replaying a B1 one after a switch to C1.
+    let style = match get("explanation_style").as_deref().map(str::trim) {
+        Some("essential") => "essential",
+        _ => "thorough",
+    };
+    format!("{mode}|{cefr}|{style}")
 }
 
 fn find_cached_explanation(
@@ -209,6 +217,7 @@ pub fn get_cached_explanation(
 /// Everything one explanation records about itself, short of the variant
 /// (computed separately — see `current_variant` — so tests can supply one
 /// directly instead of juggling the `settings` table).
+#[derive(Debug, Deserialize)]
 pub struct SaveExplanationInput {
     pub book_id: String,
     pub passage: String,
@@ -327,34 +336,10 @@ fn save_explanation_inner(
     Ok(saved_row)
 }
 
-#[allow(clippy::too_many_arguments)]
 #[tauri::command]
-pub fn save_explanation(
-    book_id: String,
-    passage: String,
-    explanation: String,
-    context_sentence: Option<String>,
-    chapter: Option<String>,
-    cfi: Option<String>,
-    provider_profile_id: Option<String>,
-    model: Option<String>,
-    db: State<'_, Db>,
-) -> AppResult<Explanation> {
+pub fn save_explanation(input: SaveExplanationInput, db: State<'_, Db>) -> AppResult<Explanation> {
     let variant = current_variant(&db.reader());
-    save_explanation_inner(
-        SaveExplanationInput {
-            book_id,
-            passage,
-            explanation,
-            context_sentence,
-            chapter,
-            cfi,
-            provider_profile_id,
-            model,
-        },
-        &variant,
-        &db,
-    )
+    save_explanation_inner(input, &variant, &db)
 }
 
 #[tauri::command]
@@ -896,5 +881,82 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM explanations", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    // The stored fingerprint must cover every setting the prompt is built
+    // from. `ai_explain` feeds `explanation_style` into the system prompt
+    // (commands/ai/explain.rs), so a reader who switches 详解 -> 简答 and
+    // reselects the same passage must not be replayed the old style's text
+    // from the cache — the same rule the plan states for a CEFR change.
+    #[test]
+    fn explanation_style_change_misses_the_cache() {
+        let db = setup();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO settings (key, value) VALUES ('explanation_style', 'thorough')",
+                [],
+            )
+            .unwrap();
+        let thorough_variant = current_variant(&db.reader());
+        let row = save_explanation_inner(
+            input("A passage.", "long thorough take", Some("cfi1")),
+            &thorough_variant,
+            &db,
+        )
+        .unwrap();
+        assert!(!row.explanation.is_empty());
+
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE settings SET value = 'essential' WHERE key = 'explanation_style'",
+                [],
+            )
+            .unwrap();
+        let essential_variant = current_variant(&db.reader());
+        assert_ne!(
+            thorough_variant, essential_variant,
+            "explanation_style must be part of the prompt fingerprint"
+        );
+        let normalized = normalize_passage("A passage.");
+        let hit = find_cached_explanation(
+            &db.reader(),
+            "book",
+            "cfi1",
+            &normalized,
+            &essential_variant,
+        )
+        .unwrap();
+        assert!(
+            hit.is_none(),
+            "an explanation written under the other style must not be replayed"
+        );
+    }
+
+    // The popover's only write path sends one `input` object
+    // (ExplainPopover.tsx:144), with snake_case field names. The command must
+    // accept exactly that struct, or invoke fails argument binding and no
+    // explanation is ever cached or saveable.
+    #[test]
+    fn save_explanation_accepts_the_input_object_the_popover_sends() {
+        let payload = serde_json::json!({
+            "book_id": "book",
+            "passage": "A passage.",
+            "explanation": "the text the model streamed",
+            "context_sentence": null,
+            "chapter": null,
+            "cfi": "cfi1",
+            "provider_profile_id": null,
+            "model": null,
+        });
+        let parsed: SaveExplanationInput =
+            serde_json::from_value(payload).expect("the popover payload must deserialize");
+        let db = setup();
+        let row = save_explanation_inner(parsed, "adaptive_bilingual|B1", &db).unwrap();
+        assert_eq!(row.book_id, "book");
+        assert_eq!(row.explanation, "the text the model streamed");
     }
 }

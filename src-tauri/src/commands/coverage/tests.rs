@@ -258,6 +258,32 @@ fn a_particle_inside_a_name_is_a_name_too() {
 }
 
 #[test]
+fn description_alias_capitalisation_does_not_name_common_words() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Pride and Prejudice", 34);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO book_person_aliases (id, book_id, canonical, alias, source, created_at, kind)
+             VALUES ('a1', 'book', 'Mr. Collins', 'The pompous clergyman', 'user', 1, 'description')",
+            [],
+        )
+        .unwrap();
+
+    let names = load_alias_names(&db, "book").unwrap();
+
+    // The description text is the reader's own sentence, not a spelling of
+    // the name; its capitalised first word must not become a proper noun.
+    assert!(!names.contains("the"), "{names:?}");
+    assert!(!names.contains("pompous"));
+    assert!(
+        names.contains("collins"),
+        "the canonical spelling still counts"
+    );
+}
+
+#[test]
 fn an_ordinary_word_inside_a_name_stays_an_ordinary_word() {
     let (_directory, db) = test_db();
     insert_book(&db, "book", "Anne of Green Gables", 0);

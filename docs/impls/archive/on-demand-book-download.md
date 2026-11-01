@@ -1,12 +1,11 @@
 # On-demand book download — backend
 
-**Roadmap:** [P5 item 4](../roadmap/mobile-ios.md#p5--icloud-sync-1218-days),
-[D-013](../roadmap/mobile-ios.md#d-013--books-download-on-demand-not-eagerly),
-[D-016](../roadmap/mobile-ios.md#d-016--on-cellular-a-book-download-asks-once-and-remembers).
+**Roadmap:** [P5 item 4](../../roadmap/mobile-ios.md#p5--icloud-sync-1218-days),
+[D-013](../../roadmap/mobile-ios.md#d-013--books-download-on-demand-not-eagerly),
+[D-016](../../roadmap/mobile-ios.md#d-016--on-cellular-a-book-download-asks-once-and-remembers).
 
-**Status:** backend built and green on host + `aarch64-apple-ios-sim`. Three things are still
-owed and none of them is in this change: one line in `lib.rs` (§6), the frontend (§7), and a
-device (§8).
+**Status: shipped.** Backend, the shelf badge, the in-reader download progress and the D-016
+cellular gate (`icloud/cellular.rs`, `useCellularDownloadConsent.tsx`) are all in.
 
 ---
 
@@ -17,7 +16,7 @@ device (§8).
 `probe_book_availability` called `trigger_download_file` and moved on. That is a fire-and-forget
 nudge: the reader saw "cannot open", and nothing ever told them the book was on its way.
 
-Under [D-013](../roadmap/mobile-ios.md#d-013--books-download-on-demand-not-eagerly) that is not
+Under [D-013](../../roadmap/mobile-ios.md#d-013--books-download-on-demand-not-eagerly) that is not
 an edge case on the phone — it is how *every* book opens the first time. So the missing piece
 is not detection, it is **staying with the download**: watching one file, reporting where it has
 got to, and letting the reader walk away from it.
@@ -239,7 +238,7 @@ The backend emits; nothing renders yet. `src/hooks/useBooks.ts:182` currently in
    as stopping the download (§5).
 5. i18n keys for the four error codes, in both `en.json` and `zh.json`.
 
-The reader-facing "downloading" state is [P2](../roadmap/mobile-ios.md#p2--mobile-ui-185-days)
+The reader-facing "downloading" state is [P2](../../roadmap/mobile-ios.md#p2--mobile-ui-185-days)
 work, per D-013's own note, and P2 is blocked.
 
 ---
@@ -276,7 +275,7 @@ so there is no ubiquity container to put a placeholder in.
 
 ## 9. The seam for D-016 (cellular)
 
-[D-016](../roadmap/mobile-ios.md#d-016--on-cellular-a-book-download-asks-once-and-remembers)
+[D-016](../../roadmap/mobile-ios.md#d-016--on-cellular-a-book-download-asks-once-and-remembers)
 is **not implemented here**, deliberately: "ask once and remembers" needs a remembered answer,
 which needs a mobile settings row, which is P2 and blocked.
 

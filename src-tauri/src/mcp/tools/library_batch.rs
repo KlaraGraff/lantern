@@ -404,7 +404,7 @@ impl LanternMcpHandler {
                 None,
             ));
         }
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = sync.next_logical_timestamp();
         let device = sync.self_device().to_string();
         sync.with_tx(&self.state.db, now, |tx, events| {
             for (sort_order, id) in collection_ids.iter().enumerate() {
@@ -427,5 +427,67 @@ impl LanternMcpHandler {
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &reordered,
         )?]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Db;
+    use crate::mcp::McpState;
+    use crate::sync::writer::SyncWriter;
+
+    /// Collection order merges with a strict `(updated_at, updated_by_device)`
+    /// comparison, so a reorder stamped at or behind a clock this writer
+    /// already handed out loses to it on a peer. The stamp has to come from
+    /// the writer's logical clock, not `Utc::now`.
+    #[tokio::test]
+    async fn reorder_stamps_from_the_logical_clock() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('mcp_write_enabled', 'true')",
+                [],
+            )
+            .unwrap();
+            for (id, sort_order) in [("c1", 0), ("c2", 1)] {
+                conn.execute(
+                    "INSERT INTO collections (id, name, sort_order, created_at, updated_at)
+                     VALUES (?1, ?1, ?2, 1, 1)",
+                    rusqlite::params![id, sort_order],
+                )
+                .unwrap();
+            }
+        }
+        let sync = SyncWriter::new("mcp-test".into());
+        let mut last_issued = 0;
+        for _ in 0..10_000 {
+            last_issued = sync.next_logical_timestamp();
+        }
+        let handler = LanternMcpHandler::new(McpState::new(db.clone(), Some(sync), None));
+        handler
+            .reorder_collections(Parameters(ReorderCollectionsArgs {
+                collection_ids: vec!["c2".into(), "c1".into()],
+            }))
+            .await
+            .unwrap();
+        let (id, updated_at): (String, i64) = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT id, updated_at FROM collections WHERE sort_order = 0",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(id, "c2");
+        assert!(
+            updated_at > last_issued,
+            "the reorder must be stamped after the last timestamp this writer issued \
+             ({last_issued}); a raw wall-clock stamp lands behind it and loses on replay"
+        );
     }
 }

@@ -1347,10 +1347,20 @@ pub fn remove_vocab_word(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
-    sync.with_tx(&db, now, |tx, events| {
+    remove_vocab_word_inner(&id, &db, &sync)
+}
+
+/// The single-word twin of `delete_vocab_words_inner`: same tombstone, same
+/// event. Without the tombstone a peer's still-running snapshot or a
+/// re-delivered `vocab.add` re-inserts the row this device just deleted —
+/// `merge::apply_vocab_add` and the snapshot vocab loop both gate on exactly
+/// that row and nothing else.
+pub(crate) fn remove_vocab_word_inner(id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
+    let now = sync.next_logical_timestamp();
+    sync.with_tx(db, now, |tx, events| {
         tx.execute("DELETE FROM vocab_words WHERE id = ?1", params![id])?;
-        events.push(EventBody::VocabDelete { id: id.clone() });
+        insert_tombstone(tx, entity::VOCAB, id, now)?;
+        events.push(EventBody::VocabDelete { id: id.to_string() });
         Ok(())
     })
 }
@@ -2175,6 +2185,7 @@ pub(crate) fn do_import_vocab_backup(
                     continue;
                 }
                 tx.execute("DELETE FROM vocab_words WHERE id = ?1", params![existing_id])?;
+                insert_tombstone(tx, entity::VOCAB, &existing_id, timestamp)?;
                 events.push(EventBody::VocabDelete { id: existing_id });
                 replaced += 1;
             }
@@ -3455,6 +3466,62 @@ mod tests {
         assert_eq!(word_count, 0);
     }
 
+    /// Overwriting a conflict deletes the old row, so it must write the same
+    /// tombstone the delete commands do. Without it a peer's still-running
+    /// snapshot puts the replaced row back beside the imported one.
+    #[test]
+    fn overwrite_import_tombstones_the_replaced_row() {
+        let (_dir, db, writer) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        let original = backup_word(
+            "backup-1",
+            Some("book-1"),
+            "resolve",
+            "Original definition.",
+        );
+        do_import_vocab_backup(
+            &backup_json(vec![original]),
+            VocabImportFormat::Json,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+        let replaced_id = query_vocab_words_including_watchlist(&db, "book-1").unwrap()[0]
+            .id
+            .clone();
+
+        let replacement = backup_word(
+            "backup-2",
+            Some("book-1"),
+            "resolve",
+            "Replacement definition.",
+        );
+        do_import_vocab_backup(
+            &backup_json(vec![replacement]),
+            VocabImportFormat::Json,
+            VocabImportConflictPolicy::Overwrite,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+
+        let tombstoned: bool = db
+            .reader()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _tombstones WHERE entity = 'vocab' AND id = ?1)",
+                params![replaced_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            tombstoned,
+            "the overwritten row was deleted without a tombstone"
+        );
+    }
+
     #[test]
     fn vocab_import_conflict_policy_skips_or_overwrites_existing_word() {
         let (_dir, db, writer) = setup_import_db();
@@ -4252,6 +4319,75 @@ mod tests {
 
         let (definition, _, _, _, _) = stored_card(&db, &id);
         assert_eq!(definition, "到那里");
+    }
+
+    /// A single delete must leave a vocabulary tombstone behind, exactly like
+    /// the bulk path. Without it `apply_vocab_add`'s only guard against
+    /// re-creating the row — `is_tombstoned` — reads false, so a peer that had
+    /// not yet seen the delete re-inserts the word from its next snapshot.
+    #[test]
+    fn single_delete_leaves_a_tombstone_that_blocks_replay() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, _) = saved_with_card(&db, &sync);
+
+        remove_vocab_word_inner(&id, &db, &sync).unwrap();
+
+        let tombstoned: bool = db
+            .reader()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _tombstones WHERE entity = 'vocab' AND id = ?1)",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(tombstoned, "remove_vocab_word wrote no vocab tombstone");
+
+        // The id arriving again — a re-delivered `vocab.add` from a peer that
+        // had not seen the delete — must not bring the word back.
+        let event = crate::sync::events::Event {
+            id: "01HYZX0000000000000000EVT2".to_string(),
+            ts: chrono::Utc::now().timestamp_millis() + 1,
+            device: "11111111-2222-3333-4444-555555555555".to_string(),
+            v: crate::sync::events::EVENT_SCHEMA_VERSION,
+            body: EventBody::VocabAdd(crate::sync::events::VocabPayload {
+                id: id.clone(),
+                book_id: Some("book-card".to_string()),
+                word: "thither".to_string(),
+                definition: "the first summary".to_string(),
+                context_sentence: None,
+                cfi: None,
+                mastery: "new".to_string(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".to_string(),
+                mastery_reason: None,
+                list_status: "confirmed".to_string(),
+                card_snapshot: None,
+                source: "book".to_string(),
+                source_label: None,
+            }),
+            extra: Default::default(),
+        };
+        {
+            let conn = db.conn.lock().unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            crate::sync::merge::apply_event(&tx, &event).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let rows: i64 = db
+            .reader()
+            .query_row("SELECT COUNT(*) FROM vocab_words", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "the deleted word was resurrected by replay");
     }
 
     /// The word was deleted while the card was still streaming. Nothing to

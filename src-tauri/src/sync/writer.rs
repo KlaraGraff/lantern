@@ -454,6 +454,19 @@ impl SyncWriter {
             });
         }
 
+        let guard = self.acquire_outermost_mutation();
+        if guard.is_err() {
+            // The depth was bumped for a guard that never came into being.
+            // Leaving it there would make every later guard on this thread
+            // look nested, so it would neither count as an active mutation
+            // nor hold the process lock — `begin_transition` could then move
+            // the blob roots under an in-flight write.
+            MUTATION_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+        guard
+    }
+
+    fn acquire_outermost_mutation(&self) -> AppResult<MutationGuard<'_>> {
         loop {
             let mut state = self
                 .transition_gate
@@ -716,6 +729,44 @@ mod tests {
         assert_eq!(writer.next_logical_timestamp_from(1_000), 1_001);
         assert_eq!(writer.next_logical_timestamp_from(999), 1_002);
         assert_eq!(writer.next_logical_timestamp_from(2_000), 2_000);
+    }
+
+    /// A guard that fails to acquire must leave no trace: the thread-local
+    /// depth is what tells the next guard whether it is nested. Bumping it
+    /// and returning `Err` marks the thread as nested forever, so every later
+    /// guard skips `active_mutations` and the cross-process lock — exactly the
+    /// state `begin_transition` reads to decide the blob roots are safe to move.
+    #[test]
+    fn failed_process_lock_does_not_poison_later_mutation_gating() {
+        let dir = TempDir::new().unwrap();
+        let writer = SyncWriter::new("dev-A".into());
+        // A regular file where the lock file's parent directory would go, so
+        // `create_dir_all` fails and the lock cannot be acquired.
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"not a directory").unwrap();
+        writer.set_process_lock_path(blocker.join("nested").join("sync.lock"));
+
+        assert!(
+            writer.mutation_guard().is_err(),
+            "the unusable lock path should fail the guard"
+        );
+        assert_eq!(
+            MUTATION_DEPTH.with(|depth| depth.get()),
+            0,
+            "a failed guard must not leave the thread marked as nested"
+        );
+
+        // With a usable path the next guard is the outermost one again.
+        writer.set_process_lock_path(dir.path().join("sync.lock"));
+        {
+            let _guard = writer.mutation_guard().unwrap();
+            assert_eq!(
+                MUTATION_DEPTH.with(|depth| depth.get()),
+                1,
+                "the next guard after a failure must be outermost"
+            );
+        }
+        assert_eq!(MUTATION_DEPTH.with(|depth| depth.get()), 0);
     }
 
     fn import_body(id: &str) -> EventBody {

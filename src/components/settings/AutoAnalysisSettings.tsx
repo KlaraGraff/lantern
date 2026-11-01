@@ -72,8 +72,12 @@ export default function AutoAnalysisSettings() {
     setBusy(jobId);
     try {
       await invoke("set_auto_analysis_enabled", { jobId, enabled });
-      await load();
+    } catch (error) {
+      console.error("Failed to change an automatic analysis switch:", error);
     } finally {
+      // Re-read either way: after a failure the stored value is unchanged, so
+      // the row has to fall back to it rather than keep showing the click.
+      await load().catch(() => {});
       setBusy(null);
     }
   };
@@ -83,10 +87,16 @@ export default function AutoAnalysisSettings() {
     setBusy("*");
     try {
       for (const job of data.jobs) {
-        if (job.enabled) await invoke("set_auto_analysis_enabled", { jobId: job.id, enabled: false });
+        if (!job.enabled) continue;
+        try {
+          await invoke("set_auto_analysis_enabled", { jobId: job.id, enabled: false });
+        } catch (error) {
+          // One job failing must not leave the rest of the switches on.
+          console.error("Failed to switch off an automatic analysis job:", error);
+        }
       }
-      await load();
     } finally {
+      await load().catch(() => {});
       setBusy(null);
     }
   };

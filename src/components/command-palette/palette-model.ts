@@ -52,6 +52,23 @@ export function splitMatch(text: string, query: string): [string, string, string
   return [text.slice(0, at), text.slice(at, at + q.length), text.slice(at + q.length)];
 }
 
+/**
+ * Whether this Enter keydown is the reader asking to run the selected row.
+ *
+ * The Enter that accepts a Chinese IME candidate is the same `key`, so without
+ * this guard typing pinyin into ⌘K and pressing Enter to take the hanzi would
+ * close the palette and run whatever row happened to be highlighted. WebKit may
+ * report `isComposing = false` on that event and leave keyCode 229 as the only
+ * signal — the same pair of checks `chat-input-keys.ts` makes for the composer.
+ */
+export function isPaletteRowActivation(event: {
+  key: string;
+  isComposing: boolean;
+  keyCode: number;
+}): boolean {
+  return event.key === "Enter" && !event.isComposing && event.keyCode !== 229;
+}
+
 /** Arrow-key movement through `count` rows, wrapping at both ends. */
 export function wrapIndex(index: number, delta: number, count: number): number {
   if (count <= 0) return 0;

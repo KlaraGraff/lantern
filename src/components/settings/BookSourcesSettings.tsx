@@ -50,7 +50,14 @@ export default function BookSourcesSettings({ settings, saveBulk, showSavedToast
     setSources(next);
     saveBulk({ [BOOK_SOURCES_KEY]: serializeBookSources(next) })
       .then(() => showSavedToast())
-      .catch((error) => console.error("Failed to save book sources:", error));
+      .catch((error) => {
+        // Nothing was written, so the list on screen has to go back to what is
+        // actually stored — otherwise the pane keeps advertising a change that
+        // disappears the next time it mounts.
+        console.error("Failed to save book sources:", error);
+        setSources(resolveBookSources(settings[BOOK_SOURCES_KEY]));
+        showSavedToast(t("readerSettings.scope.actionFailed"));
+      });
   };
 
   const deleteSource = (id: string) => {

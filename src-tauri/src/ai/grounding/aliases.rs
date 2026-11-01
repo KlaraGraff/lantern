@@ -877,17 +877,18 @@ fn evaluate_attempt(
         for alias in &survivors {
             for run in name_runs_for_alias(conn, book_id, alias)? {
                 let key = run.to_lowercase();
-                if known_forms.contains(&key) || is_common_single_word(&forms, &run)? {
-                    continue;
-                }
-                known_forms.insert(key.clone());
-                match new_canonicals
+                if let Some((_, aliases)) = new_canonicals
                     .iter_mut()
                     .find(|(name, _)| name.to_lowercase() == key)
                 {
-                    Some((_, aliases)) => aliases.push(alias.clone()),
-                    None => new_canonicals.push((run, vec![alias.clone()])),
+                    aliases.push(alias.clone());
+                    continue;
                 }
+                if known_forms.contains(&key) || is_common_single_word(&forms, &run)? {
+                    continue;
+                }
+                known_forms.insert(key);
+                new_canonicals.push((run, vec![alias.clone()]));
             }
         }
 
@@ -1438,7 +1439,17 @@ enum Script {
 /// grounding::language" means read what indexing already decided about the
 /// book, not run a second, weaker detector against a two-word question.
 fn book_script(language: Option<&str>) -> Option<Script> {
-    match language? {
+    // `books.language` holds the publisher's verbatim `dc:language`, region and
+    // all ("en-GB", "zh-CN") — see `epub.rs`. Only the primary subtag says
+    // which script the book is written in, and only the detected fallback
+    // writes a bare code, so comparing the whole tag would leave every book
+    // that declares one permanently unclassifiable.
+    let language = language?
+        .trim()
+        .split(['-', '_'])
+        .next()?
+        .to_ascii_lowercase();
+    match language.as_str() {
         "zh" | "ja" | "ko" => Some(Script::Cjk),
         "ru" | "uk" => Some(Script::Cyrillic),
         "en" | "es" | "fr" | "de" | "pt" | "it" | "nl" | "pl" | "tr" | "sv" | "da" | "fi"
@@ -2440,6 +2451,38 @@ mod tests {
     // --- build pass: A, B, and C stacked together ---------------------------
 
     #[test]
+    fn a_missed_person_is_reachable_from_every_alias_that_names_them() {
+        let (_dir, db) = setup();
+        insert_chunk(
+            &db,
+            "b1",
+            0,
+            "Mr. Vesely spoke first. Franz Vesely arrived later.",
+        );
+        // Two of the model's aliases name the person it missed entirely:
+        // "Vesely" is the surname both men share, "Franz" only ever appears as
+        // the first name of the second of them.
+        let raw = vec![RawAliasGroup {
+            canonical: "Mr. Vesely".to_string(),
+            aliases: vec!["Vesely".to_string(), "Franz".to_string()],
+        }];
+        let conn = db.conn.lock().unwrap();
+        let AttemptOutcome::Commit(rows) = evaluate_attempt(&conn, &db, "b1", &raw).unwrap() else {
+            panic!("expected Commit")
+        };
+        let mut pairs: Vec<(String, String)> = rows
+            .into_iter()
+            .map(|(canonical, alias, _)| (canonical, alias))
+            .collect();
+        pairs.sort();
+        assert!(
+            pairs.contains(&("Franz Vesely".to_string(), "Franz".to_string())),
+            "every surviving alias that turns up inside a newly discovered full name must \
+             reach it, not only the first one the loop visits: {pairs:?}"
+        );
+    }
+
+    #[test]
     fn the_three_checks_apply_in_the_documented_order() {
         let (_dir, db) = setup();
         insert_chunk(
@@ -2545,6 +2588,27 @@ mod tests {
         // this table knows — the exact shape Low exists to catch.
         let resolution = resolve(&db.reader(), "b1", "薇克姆是坏人吗").unwrap();
         assert_eq!(resolution.confidence, AliasConfidence::Low);
+    }
+
+    #[test]
+    fn region_tagged_book_language_still_yields_low() {
+        let (_dir, db) = setup();
+        // A real EPUB declares `dc:language` with a region, and `epub.rs` stores
+        // it verbatim — only the "the file said nothing" fallback writes a bare
+        // code. The cross-script check has to compare the primary subtag, or
+        // `Low` can never fire on a book that declares one.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE books SET language = 'en-GB' WHERE id = 'b1'", [])
+            .unwrap();
+        insert_alias(&db, "b1", "Mr. Darcy", "达西", "auto", 40);
+        let resolution = resolve(&db.reader(), "b1", "薇克姆是坏人吗").unwrap();
+        assert_eq!(
+            resolution.confidence,
+            AliasConfidence::Low,
+            "an en-GB book is still an English book"
+        );
     }
 
     #[test]

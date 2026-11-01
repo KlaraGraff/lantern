@@ -1,10 +1,10 @@
 # Mobile P2.1 — The responsive foundation
 
-Status: implemented. This is a convention doc, not a plan — the code it describes is four
+Status: shipped. This is a convention doc, not a plan — the code it describes is four
 declarations and one meta attribute, and the reason it needs a page of prose is that all of
 it is invisible until someone gets it wrong.
 
-Item 1 of [P2](../roadmap/mobile-ios.md#p2--mobile-ui-185-days). It adds capability and
+Item 1 of [P2](../../roadmap/mobile-ios.md#p2--mobile-ui-185-days). It adds capability and
 restyles nothing: every screen at desktop width renders exactly as it did before.
 
 ## The rule
@@ -106,7 +106,7 @@ is the one-liner that covers every clickable `div` without enumerating anything,
 rejected because `touch-action` intersects down the ancestor chain: a value on the root is a
 ceiling that no descendant can raise again. It would reach into the reader body and into the
 book's own iframe, and those are precisely where
-[P3](../roadmap/mobile-ios.md#p3--reader-touch-interaction-10-days) needs the browser's
+[P3](../../roadmap/mobile-ios.md#p3--reader-touch-interaction-10-days) needs the browser's
 defaults intact to build its gesture arena, and where the PDF view needs its own zoom
 behaviour. The enumerated list is more to maintain and keeps the reader body free. Selection
 is untouched either way — `touch-action` does not govern it — which matters because word
