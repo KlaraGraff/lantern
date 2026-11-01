@@ -66,7 +66,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::mastery::{median_words_per_minute, ScreenPace};
+use crate::mastery::{median_words_per_minute, ScreenPace, ABSOLUTE_MAX_WPM};
 
 // ---------------------------------------------------------------------------
 // Sample-size floors — guardrail 1.
@@ -183,11 +183,12 @@ fn compute(conn: &Connection, now: i64) -> AppResult<Calibration> {
     let mut stmt = conn.prepare(
         "SELECT word_count, dwell_ms FROM reading_screen_dwells
           WHERE word_count > 0 AND dwell_ms > 0
+            AND (word_count * 60000.0) / dwell_ms <= ?2
           ORDER BY started_at DESC
           LIMIT ?1",
     )?;
     let screens = stmt
-        .query_map(params![SPEED_SAMPLE_SCREENS], |row| {
+        .query_map(params![SPEED_SAMPLE_SCREENS, ABSOLUTE_MAX_WPM], |row| {
             Ok(ScreenPace {
                 word_count: row.get("word_count")?,
                 dwell_ms: row.get("dwell_ms")?,
