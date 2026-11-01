@@ -432,7 +432,7 @@ fn do_set_reading_state(
     sync: &SyncWriter,
 ) -> AppResult<books::Book> {
     crate::sync::validation::validate_entity_id(&args.book_id)?;
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         let current = tx
@@ -651,5 +651,58 @@ mod tests {
         assert_eq!(book.status, "finished");
         assert_eq!(book.progress, 100);
         assert_eq!(book.current_cfi.as_deref(), Some("epubcfi(/6/4)"));
+    }
+
+    /// `book_field_clocks` arbitrates with a *strict* `(updated_at,
+    /// updated_by_device)` comparison, so a reading-state write stamped at or
+    /// behind a clock this writer already handed out ties with it and a peer
+    /// drops the newer write. The row clock therefore has to come from the
+    /// writer's logical clock, not from `Utc::now`.
+    #[test]
+    fn reading_state_stamps_from_the_logical_clock() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress, current_cfi,
+                  created_at, updated_at)
+                 VALUES ('book', 'Book', 'Author', 'books/book.epub', 'epub',
+                         'reading', 0, NULL, 1, 1)",
+                [],
+            )
+            .unwrap();
+        let sync = SyncWriter::new("mcp-test".into());
+        // Fast-forward the writer's logical clock past the wall clock, the way
+        // a burst of same-millisecond mutations does: each call returns
+        // `max(wall_clock, previous + 1)`.
+        let mut last_issued = 0;
+        for _ in 0..10_000 {
+            last_issued = sync.next_logical_timestamp();
+        }
+        let book = do_set_reading_state(
+            &SetReadingStateArgs {
+                book_id: "book".into(),
+                status: None,
+                progress: Some(20),
+                current_cfi: None,
+                clear_current_cfi: false,
+            },
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let clocks = crate::sync::book_fields::load(&db.conn.lock().unwrap(), "book").unwrap();
+        assert!(
+            book.updated_at > last_issued,
+            "the write must be stamped after the last timestamp this writer issued \
+             ({last_issued}); a raw wall-clock stamp lands behind it and loses to it on replay"
+        );
+        assert_eq!(
+            clocks["progress"].updated_at, book.updated_at,
+            "the progress field clock and the row clock are the same logical value"
+        );
     }
 }
