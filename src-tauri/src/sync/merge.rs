@@ -1813,14 +1813,14 @@ fn apply_collection_book_remove(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
-    // Same rule as `apply_custom_font_delete`: a remove older than the row's
-    // current state loses. A peer that re-added the book after this remove was
-    // issued expressed the later intent, so neither the row nor the tombstone
-    // may be touched.
-    if current
-        .as_ref()
-        .is_some_and(|(ts, device)| (*ts, device.as_str()) > (event.ts, event.device.as_str()))
-    {
+    // A remove older than the row's current state loses: a peer that re-added
+    // the book after this remove was issued expressed the later intent, so
+    // neither the row nor the tombstone may be touched. Only strictly newer
+    // stamps win, comparing timestamps alone. At equal timestamps the remove
+    // wins, matching `apply_collection_book_add`'s tombstone check and both
+    // snapshot paths — so both arrival orders of an add and a remove stamped
+    // in the same millisecond converge on the row being absent.
+    if current.as_ref().is_some_and(|(ts, _device)| *ts > event.ts) {
         return Ok(());
     }
     cascade_delete(tx, entity::COLLECTION_BOOK, &key, event.ts)?;
@@ -4896,6 +4896,83 @@ mod tests {
         let reversed = replay_collection_book_events(1);
         assert!(forward.is_some(), "row must be present in both orders");
         assert_eq!(forward, reversed, "both orders must converge");
+    }
+
+    /// Convergence probe: a book added by one device and removed by another in
+    /// the same millisecond must land on the same state in both arrival orders.
+    #[test]
+    fn equal_ts_add_and_remove_from_two_devices_converge() {
+        let state_after = |events: &[Event]| {
+            let mut db = open_db();
+            let setup = [
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::CollectionCreate {
+                        id: "c1".into(),
+                        name: "Top".into(),
+                        sort_order: 0,
+                    },
+                ),
+                ev(
+                    1500,
+                    "dev-A",
+                    EventBody::CollectionBookAdd {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+            ];
+            apply_all(&mut db, &setup);
+            apply_all(&mut db, events);
+            collection_book_state(&db)
+        };
+        // dev-Z adds and dev-A removes in the same millisecond.
+        let add_then_remove = state_after(&[
+            ev(
+                3000,
+                "dev-Z",
+                EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+            ev(
+                3000,
+                "dev-A",
+                EventBody::CollectionBookRemove {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+        ]);
+        let remove_then_add = state_after(&[
+            ev(
+                3000,
+                "dev-A",
+                EventBody::CollectionBookRemove {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+            ev(
+                3000,
+                "dev-Z",
+                EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+            ),
+        ]);
+        assert_eq!(
+            add_then_remove, remove_then_add,
+            "equal-ts add/remove diverges by arrival order"
+        );
+        assert!(
+            add_then_remove.is_none(),
+            "the remove wins at equal timestamps: the row must be absent"
+        );
     }
 
     /// A remove with no newer write behind it still deletes, and tombstones.

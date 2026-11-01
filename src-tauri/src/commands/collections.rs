@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -205,30 +205,25 @@ pub(crate) fn do_add_book_to_collection(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<bool> {
-    let now = sync.next_logical_timestamp();
+    let key = format!("{collection_id}:{book_id}");
+    // The click is this device's newest intent, so its stamp must outrank any
+    // membership stamp already visible here — including a tombstone written by
+    // a peer whose clock runs ahead. `next_logical_timestamp` only tracks this
+    // writer's own clock, so the peer's stamp is read first and handed to the
+    // transaction: `with_tx` derives both the published event's timestamp and
+    // the row's `updated_at` from that one value.
+    let seen = max_membership_stamp(db, collection_id, book_id)?;
+    let now = next_stamp_above(sync, seen);
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
-        let key = format!("{collection_id}:{book_id}");
-        // A stale peer add must not resurrect a removed membership, and a local
-        // re-add must clear the tombstone its own removal left behind — the
-        // same clearable-tombstone rule `apply_collection_book_add` applies.
-        // Only strictly older tombstones are cleared; whatever survives is at
-        // or after `now` and outranks this add.
+        // Clears the tombstone this add supersedes — the same clearable-
+        // tombstone rule `apply_collection_book_add` applies, so the row and
+        // its tombstone never disagree. Only strictly older ones are cleared;
+        // `now` is already past every stamp this device could see.
         tx.execute(
             "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2 AND ts < ?3",
             params![entity::COLLECTION_BOOK, key, now],
         )?;
-        let tombstoned: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM _tombstones WHERE entity = ?1 AND id = ?2)",
-            params![entity::COLLECTION_BOOK, key],
-            |row| row.get(0),
-        )?;
-        if tombstoned {
-            // This add lost to a remove that peers already rank higher, so
-            // inserting the row would leave this device disagreeing with
-            // every peer. Publish nothing and report that nothing was added.
-            return Ok(false);
-        }
         let changed = tx.execute(
             "INSERT OR IGNORE INTO collection_books (collection_id, book_id, created_at, updated_at, updated_by_device) VALUES (?1, ?2, ?3, ?3, ?4)",
             params![collection_id, book_id, now, device],
@@ -260,19 +255,23 @@ pub(crate) fn do_remove_book_from_collection(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<bool> {
-    let now = sync.next_logical_timestamp();
+    let key = format!("{collection_id}:{book_id}");
+    // Same rule as the add: a peer that stamped this membership ahead of the
+    // local clock must not outrank the remove — peers would keep the row and
+    // the next snapshot would bring it back. `now` is read past the row's
+    // stamp and `with_tx` writes that one value into both the tombstone and
+    // the published event.
+    let seen = max_membership_stamp(db, collection_id, book_id)?;
+    let now = next_stamp_above(sync, seen);
     sync.with_tx(db, now, |tx, events| {
         let changed = tx.execute(
             "DELETE FROM collection_books WHERE collection_id = ?1 AND book_id = ?2",
             params![collection_id, book_id],
         )?;
+        // Idempotent: also advances a tombstone left by an older remove, so a
+        // local remove whose row vanished elsewhere still converges.
+        insert_tombstone(tx, entity::COLLECTION_BOOK, &key, now)?;
         if changed > 0 {
-            insert_tombstone(
-                tx,
-                entity::COLLECTION_BOOK,
-                &format!("{collection_id}:{book_id}"),
-                now,
-            )?;
             events.push(EventBody::CollectionBookRemove {
                 collection: collection_id.to_string(),
                 book: book_id.to_string(),
@@ -280,6 +279,45 @@ pub(crate) fn do_remove_book_from_collection(
         }
         Ok(changed > 0)
     })
+}
+
+/// The newest stamp this device already holds for one membership: the row's
+/// `updated_at` and the tombstone's `ts`, whichever is later. `None` when the
+/// membership has never been seen here.
+fn max_membership_stamp(db: &Db, collection_id: &str, book_id: &str) -> AppResult<Option<i64>> {
+    let conn = db.reader();
+    Ok(conn
+        .query_row(
+            "SELECT MAX(m.ts) FROM (
+                 SELECT updated_at AS ts FROM collection_books
+                  WHERE collection_id = ?1 AND book_id = ?2
+                 UNION ALL
+                 SELECT ts FROM _tombstones WHERE entity = ?3 AND id = ?4
+             ) m",
+            params![
+                collection_id,
+                book_id,
+                entity::COLLECTION_BOOK,
+                format!("{collection_id}:{book_id}")
+            ],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// The next stamp for a local membership write, raised to `seen + 1` so it
+/// outranks a peer stamp already applied here. Only stepping one past what the
+/// local database shows — `next_logical_timestamp` keeps it strictly
+/// increasing for this writer, and it stays well inside the accepted skew.
+fn next_stamp_above(sync: &SyncWriter, seen: Option<i64>) -> i64 {
+    match seen {
+        Some(ts) => {
+            let floor = ts.saturating_add(1);
+            floor.max(sync.next_logical_timestamp())
+        }
+        None => sync.next_logical_timestamp(),
+    }
 }
 
 #[tauri::command]
@@ -547,16 +585,14 @@ mod tests {
     }
 
     #[test]
-    fn add_older_than_a_peer_remove_does_not_insert() {
+    fn local_add_after_tombstone_stamped_ahead_inserts_row() {
         let (_dir, db, sync) = setup();
         sync.set_should_queue(true);
         insert_book(&db, "b1", "Book");
         insert_collection(&db, "c1", "Favorites");
 
-        // A peer's remove lands with a stamp the logical clock has not yet
-        // passed, so this device's add is the older of the two. The tombstone
-        // is written directly: `apply` uses ULID-shaped ids whose hex suffix
-        // cannot carry a timestamp this far ahead.
+        // A peer whose clock runs 60 s ahead removed the book; this device
+        // applied that remove, so its tombstone is the newest stamp in sight.
         let peer_remove_ts = sync.next_logical_timestamp() + 60_000;
         {
             let conn = db.conn.lock().unwrap();
@@ -567,18 +603,129 @@ mod tests {
             .unwrap();
         }
 
+        // The user's click must win over that tombstone, not vanish silently.
         assert!(
-            !do_add_book_to_collection("c1", "b1", &db, &sync).unwrap(),
-            "an add older than the remove must not report success"
+            do_add_book_to_collection("c1", "b1", &db, &sync).unwrap(),
+            "a local add must win over a tombstone it can see"
         );
         assert_eq!(
             membership_count(&db, "c1", "b1"),
-            0,
-            "the outranked add must not insert the row"
+            1,
+            "the add must insert the row"
         );
+        assert_eq!(
+            membership_tombstone_ts(&db, "c1", "b1"),
+            None,
+            "the add must clear the tombstone it superseded"
+        );
+
+        let (add_ts, add_body) = published_events(&db).pop().unwrap();
         assert!(
-            published_events(&db).is_empty(),
-            "the losing add publishes nothing"
+            add_ts > peer_remove_ts,
+            "the published add ({add_ts}) must outrank the peer tombstone ({peer_remove_ts})"
+        );
+
+        // Peers holding both the ahead remove and this add keep the row.
+        let (_peer_dir, peer, _peer_sync) = setup();
+        insert_book(&peer, "b1", "Book");
+        insert_collection(&peer, "c1", "Favorites");
+        {
+            let mut conn = peer.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            for (ts, dev, body) in [
+                (
+                    peer_remove_ts,
+                    "dev-Z",
+                    EventBody::CollectionBookRemove {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+                (add_ts, "dev-A", add_body),
+            ] {
+                let event = crate::sync::events::Event {
+                    id: "01HYZX00000000000000000003".into(),
+                    ts,
+                    device: dev.into(),
+                    v: crate::sync::events::EVENT_SCHEMA_VERSION,
+                    body,
+                    extra: serde_json::Map::new(),
+                };
+                apply_event(&tx, &event).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            membership_count(&peer, "c1", "b1"),
+            1,
+            "peers must end up with the row this device just added"
+        );
+    }
+
+    #[test]
+    fn local_remove_of_row_stamped_ahead_by_peer_converges() {
+        let (_dir, db, sync) = setup();
+        sync.set_should_queue(true);
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+        // Peer dev-Z (clock 60s ahead) added the book; this device applied it.
+        let peer_ts = chrono::Utc::now().timestamp_millis() + 60_000;
+        {
+            let mut conn = db.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            let e = crate::sync::events::Event {
+                id: "01HYZX00000000000000000001".into(),
+                ts: peer_ts,
+                device: "dev-Z".into(),
+                v: crate::sync::events::EVENT_SCHEMA_VERSION,
+                body: EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+                extra: serde_json::Map::new(),
+            };
+            apply_event(&tx, &e).unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(membership_count(&db, "c1", "b1"), 1);
+        // User removes it here.
+        assert!(do_remove_book_from_collection("c1", "b1", &db, &sync).unwrap());
+        let local_present = membership_count(&db, "c1", "b1") == 1;
+        // What dev-Z does with the published remove:
+        let (rts, body) = published_events(&db).pop().unwrap();
+        let (_d2, peer, _s2) = setup();
+        insert_book(&peer, "b1", "Book");
+        insert_collection(&peer, "c1", "Favorites");
+        {
+            let mut conn = peer.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            for (ts, dev, b) in [
+                (
+                    peer_ts,
+                    "dev-Z",
+                    EventBody::CollectionBookAdd {
+                        collection: "c1".into(),
+                        book: "b1".into(),
+                    },
+                ),
+                (rts, "dev-A", body),
+            ] {
+                let e = crate::sync::events::Event {
+                    id: "01HYZX00000000000000000002".into(),
+                    ts,
+                    device: dev.into(),
+                    v: crate::sync::events::EVENT_SCHEMA_VERSION,
+                    body: b,
+                    extra: serde_json::Map::new(),
+                };
+                apply_event(&tx, &e).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let peer_present = membership_count(&peer, "c1", "b1") == 1;
+        assert_eq!(
+            local_present, peer_present,
+            "local remove (ts {rts}) vs peer row (ts {peer_ts}) diverge"
         );
     }
 
