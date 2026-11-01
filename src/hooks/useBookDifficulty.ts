@@ -151,13 +151,15 @@ export function useBookDifficulty(bookId: string | undefined): UseBookDifficulty
     async (value: BookDifficultyOverride | null) => {
       if (!bookId) return;
       setCallError(null);
-      const previous = difficulty;
+      const previousOverride = difficulty?.override ?? null;
       setDifficulty((prev) => (prev ? { ...prev, override: value } : prev));
       try {
         await setBookDifficultyOverride(bookId, value);
       } catch (error) {
         setCallError(String(error));
-        setDifficulty(previous);
+        // Roll back the field this call wrote, not the whole row: a finished
+        // analysis may have replaced it while the write was in flight.
+        setDifficulty((prev) => (prev ? { ...prev, override: previousOverride } : prev));
       }
     },
     [bookId, difficulty],

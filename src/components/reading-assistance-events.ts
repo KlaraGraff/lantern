@@ -13,6 +13,8 @@ export const READING_ASSISTANCE_SETTING_KEYS = [
   "auto_highlight_lookup_words",
   "marker_style_config",
   "learning_card_config",
+  "reader_bindings",
+  "show_menu_shortcuts",
   "passive_vocab_enabled",
   "passive_vocab_style",
   "passive_vocab_limit",

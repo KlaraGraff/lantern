@@ -32,7 +32,11 @@ export function parseDefinition(raw: string): { pronunciation: string | null; de
 export function glossOf(definition: string): string {
   return definition
     .split("\n")
-    .map((line) => line.replace(/^[#>\-*\s]+/, "").trim())
+    // Decorations the model wraps a gloss in: bullets/headings at the start,
+    // and the bold and code markers `condenseGloss` strips for the same
+    // reason — they pair up around the text, so the closing one survives a
+    // start-anchored strip and would print as part of the word.
+    .map((line) => line.replace(/^[#>\-*\s]+/, "").replace(/\*\*|`/g, "").trim())
     .find((line) => line.length > 0)
     ?? "";
 }
