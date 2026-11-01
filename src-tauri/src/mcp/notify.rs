@@ -51,7 +51,7 @@ pub fn spawn_watcher(sentinel_path: PathBuf, app_handle: AppHandle) {
     std::mem::forget(watcher);
 }
 
-fn emit_from_payload(handle: &AppHandle, payload: &str) {
+fn emit_from_payload<R: tauri::Runtime>(handle: &AppHandle<R>, payload: &str) {
     let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) else {
         return;
     };
@@ -71,7 +71,7 @@ fn emit_from_payload(handle: &AppHandle, payload: &str) {
         "open" => "mcp:open-reader",
         _ => return,
     };
-    let _ = handle.emit(event_name, payload);
+    let _ = handle.emit(event_name, json);
 }
 
 pub fn write_sentinel(path: &Path, domain: &str, action: &str, id: &str) {
@@ -99,4 +99,40 @@ pub fn write_open_sentinel(path: &Path, book_id: &str, cfi: Option<&str>) {
         "cfi": cfi,
     });
     let _ = std::fs::write(path, payload.to_string());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The webview listener in `App.tsx` reads `event.payload.id`. Emitting the
+    /// sentinel text as a string makes the payload a JSON *string*, so that
+    /// field never resolves and the book never opens.
+    #[test]
+    fn open_reader_event_payload_is_the_parsed_object() {
+        use std::sync::{Arc, Mutex};
+        use tauri::Listener;
+
+        let app = tauri::test::mock_app();
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = Arc::clone(&seen);
+        let _listener = app.listen("mcp:open-reader", move |event| {
+            sink.lock().unwrap().push(event.payload().to_string());
+        });
+
+        emit_from_payload(
+            app.handle(),
+            r#"{"domain":"open","action":"reader","id":"b1","cfi":"epubcfi(/6/2)"}"#,
+        );
+
+        let payloads = seen.lock().unwrap().clone();
+        assert_eq!(payloads.len(), 1, "one emit per sentinel write");
+        let value: serde_json::Value = serde_json::from_str(&payloads[0]).unwrap();
+        assert_eq!(
+            value["id"],
+            serde_json::json!("b1"),
+            "listener reads payload.id; got {payloads:?}"
+        );
+        assert_eq!(value["cfi"], serde_json::json!("epubcfi(/6/2)"));
+    }
 }
