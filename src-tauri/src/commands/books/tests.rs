@@ -2568,3 +2568,132 @@ fn apply_book_status_event(
         )
         .unwrap();
 }
+
+/// Deleting a book with "keep my notes" must only detach notes that can exist
+/// without a book. A `position` note (a bookmark) is anchored at a location in
+/// one book; detaching it produces a payload `validate_note_fields` rejects —
+/// and replay drops a peer's *entire* log on one invalid event.
+#[test]
+fn preserve_notes_does_not_emit_an_invalid_position_note_event() {
+    let (_dir, db) = setup();
+    insert_book(&db, "b1", "epub");
+    let now = chrono::Utc::now().timestamp_millis();
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO notes
+             (id, book_id, anchor_kind, scope, location, content, content_format,
+              created_at, updated_at, updated_by_device)
+             VALUES ('bm1', 'b1', 'position', 'book', 'epubcfi(/6/2!)', 'kept place',
+                     'plain_text', ?1, ?1, 'dev-A')",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO notes
+             (id, book_id, anchor_kind, scope, location, selected_text, content,
+              content_format, created_at, updated_at, updated_by_device)
+             VALUES ('note-book', 'b1', 'selection', 'book', 'epubcfi(/6/4!)',
+                     'quoted passage', 'my note', 'plain_text', ?1, ?1, 'dev-A')",
+            params![now],
+        )
+        .unwrap();
+    }
+
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+    do_delete_book_with_note_policy("b1", true, &db, &sync).unwrap();
+
+    let queued: Vec<serde_json::Value> = {
+        let conn = db.reader();
+        let mut statement = conn
+            .prepare("SELECT body_json FROM _pending_publish ORDER BY created_at, id")
+            .unwrap();
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .map(|body| serde_json::from_str(&body.unwrap()).unwrap())
+            .collect()
+    };
+    let note_events: Vec<&serde_json::Value> = queued
+        .iter()
+        .filter(|value| value["type"] == "note.upsert")
+        .collect();
+    assert_eq!(
+        note_events.len(),
+        1,
+        "only the selection note can survive its book: {queued:?}"
+    );
+    for value in &note_events {
+        let body: crate::sync::events::EventBody =
+            serde_json::from_value((*value).clone()).unwrap();
+        let crate::sync::events::EventBody::NoteUpsert(payload) = body else {
+            panic!("not a note upsert");
+        };
+        crate::sync::validation::validate_note_payload(&payload).unwrap_or_else(|error| {
+            panic!("delete queued an event replay rejects: {error} ({value})")
+        });
+    }
+
+    let conn = db.reader();
+    let bookmark_rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM notes WHERE id = 'bm1'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(bookmark_rows, 0, "a bookmark cannot outlive its book");
+    let detached: (Option<String>, String) = conn
+        .query_row(
+            "SELECT book_id, scope FROM notes WHERE id = 'note-book'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(detached, (None, "detached".into()));
+}
+
+/// Deleting a book must remove every file it owns. A converted book (MOBI in,
+/// EPUB out) keeps its reader artifact under `local/prepared/` — the text
+/// pipeline's files are already cleaned up by `delete_book`, and the converted
+/// EPUB was the one left behind.
+#[test]
+fn delete_book_removes_the_converted_epub_artifact() {
+    let (dir, db) = setup();
+    insert_book(&db, "cv-del", "mobi");
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE books SET source_format = 'mobi', render_format = 'epub',
+                 source_file_path = file_path, source_sha256 = 'hash',
+                 conversion_version = ?1, preparation_state = 'ready'
+             WHERE id = 'cv-del'",
+            params![CONVERSION_VERSION],
+        )
+        .unwrap();
+    }
+    let local_dir = db.local_data_dir().unwrap();
+    let artifact = super::convert_prepare::converted_document_path(&local_dir, "cv-del");
+    std::fs::create_dir_all(artifact.parent().unwrap()).unwrap();
+    std::fs::write(&artifact, b"PK\x03\x04epub").unwrap();
+
+    let app = tauri::test::mock_app();
+    assert!(app.manage(db));
+    assert!(app.manage(SyncWriter::new("dev-A".into())));
+    assert!(app.manage(crate::LocalDir(local_dir.clone())));
+
+    super::mutate::delete_book(
+        "cv-del".into(),
+        None,
+        app.state::<Db>(),
+        app.state::<SyncWriter>(),
+        app.state::<crate::LocalDir>(),
+    )
+    .unwrap();
+
+    assert!(
+        !artifact.exists(),
+        "converted EPUB left on disk after deleting the book: {}",
+        artifact.display()
+    );
+    let _ = dir;
+}

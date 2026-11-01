@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -261,15 +261,23 @@ pub(crate) fn retrieve_ranked(
         }
     }
 
-    let mut expanded_scores: BTreeMap<i64, f64> = BTreeMap::new();
+    // Each expanded index remembers the section of the hit that pulled it
+    // in. `chunk_index` runs across the whole book, so ±1 from the last chunk
+    // of a section lands in the *next* section; admitting it would splice
+    // that chapter's opening into this one's excerpt, which is what the
+    // citation then points at.
+    let mut expanded_scores: BTreeMap<i64, (f64, HashSet<i64>)> = BTreeMap::new();
     for (id, score) in hits {
         if let Some(hit) = chunks_by_id.get(id) {
             for index in (hit.chunk_index - 1)..=(hit.chunk_index + 1) {
                 if index >= 0 {
                     expanded_scores
                         .entry(index)
-                        .and_modify(|old| *old = old.min(*score))
-                        .or_insert(*score);
+                        .and_modify(|old| {
+                            old.0 = old.0.min(*score);
+                            old.1.insert(hit.section_index);
+                        })
+                        .or_insert((*score, HashSet::from([hit.section_index])));
                 }
             }
         }
@@ -280,7 +288,7 @@ pub(crate) fn retrieve_ranked(
     let mut statement = conn.prepare(&format!(
         "SELECT {CHUNK_COLUMNS} FROM book_chunks WHERE book_id = ?1 AND chunk_index = ?2",
     ))?;
-    for (index, fallback_score) in expanded_scores {
+    for (index, (fallback_score, expected_sections)) in expanded_scores {
         let maybe_chunk = statement
             .query_row(params![book_id, index], |row| {
                 row_to_chunk(row, fallback_score)
@@ -289,6 +297,13 @@ pub(crate) fn retrieve_ranked(
         let Some(mut chunk) = maybe_chunk else {
             continue;
         };
+        // Only a section some hit actually asked for: a chunk index at the
+        // edge of a section is also the ±1 neighbor of a chunk in the
+        // adjacent section, and pulling that chunk in would splice the next
+        // chapter's opening into this section's excerpt and citation.
+        if !expected_sections.contains(&chunk.section_index) {
+            continue;
+        }
         if cutoff.is_some_and(|value| {
             !value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
         }) {
@@ -706,6 +721,30 @@ mod tests {
         )
         .unwrap();
         assert!(searched.is_empty());
+    }
+
+    /// `chunk_index` is global per book (`index::rebuild` numbers chunks
+    /// across every section), so the "next" chunk after the last chunk of a
+    /// chapter is the first chunk of the following chapter. Expansion must
+    /// not stitch that text into the current excerpt: the merged chunk keeps
+    /// the first chunk's `section_index` and `section_href`, so the excerpt
+    /// and its citation would claim chapter N while quoting chapter N+1.
+    #[test]
+    fn neighbor_expansion_stays_inside_the_hit_section() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET section_index = CASE WHEN chunk_index = 0 THEN 0 ELSE 1 END",
+            [],
+        )
+        .unwrap();
+
+        let result = retrieve(&conn, "book", "rare signal", 500, None).unwrap();
+        assert!(
+            result
+                .iter()
+                .all(|chunk| !chunk.text.contains("Alpha setup.")),
+            "text from section 0 leaked into a section 1 excerpt: {result:?}"
+        );
     }
 
     #[test]

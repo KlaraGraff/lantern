@@ -47,7 +47,8 @@ pub(crate) fn do_delete_book_with_note_policy(
                 let mut statement = tx.prepare(
                     "SELECT id, anchor_kind, normalized_word, selected_text, content,
                             content_format, created_at
-                     FROM notes WHERE book_id = ?1 AND scope = 'book'",
+                     FROM notes WHERE book_id = ?1 AND scope = 'book'
+                       AND anchor_kind <> 'position'",
                 )?;
                 let notes = statement
                     .query_map(params![id], |row| {
@@ -131,6 +132,11 @@ pub fn delete_book(
         let _ = fs::remove_file(temporary_path);
     }
     let _ = fs::remove_file(legacy_prepared_document_path(&local_dir.0, &id));
+    let converted_path = converted_document_path(&local_dir.0, &id);
+    let _ = fs::remove_file(&converted_path);
+    if let Ok(temporary_path) = convert_prepare::converted_temporary_path(&converted_path) {
+        let _ = fs::remove_file(temporary_path);
+    }
     Ok(())
 }
 

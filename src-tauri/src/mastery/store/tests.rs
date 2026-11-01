@@ -261,6 +261,18 @@ fn a_word_the_reader_never_saved_is_consumed_not_banked() {
 }
 
 #[test]
+fn punctuated_vocab_word_is_demoted_by_a_lookup() {
+    // The promotion path matches a saved word through `normalize()`, so a word
+    // the reader saved as "Quiet," climbs tiers like "quiet". The lookup path
+    // must reach that same row, or the word keeps its auto tier while the
+    // reader keeps looking it up.
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "Quiet,", "mastered");
+    look_up(&db, &sync, "quiet");
+    assert_eq!(mastery_of(&db).0, "familiar");
+}
+
+#[test]
 fn a_saved_word_is_matched_through_the_readers_own_punctuation() {
     // Exposure rows arrive normalized; vocab_words keeps whatever the reader
     // selected, capital and trailing comma included.

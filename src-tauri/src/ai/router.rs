@@ -576,6 +576,26 @@ pub fn register_request(request_id: &str) -> watch::Receiver<bool> {
     receiver
 }
 
+/// The receiver a detached task uses for an id the command thread already
+/// registered. Between those two moments the sender has no receiver, and a
+/// `watch` send with no receiver drops the value — see `cancel_request`. So the
+/// pending flag is re-read here, once a receiver exists to receive it.
+fn subscribe_request(request_id: &str) -> watch::Receiver<bool> {
+    {
+        let registry = cancellation_registry().lock();
+        if let Ok(registry) = &registry {
+            if let Some(sender) = registry.get(request_id) {
+                let receiver = sender.subscribe();
+                if take_pending_cancellation(request_id) {
+                    let _ = sender.send(true);
+                }
+                return receiver;
+            }
+        }
+    }
+    register_request(request_id)
+}
+
 pub fn finish_request(request_id: &str) {
     if let Ok(mut registry) = cancellation_registry().lock() {
         registry.remove(request_id);
@@ -587,7 +607,16 @@ pub fn cancel_request(request_id: &str) -> bool {
     // `register_request` for what splitting them let through.
     match cancellation_registry().lock() {
         Ok(registry) => match registry.get(request_id) {
-            Some(sender) => sender.send(true).is_ok(),
+            // A sender with no receiver yet is the gap between the command
+            // thread registering an id and the detached task subscribing to it.
+            // `watch::Sender::send` reports failure there and drops the value,
+            // so the stop is recorded as pending and the subscribe honors it.
+            Some(sender) => {
+                if sender.send(true).is_err() {
+                    record_pending_cancellation(request_id);
+                }
+                true
+            }
             // No live request right now. Remember the cancel so a multi-step
             // job that re-registers this id in its next step (or checks before
             // it registers) still stops instead of running to completion.
@@ -2174,17 +2203,8 @@ pub async fn stream_with_failover_cached<R: Runtime>(
 ) -> AppResult<()> {
     let selected_profile_id = role_profile_id(db, purpose)?;
     let mut cancel = request_id
-        .and_then(|id| {
-            cancellation_registry()
-                .lock()
-                .ok()
-                .and_then(|registry| registry.get(id).map(watch::Sender::subscribe))
-        })
-        .unwrap_or_else(|| {
-            request_id
-                .map(register_request)
-                .unwrap_or_else(|| watch::channel(false).1)
-        });
+        .map(subscribe_request)
+        .unwrap_or_else(|| watch::channel(false).1);
     let result = tokio::time::timeout(
         crate::ai::TOTAL_REQUEST_TIMEOUT,
         stream_with_failover_inner(
@@ -2312,17 +2332,8 @@ pub async fn complete_with_failover_cached<R: Runtime>(
     });
 
     let mut cancel = request_id
-        .and_then(|id| {
-            cancellation_registry()
-                .lock()
-                .ok()
-                .and_then(|registry| registry.get(id).map(watch::Sender::subscribe))
-        })
-        .unwrap_or_else(|| {
-            request_id
-                .map(register_request)
-                .unwrap_or_else(|| watch::channel(false).1)
-        });
+        .map(subscribe_request)
+        .unwrap_or_else(|| watch::channel(false).1);
     let routed = tokio::time::timeout(
         crate::ai::TOTAL_REQUEST_TIMEOUT,
         stream_with_failover_inner(
@@ -2613,17 +2624,8 @@ pub async fn complete_with_profile<R: Runtime>(
     });
     let started = Instant::now();
     let mut cancel = request_id
-        .and_then(|id| {
-            cancellation_registry()
-                .lock()
-                .ok()
-                .and_then(|registry| registry.get(id).map(watch::Sender::subscribe))
-        })
-        .unwrap_or_else(|| {
-            request_id
-                .map(register_request)
-                .unwrap_or_else(|| watch::channel(false).1)
-        });
+        .map(subscribe_request)
+        .unwrap_or_else(|| watch::channel(false).1);
     let routed = tokio::time::timeout(
         crate::ai::TOTAL_REQUEST_TIMEOUT,
         stream_with_profile_inner(
@@ -4022,6 +4024,11 @@ pub fn has_configured_service(db: &Db) -> bool {
 /// command detaches into a background task.
 pub fn ensure_stream_credentials_accessible(db: &Db, secrets: &Secrets) -> AppResult<()> {
     let timestamp = now();
+    // Profiles whose key rows exist but whose secrets cannot be read. Only that
+    // shape is a preflight failure: with no key row at all — or every row
+    // switched off or rejected — the route reaches a refusal of its own that
+    // already says the right thing.
+    let mut unreadable = 0_usize;
     for profile in profiles(db, true)?.into_iter().filter(|profile| {
         profile
             .view
@@ -4042,14 +4049,24 @@ pub fn ensure_stream_credentials_accessible(db: &Db, secrets: &Secrets) -> AppRe
             }
             continue;
         }
-        for credential in credentials_for(db, &profile.view.id, now())? {
+        // `all_credentials_for`, not `credentials_for`: a key resting out a
+        // cooldown is still readable, and refusing the request here would
+        // report "no usable key" for what is only a wait.
+        for credential in all_credentials_for(db, &profile.view.id)?
+            .into_iter()
+            .filter(|credential| credential.view.enabled)
+        {
             if secrets
                 .get(&credential.secret_ref)?
                 .is_some_and(|value| !value.trim().is_empty())
             {
                 return Ok(());
             }
+            unreadable += 1;
         }
+    }
+    if unreadable > 0 {
+        return Err(AppError::Other("AI_NO_USABLE_KEYS".to_string()));
     }
     Ok(())
 }
@@ -6454,5 +6471,72 @@ mod tests {
         let stored = profile_by_id(&db, &profile.id).unwrap().view;
         assert_eq!(stored.state, "cooldown");
         assert_eq!(stored.last_error_kind.as_deref(), Some("protocol"));
+    }
+
+    /// `spawn_routed_stream` registers the id on the command thread and drops
+    /// the receiver it gets back; the detached task only subscribes once the
+    /// runtime gets around to polling it. A Stop landing in that window used to
+    /// be handed to a sender with no receiver — where `watch::Sender::send`
+    /// reports failure without storing the value — so the cancel vanished and
+    /// the request the reader had already stopped ran to completion.
+    #[test]
+    fn stop_pressed_before_the_task_subscribes_is_not_lost() {
+        let request_id = "bh-pre-subscribe-stop";
+        drop(register_request(request_id));
+
+        assert!(cancel_request(request_id), "the stop must be accepted");
+        assert!(
+            request_is_cancelled(request_id),
+            "the stop must survive until the task subscribes"
+        );
+
+        // What the detached task does when it finally starts running: subscribe
+        // to the sender the command thread registered.
+        let receiver = subscribe_request(request_id);
+        assert!(*receiver.borrow(), "the task must see Stop already pressed");
+
+        drop(receiver);
+        finish_request(request_id);
+        take_pending_cancellation(request_id);
+    }
+
+    /// Every AI command runs the preflight before it detaches into a background
+    /// task. A profile whose key row exists but whose secret does not — a
+    /// restore that brought `lantern.db` without `secrets.db` — is exactly the
+    /// case the check is for, and it used to return `Ok` from every path, so
+    /// the reader got "request failed, retry" instead of the keys screen.
+    #[test]
+    fn preflight_fails_when_no_configured_key_is_readable() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = create_profile(
+            &db,
+            "Lost key".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://api.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+        let credential = add_credential(
+            &db,
+            &secrets,
+            profile.id,
+            "Primary".to_string(),
+            "secret".to_string(),
+        )
+        .unwrap();
+        let secret_ref = credential_by_id(&db, &credential.id).unwrap().secret_ref;
+        secrets.delete(&secret_ref).unwrap();
+
+        let error = ensure_stream_credentials_accessible(&db, &secrets)
+            .expect_err("a profile with no readable key cannot carry a stream");
+        assert!(error.to_string().contains("AI_NO_USABLE_KEYS"));
     }
 }
