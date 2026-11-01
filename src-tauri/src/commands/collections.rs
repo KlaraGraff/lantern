@@ -268,10 +268,11 @@ pub(crate) fn do_remove_book_from_collection(
             "DELETE FROM collection_books WHERE collection_id = ?1 AND book_id = ?2",
             params![collection_id, book_id],
         )?;
-        // Idempotent: also advances a tombstone left by an older remove, so a
-        // local remove whose row vanished elsewhere still converges.
-        insert_tombstone(tx, entity::COLLECTION_BOOK, &key, now)?;
         if changed > 0 {
+            // Written only together with the published remove. A tombstone
+            // with no event would stay on this device alone and suppress a
+            // peer's delayed add that every other device applies.
+            insert_tombstone(tx, entity::COLLECTION_BOOK, &key, now)?;
             events.push(EventBody::CollectionBookRemove {
                 collection: collection_id.to_string(),
                 book: book_id.to_string(),
@@ -726,6 +727,56 @@ mod tests {
         assert_eq!(
             local_present, peer_present,
             "local remove (ts {rts}) vs peer row (ts {peer_ts}) diverge"
+        );
+    }
+
+    #[test]
+    fn noop_remove_then_delayed_peer_add_is_applied() {
+        let (_dir, db, sync) = setup();
+        sync.set_should_queue(true);
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+
+        assert!(
+            !do_remove_book_from_collection("c1", "b1", &db, &sync).unwrap(),
+            "removing a membership this device does not hold must change nothing"
+        );
+        assert_eq!(
+            membership_tombstone_ts(&db, "c1", "b1"),
+            None,
+            "a remove that deleted no row must not leave a tombstone"
+        );
+        assert!(
+            !published_events(&db)
+                .iter()
+                .any(|(_, body)| matches!(body, EventBody::CollectionBookRemove { .. })),
+            "a remove that deleted no row must not publish a remove"
+        );
+
+        // A peer's earlier add of the same membership arrives late. Every
+        // other device applies it, so this one must too.
+        let peer_ts = chrono::Utc::now().timestamp_millis() - 5_000;
+        {
+            let mut conn = db.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            let e = crate::sync::events::Event {
+                id: "01HYZX00000000000000000004".into(),
+                ts: peer_ts,
+                device: "dev-B".into(),
+                v: crate::sync::events::EVENT_SCHEMA_VERSION,
+                body: EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b1".into(),
+                },
+                extra: serde_json::Map::new(),
+            };
+            apply_event(&tx, &e).unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            membership_count(&db, "c1", "b1"),
+            1,
+            "a no-op remove must not suppress a peer's delayed add"
         );
     }
 
