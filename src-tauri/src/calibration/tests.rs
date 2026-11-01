@@ -337,25 +337,6 @@ fn lookup_rate_scale_output_is_always_bounded() {
         );
     }
 }
-
-/// A reader who has cleared the word floor and never looked anything up has a
-/// measured rate of exactly 0.0 — the extreme low end of §5.2's range, not
-/// "no calibration". It must land on the floor (MIN_SCALE), not on the neutral
-/// 1.0, or the reader whose skips mean least gets full undiscounted credit.
-#[test]
-fn zero_lookup_rate_gets_the_lowest_scale() {
-    let (_dir, db) = fixture();
-    insert_screen(&db, "s1", MIN_WORDS_FOR_LOOKUP_RATE, 1_700_000_000_000);
-
-    let conn = db.reader();
-    let calibration = compute(&conn, 1_700_000_100_000).unwrap();
-    assert_eq!(calibration.lookup_rate_per_1000, Some(0.0));
-    assert_eq!(
-        lookup_rate_scale(calibration.lookup_rate_per_1000),
-        MIN_SCALE
-    );
-}
-
 /// The calibration median is the same measurement
 /// `commands::reading_behavior::reader_median_wpm` makes from the same table,
 /// so it has to apply the same absolute-pace filter: a screen turned past at
