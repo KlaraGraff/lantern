@@ -14,6 +14,7 @@ mod mastery;
 mod mcp;
 mod panic_hook;
 mod pdfium;
+mod reset;
 mod secrets;
 mod sync;
 mod word_frequency;
@@ -185,6 +186,11 @@ pub fn mcp_stdio_main() {
     // in the app's own startup path, and a second process racing it on the
     // same directory is exactly what must not happen.
     let db_path = local_dir.join(db::DB_FILE_NAME);
+
+    if reset::is_pending(&local_dir) {
+        eprintln!("lantern mcp: a data reset is pending — reopen the Lantern app first.");
+        std::process::exit(1);
+    }
 
     if !db_path.exists() {
         eprintln!(
@@ -548,6 +554,9 @@ pub fn run() {
                 }
             };
             std::fs::create_dir_all(&local_dir).expect("failed to create app data dir");
+            // 重置全部数据 finishes here, before anything below opens a file
+            // in this directory. See `reset` for why it cannot run in-session.
+            reset::apply_pending_at_launch(&local_dir);
             // The `$APPDATA/**` scopes in tauri.conf.json and the default
             // capability are resolved from the bundle identifier, which never
             // carries the `-dev` suffix the debug data dir above uses. Without
@@ -1104,6 +1113,8 @@ pub fn run() {
             commands::sync::sync_reveal_folder,
             commands::sync::sync_enable,
             commands::sync::sync_disable,
+            commands::app::reset_data_summary,
+            commands::app::reset_all_data,
             commands::sync::sync_now,
             commands::sync::sync_cancel,
             commands::sync::sync_compact,

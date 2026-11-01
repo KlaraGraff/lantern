@@ -1141,6 +1141,12 @@ export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
    * Settings sections that would otherwise render empty or spin
    * ---------------------------------------------------------------- */
+  /** `?sync=1` shows the first reset step as it reads with iCloud sync on. */
+  reset_data_summary: () => ({
+    bookCount: LIBRARY.length,
+    syncEnabled: new URLSearchParams(location.search).get("sync") === "1",
+  }),
+  reset_all_data: null,
   sync_status: {
     enabled: false,
     available: true,

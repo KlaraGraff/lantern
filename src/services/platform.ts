@@ -84,6 +84,12 @@ export interface PlatformCapabilities {
    * of update UI (the toast, the auto-check toggle) has to be gated on this.
    */
   readonly hasUpdater: boolean;
+  /**
+   * The app can relaunch itself (`plugin-process`, desktop-only like the
+   * updater). 重置全部数据 needs it: the wipe runs at the start of the next
+   * launch, and iOS has no way for an app to start itself again.
+   */
+  readonly hasAppRelaunch: boolean;
   /** A file can be revealed in a file manager (Finder, Explorer). */
   readonly hasFileReveal: boolean;
   /** Font files can be imported through a native picker. */
@@ -176,6 +182,7 @@ const ABSENT: Capability = {
   hasFormatConvert: false,
   hasFolderSync: false,
   hasUpdater: false,
+  hasAppRelaunch: false,
   hasFileReveal: false,
   hasFontImport: false,
   hasReaderBackgroundImport: false,
@@ -193,6 +200,7 @@ const DESKTOP: Capability = {
   hasMcpIntegration: true,
   hasFormatConvert: true,
   hasUpdater: true,
+  hasAppRelaunch: true,
   hasFileReveal: true,
   hasFontImport: true,
   hasReaderBackgroundImport: true,

@@ -399,6 +399,12 @@ impl ServerHandler for LanternMcpHandler {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        if crate::reset::is_pending(&crate::resolve_app_data_dir()) {
+            return Err(ErrorData::internal_error(
+                "Lantern is resetting all data on this device; reopen the Lantern app first",
+                None,
+            ));
+        }
         let arguments = request.arguments.clone().unwrap_or_default();
         let Some(approval_input) = approval_input_for_tool(request.name.as_ref(), &arguments)?
         else {

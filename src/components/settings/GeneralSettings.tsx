@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { relaunch } from "@tauri-apps/plugin-process";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
 import Button from "../ui/Button";
@@ -16,12 +17,15 @@ import {
 import { ONBOARDING_STATE_KEY } from "../onboarding/onboarding-state";
 import i18n from "../../i18n";
 import { createSettingsSaveFeedback, runSettingsSave } from "./settings-save-feedback";
+import ResetDataDialog from "./ResetDataDialog";
+import { runReset, type ResetDataSummary, type ResetStep } from "./reset-data";
 
 /**
  * 通用 — the app-shell layer only. Six flat rows, no sub-groups: interface
  * language leads (the escape hatch from a wrong language pick has to be the
  * very first thing on the very first section), then theme, display name,
- * auto-update, onboarding replay, and log access.
+ * auto-update, onboarding replay, and log access — then, set apart at the
+ * very bottom, the 危险操作 zone with 重置全部数据.
  *
  * Everything that used to live here about *how Lantern explains English* —
  * CEFR level, explanation language, translation language, exam estimates,
@@ -60,6 +64,43 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
   };
 
   const theme = themePreferenceOf(settings.theme);
+
+  const [resetStep, setResetStep] = useState<ResetStep>("closed");
+  const [resetSummary, setResetSummary] = useState<ResetDataSummary>({ bookCount: 0, syncEnabled: false });
+  const [resetError, setResetError] = useState<string | null>(null);
+  const closeReset = useCallback(() => {
+    setResetStep("closed");
+    setResetError(null);
+  }, []);
+  const openReset = () => {
+    // The list in the first step names what goes, so it waits for the count
+    // rather than showing a placeholder number.
+    invoke<ResetDataSummary>("reset_data_summary")
+      .then((summary) => {
+        setResetSummary(summary);
+        setResetError(null);
+        setResetStep("explain");
+      })
+      .catch(() => showSavedToast(t("settings.reset.failed")));
+  };
+  const confirmReset = async (typed: string) => {
+    setResetError(null);
+    setResetStep("resetting");
+    const outcome = await runReset({
+      request: () => invoke("reset_all_data", { confirmation: typed }),
+      clearWebStorage: () => {
+        localStorage.clear();
+        sessionStorage.clear();
+      },
+      relaunch,
+    });
+    if (outcome === "request-failed") {
+      setResetError(t("settings.reset.failed"));
+      setResetStep("confirm");
+    } else if (outcome === "relaunch-failed") {
+      setResetError(t("settings.reset.relaunchFailed"));
+    }
+  };
 
   return (
     <div>
@@ -193,6 +234,42 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
             {t("settings.diagnostics.revealLogsButton")}
           </Button>
         </div>
+      )}
+
+      {/* 危险操作 — last, under its own heading, so it is never next to
+          something clicked every day. Gone where the app cannot relaunch
+          itself: the wipe only runs at the start of the next launch. */}
+      {platform.hasAppRelaunch && (
+        <section aria-labelledby="settings-danger-zone" className="mt-8">
+          <h3 id="settings-danger-zone" className="border-b border-black/10 dark:border-white/10 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.6px] text-danger-text">
+            {t("settings.danger.title")}
+          </h3>
+          <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+            <div className="min-w-0">
+              <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reset.title")}</p>
+              <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reset.hint")}</p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={`${ROW_CONTROL_WIDTH} justify-center border-danger-border text-danger-text hover:bg-danger-bg`}
+              onClick={openReset}
+            >
+              {t("settings.reset.button")}
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {resetStep !== "closed" && (
+        <ResetDataDialog
+          step={resetStep}
+          summary={resetSummary}
+          error={resetError}
+          onCancel={closeReset}
+          onContinue={() => setResetStep("confirm")}
+          onConfirm={(typed) => void confirmReset(typed)}
+        />
       )}
     </div>
   );
