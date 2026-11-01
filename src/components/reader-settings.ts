@@ -307,6 +307,15 @@ export function getReaderCapabilities(
   }
 }
 
+/**
+ * A book the reader can open but not select in: no lookup, highlights or AI
+ * explanations. Today that is FB2 and CBZ (MOBI and AZW3 are converted to EPUB
+ * on import). Shown on the shelf before the book is opened.
+ */
+export function isReadingOnlyBook(book: { format?: string | null; render_format?: string | null }): boolean {
+  return !getReaderCapabilities(book.render_format || book.format || undefined).supportsSelection;
+}
+
 export function getReaderThemes() {
   return themes;
 }
