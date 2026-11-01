@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   buildCommandSpecs,
+  chapterMatches,
+  initialChapterIndex,
   matchRank,
   rankByMatch,
   splitMatch,
@@ -78,4 +80,32 @@ test("every shelf filter belongs to the library workspace, nothing else does", (
     assert.ok(!isShelfFilter(filter), filter);
     assert.equal(workspaceOf(filter), filter);
   }
+});
+
+describe("chapterMatches", () => {
+  const toc = [
+    { title: "Chapter One", page: 1, depth: 0 },
+    { title: "The Storm", page: 2, depth: 1 },
+    { title: "", page: 3, depth: 0 },
+    { title: "Chapter Two", page: 4, depth: 0, disabled: true },
+    { title: "Storm Clouds", page: 5, depth: 0 },
+  ];
+
+  test("an empty query lists every reachable chapter in book order", () => {
+    assert.deepEqual(chapterMatches(toc, "  ").map((c) => c.page), [1, 2, 5]);
+  });
+
+  test("a query ranks prefix matches above later-word matches", () => {
+    assert.deepEqual(chapterMatches(toc, "storm").map((c) => c.page), [5, 2]);
+  });
+
+  test("never offers a chapter the engine cannot open", () => {
+    assert.deepEqual(chapterMatches(toc, "two"), []);
+  });
+
+  test("the highlight starts on the current chapter, or the top when it is not listed", () => {
+    const rows = chapterMatches(toc, "");
+    assert.equal(initialChapterIndex(rows, 2), 1);
+    assert.equal(initialChapterIndex(rows, 4), 0);
+  });
 });
