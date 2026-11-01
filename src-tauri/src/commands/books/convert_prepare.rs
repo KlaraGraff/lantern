@@ -256,7 +256,7 @@ fn cleanup_obsolete_converted_documents(local_dir: &Path, book_id: &str) {
 /// it is clearly not a finished book, but still `.epub`-suffixed because
 /// converters like `ebook-convert` choose their output format from the
 /// destination extension.
-fn converted_temporary_path(path: &Path) -> AppResult<PathBuf> {
+pub(super) fn converted_temporary_path(path: &Path) -> AppResult<PathBuf> {
     let parent = path
         .parent()
         .ok_or_else(|| AppError::Other("CONVERSION_PATH_INVALID".to_string()))?;

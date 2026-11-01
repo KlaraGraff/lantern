@@ -529,13 +529,24 @@ impl ReplayEngine {
             }
             mark_in_flight(log_path);
             let log_path_owned = log_path.to_path_buf();
-            let events = log::read_log_file_with_timeout(
+            let events = match log::read_log_file_with_timeout(
                 log_path,
                 read_timeout,
                 mark_stalled,
                 clear_stalled,
                 move || clear_in_flight(&log_path_owned),
-            )?;
+            ) {
+                Ok(events) => events,
+                Err(e) => {
+                    // One unreadable log (oversized, or an event type this
+                    // build does not know) must cost that peer only — the
+                    // snapshot branch below and the invalid-event branch
+                    // further down already work per peer.
+                    clear_in_flight(log_path);
+                    ::log::warn!("sync: skipping unreadable log {}: {e}", log_path.display());
+                    continue;
+                }
+            };
             if events.is_empty() {
                 // No thread was spawned (evicted/missing) or read returned
                 // empty — clear in-flight. If a thread timed out, on_stall
@@ -1468,6 +1479,33 @@ mod tests {
         let report = env.engine.tick(&env.db).unwrap();
         assert_eq!(report.snapshots_applied, 0);
         assert_eq!(report.events_applied, 0);
+    }
+
+    #[test]
+    fn unreadable_peer_log_does_not_block_other_peers() {
+        let env = setup("self");
+        // peer-B's log is a syntactically valid envelope carrying an event type
+        // this build does not know (an older release meeting a newer peer).
+        // `parse_log_bytes` reports that as an error for the whole file.
+        let bad = env.shared.join("logs/peer-B.jsonl");
+        fs::write(
+            &bad,
+            b"{\"id\":\"01HYZX0000000000000000EVTZ\",\"ts\":1714770000000,\"device\":\"peer-B\",\"v\":3,\"type\":\"future.entity.upsert\",\"payload\":{\"id\":\"future-1\"}}\n",
+        )
+        .unwrap();
+        // A healthy peer published a normal book import.
+        write_peer_log(&env.shared, "peer-A", &[ev(1000, "peer-A", import("b1"))]);
+
+        let report = env.engine.tick(&env.db).unwrap();
+        assert_eq!(
+            report.events_applied, 1,
+            "peer-A's good log must still apply when peer-B's log is unreadable",
+        );
+        let n_books: i64 = env
+            .conn()
+            .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n_books, 1);
     }
 
     #[test]

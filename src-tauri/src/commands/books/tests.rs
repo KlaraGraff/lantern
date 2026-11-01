@@ -2568,3 +2568,48 @@ fn apply_book_status_event(
         )
         .unwrap();
 }
+/// Deleting a book must remove every file it owns. A converted book (MOBI in,
+/// EPUB out) keeps its reader artifact under `local/prepared/` — the text
+/// pipeline's files are already cleaned up by `delete_book`, and the converted
+/// EPUB was the one left behind.
+#[test]
+fn delete_book_removes_the_converted_epub_artifact() {
+    let (dir, db) = setup();
+    insert_book(&db, "cv-del", "mobi");
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE books SET source_format = 'mobi', render_format = 'epub',
+                 source_file_path = file_path, source_sha256 = 'hash',
+                 conversion_version = ?1, preparation_state = 'ready'
+             WHERE id = 'cv-del'",
+            params![CONVERSION_VERSION],
+        )
+        .unwrap();
+    }
+    let local_dir = db.local_data_dir().unwrap();
+    let artifact = super::convert_prepare::converted_document_path(&local_dir, "cv-del");
+    std::fs::create_dir_all(artifact.parent().unwrap()).unwrap();
+    std::fs::write(&artifact, b"PK\x03\x04epub").unwrap();
+
+    let app = tauri::test::mock_app();
+    assert!(app.manage(db));
+    assert!(app.manage(SyncWriter::new("dev-A".into())));
+    assert!(app.manage(crate::LocalDir(local_dir.clone())));
+
+    super::mutate::delete_book(
+        "cv-del".into(),
+        None,
+        app.state::<Db>(),
+        app.state::<SyncWriter>(),
+        app.state::<crate::LocalDir>(),
+    )
+    .unwrap();
+
+    assert!(
+        !artifact.exists(),
+        "converted EPUB left on disk after deleting the book: {}",
+        artifact.display()
+    );
+    let _ = dir;
+}

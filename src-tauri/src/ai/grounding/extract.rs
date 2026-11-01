@@ -70,6 +70,15 @@ pub fn extract_epub(path: &Path) -> AppResult<Vec<SectionText>> {
         let html = Html::parse_document(&body);
         let blocks = html
             .select(&selector)
+            // A `p` inside a `blockquote`/`li`/`td` matches the selector as
+            // its container does, and an element's text already includes its
+            // descendants — indexing both levels stores the paragraph twice.
+            .filter(|element| {
+                !element
+                    .ancestors()
+                    .filter_map(scraper::ElementRef::wrap)
+                    .any(|ancestor| selector.matches(&ancestor))
+            })
             .map(|element| normalize_whitespace(&element.text().collect::<Vec<_>>().join(" ")))
             .filter(|text| !text.is_empty())
             .map(|text| BlockText {
@@ -265,6 +274,42 @@ mod tests {
         });
         document.trailer.set("Root", catalog_id);
         document.save(path).unwrap();
+    }
+
+    #[test]
+    fn a_paragraph_nested_inside_another_block_element_is_indexed_once() {
+        // Real EPUBs nest `p` inside `li`/`blockquote` constantly (calibre
+        // emits it), and `ElementRef::text()` already includes descendants —
+        // so selecting both levels hands the same paragraph to the index
+        // twice, doubling its term frequencies and quoting it twice.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("book.epub");
+        let file = fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        let files = [
+            ("mimetype", "application/epub+zip"),
+            ("META-INF/container.xml", "<?xml version=\"1.0\"?><container xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\" version=\"1.0\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>"),
+            ("OEBPS/content.opf", "<?xml version=\"1.0\"?><package xmlns=\"http://www.idpf.org/2007/opf\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" version=\"2.0\" unique-identifier=\"id\"><metadata><dc:identifier id=\"id\">test</dc:identifier><dc:title>Test</dc:title></metadata><manifest><item id=\"c1\" href=\"one.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"c1\"/></spine></package>"),
+            ("OEBPS/one.xhtml", "<html><body><p>Opening paragraph.</p><blockquote><p>Quoted passage.</p></blockquote><ul><li><p>Listed passage.</p></li></ul></body></html>"),
+        ];
+        for (name, contents) in files {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(contents.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+
+        let sections = extract_epub(&path).unwrap();
+        let texts: Vec<&str> = sections[0]
+            .blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect();
+        assert_eq!(
+            texts,
+            ["Opening paragraph.", "Quoted passage.", "Listed passage."],
+            "each paragraph must reach the index exactly once"
+        );
     }
 
     #[test]

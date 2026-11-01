@@ -42,9 +42,21 @@ export function useCellularDownloadConsent() {
     setOpen(false);
     // The generic settings command, same as any other row — this hook does
     // not need (and must not become) a bespoke write path for one key.
-    await invoke("set_setting", { key: CELLULAR_CONSENT_SETTING_KEY, value: consent });
-    resolverRef.current?.(consent === "deny" ? "deny" : "allow");
-    resolverRef.current = null;
+    // The caller is waiting on this promise: a failed write must not leave it
+    // unsettled, or the book that asked for consent never finishes opening.
+    // The backend gate reads the stored answer, so an "allow" that failed to
+    // save cannot take effect: settle as "deny", which at least shows the
+    // not-downloaded screen instead of a silent dead end.
+    let settled: "allow" | "deny" = consent === "deny" ? "deny" : "allow";
+    try {
+      await invoke("set_setting", { key: CELLULAR_CONSENT_SETTING_KEY, value: consent });
+    } catch (err) {
+      console.error("Failed to remember the cellular download answer:", err);
+      settled = "deny";
+    } finally {
+      resolverRef.current?.(settled);
+      resolverRef.current = null;
+    }
   }, []);
 
   const dialog = open ? (

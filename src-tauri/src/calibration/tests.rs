@@ -337,3 +337,42 @@ fn lookup_rate_scale_output_is_always_bounded() {
         );
     }
 }
+/// The calibration median is the same measurement
+/// `commands::reading_behavior::reader_median_wpm` makes from the same table,
+/// so it has to apply the same absolute-pace filter: a screen turned past at
+/// several thousand words a minute is not reading, and must not drag the
+/// stored median out of the human range.
+#[test]
+fn reading_speed_median_ignores_page_turn_screens() {
+    let (_dir, db) = fixture();
+    // Thirty screens actually read: 200 words per minute.
+    for index in 0..MIN_SCREENS_FOR_SPEED {
+        insert_screen(
+            &db,
+            &format!("read{index}"),
+            200,
+            1_700_000_000_000 + index * 60_000,
+        );
+    }
+    // Thirty more recent screens flipped through in a minute: 3,000 wpm.
+    for index in 0..MIN_SCREENS_FOR_SPEED {
+        insert_screen(
+            &db,
+            &format!("skip{index}"),
+            3_000,
+            1_700_000_500_000 + index * 60_000,
+        );
+    }
+
+    let conn = db.reader();
+    let calibration = compute(&conn, 1_700_000_900_000).unwrap();
+    assert_eq!(
+        calibration.reading_speed_sample_screens, MIN_SCREENS_FOR_SPEED,
+        "page-turn screens are not measurable reading"
+    );
+    let wpm = calibration.reading_speed_wpm.expect("30 real screens");
+    assert!(
+        (wpm - 200.0).abs() < 0.5,
+        "median should be the 200 wpm of real reading, got {wpm}"
+    );
+}
