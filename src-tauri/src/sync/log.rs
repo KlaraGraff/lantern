@@ -60,6 +60,10 @@ impl EventLog {
         }
         // Touch the file so subsequent reads don't fail before any write.
         let _ = OpenOptions::new().create(true).append(true).open(path)?;
+        // A crash mid-append leaves a partial last line with no trailing
+        // newline. Drop it before the next append, otherwise the new event is
+        // concatenated onto the fragment and the whole line is unreadable.
+        truncate_torn_tail(path)?;
         let last_id = read_log_file(path)?
             .into_iter()
             .filter(|event| event.device == device && is_supported_event_schema_version(event.v))
@@ -325,6 +329,39 @@ fn parse_log_bytes(bytes: &[u8], path: &Path) -> AppResult<Vec<Event>> {
 
 fn read_file_bounded(path: &Path, max_bytes: u64) -> AppResult<Vec<u8>> {
     read_file_bounded_io(path, max_bytes).map_err(AppError::Io)
+}
+
+/// Drop a partial final line left behind by a crash mid-append.
+///
+/// `read_log_file` skips such a line, but the bytes stay on disk: the next
+/// append would land directly behind the fragment and the resulting line
+/// would be unparseable, losing the new event for every reader.
+fn truncate_torn_tail(path: &Path) -> AppResult<()> {
+    let len = match fs::metadata(path) {
+        Ok(metadata) => metadata.len(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(AppError::Io(e)),
+    };
+    if len == 0 || len > MAX_LOG_FILE_BYTES {
+        return Ok(());
+    }
+    let bytes = fs::read(path)?;
+    if bytes.last() == Some(&b'\n') {
+        return Ok(());
+    }
+    let keep = bytes
+        .iter()
+        .rposition(|&byte| byte == b'\n')
+        .map_or(0, |index| index + 1);
+    if serde_json::from_slice::<Event>(&bytes[keep..]).is_ok() {
+        // A whole event that merely lacks its terminator: keep it and add the
+        // newline, so the next append starts on a line of its own.
+        return naive_append(path, b"\n").map_err(AppError::Io);
+    }
+    let file = OpenOptions::new().write(true).open(path)?;
+    file.set_len(keep as u64)?;
+    file.sync_all()?;
+    Ok(())
 }
 
 fn read_file_bounded_io(path: &Path, max_bytes: u64) -> io::Result<Vec<u8>> {
@@ -713,6 +750,38 @@ mod tests {
                 w[1].id
             );
         }
+    }
+
+    #[test]
+    fn append_after_torn_tail_keeps_new_event() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("logs").join("dev-A.jsonl");
+        {
+            let log = EventLog::open(&path, "dev-A", false).unwrap();
+            log.append(sample_body(1), 1_714_770_000_000).unwrap();
+            log.append(sample_body(2), 1_714_770_000_001).unwrap();
+        }
+        // Simulate a crash mid-write: the final line has no trailing newline.
+        let bytes = std::fs::read(&path).unwrap();
+        let last_nl = bytes[..bytes.len() - 1]
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .unwrap();
+        std::fs::write(&path, &bytes[..last_nl + 20]).unwrap();
+
+        let reopened = EventLog::open(&path, "dev-A", false).unwrap();
+        reopened.append(sample_body(3), 1_714_770_000_002).unwrap();
+
+        let events = reopened.read_all().unwrap();
+        assert_eq!(
+            events.len(),
+            2,
+            "the event appended after a torn tail must survive"
+        );
+        assert!(
+            matches!(&events[1].body, EventBody::BookImport(payload) if payload.id == "b3"),
+            "appended event should be readable"
+        );
     }
 
     #[cfg(target_vendor = "apple")]

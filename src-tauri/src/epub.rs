@@ -116,7 +116,11 @@ fn extract_cover(doc: &mut EpubDoc<std::io::BufReader<std::fs::File>>) -> Option
 fn resolve_cover_resource(
     doc: &mut EpubDoc<std::io::BufReader<std::fs::File>>,
 ) -> Option<(Vec<u8>, String)> {
-    if let Some(found) = doc.get_cover() {
+    // The crate resolves the declared cover id without checking what the
+    // resource is, so an EPUB2 `<meta name="cover">` naming the cover *page*
+    // would hand back XHTML bytes as the book's cover. Same rule as the two
+    // fallbacks below: only an `image/*` resource is a cover image.
+    if let Some(found) = doc.get_cover().filter(is_image_resource) {
         return Some(found);
     }
 
@@ -151,4 +155,64 @@ fn is_image_resource(resource: &(Vec<u8>, String)) -> bool {
 pub fn count_chapters(epub_path: &Path) -> AppResult<usize> {
     let doc = EpubDoc::new(epub_path).map_err(|e| AppError::Epub(e.to_string()))?;
     Ok(doc.get_num_chapters())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+    use zip::write::SimpleFileOptions;
+
+    /// Build an EPUB from `(path, contents)` pairs, mimetype first and stored.
+    fn write_epub(dir: &TempDir, name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+        let path = dir.path().join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let stored =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let deflated = SimpleFileOptions::default();
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        for (entry, contents) in files {
+            zip.start_file(*entry, deflated).unwrap();
+            zip.write_all(contents.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    const CONTAINER: &str = "<?xml version=\"1.0\"?><container xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\" version=\"1.0\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>";
+
+    /// An EPUB2 whose `<meta name="cover">` names the cover *page* — an XHTML
+    /// document, not an image. Older trade-publishing pipelines ship this shape
+    /// routinely, and the two fallback branches in `resolve_cover_resource`
+    /// already reject a non-image for exactly this reason.
+    #[test]
+    fn epub2_cover_meta_naming_an_xhtml_page_is_not_imported_as_an_image() {
+        let dir = TempDir::new().unwrap();
+        let opf = "<?xml version=\"1.0\"?><package xmlns=\"http://www.idpf.org/2007/opf\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" version=\"2.0\" unique-identifier=\"id\"><metadata><dc:identifier id=\"id\">probe</dc:identifier><dc:title>Probe</dc:title><meta name=\"cover\" content=\"cover-page\"/></metadata><manifest><item id=\"cover-page\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"chapter\" href=\"chapter.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"cover-page\"/><itemref idref=\"chapter\"/></spine></package>";
+        let path = write_epub(
+            &dir,
+            "cover-page.epub",
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", opf),
+                (
+                    "OEBPS/cover.xhtml",
+                    "<html><body><p>cover page</p></body></html>",
+                ),
+                (
+                    "OEBPS/chapter.xhtml",
+                    "<html><body><p>chapter</p></body></html>",
+                ),
+            ],
+        );
+
+        let metadata = extract_metadata(&path).unwrap();
+        assert_eq!(
+            metadata.cover_data, None,
+            "an XHTML cover page must not be stored as the cover image"
+        );
+    }
 }

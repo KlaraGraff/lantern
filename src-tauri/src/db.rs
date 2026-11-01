@@ -226,8 +226,13 @@ pub struct Db {
 /// Escape user text for a literal SQLite `LIKE '%…%'` search. Callers must
 /// pair the resulting parameter with `ESCAPE '\\'` in the SQL expression.
 pub fn sqlite_contains_pattern(value: &str) -> String {
+    // Fold ASCII only, because that is all SQLite's own `LOWER()` folds: every
+    // caller compares `LOWER(column) LIKE ?1`, so a query folded further than
+    // the haystack can never match. Rust's `to_lowercase` covers all of
+    // Unicode, which turned a stored "Émile" into the needle "%émile%" and made
+    // the book unfindable under its own name.
     let escaped = value
-        .to_lowercase()
+        .to_ascii_lowercase()
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
@@ -706,6 +711,26 @@ mod tests {
             .unwrap();
         assert!(literal_match);
         assert!(!wildcard_match);
+    }
+
+    #[test]
+    fn search_finds_a_title_with_a_non_ascii_capital() {
+        // The SQL side folds the column with SQLite's `LOWER()`, which only
+        // knows ASCII, so the pattern must not be folded past ASCII either.
+        // When the helper used Rust's Unicode-aware `to_lowercase`, the needle
+        // for this title became "%émile%": the capital survives in the
+        // haystack, nothing matches, and the book is unsearchable by its name.
+        let conn = Connection::open_in_memory().unwrap();
+        let title = "Émile ou De l'éducation";
+        let pattern = sqlite_contains_pattern("Émile");
+        let matched: i64 = conn
+            .query_row(
+                r"SELECT COUNT(*) FROM (SELECT ?2 AS title) WHERE LOWER(title) LIKE ?1 ESCAPE '\'",
+                params![pattern, title],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(matched, 1, "pattern {pattern:?} did not find {title:?}");
     }
 
     /// Regression for PR #192 review finding #1: `init_split` opens the
