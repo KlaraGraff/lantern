@@ -60,6 +60,12 @@ struct MarkerStyleConfig {
     #[serde(rename = "automaticFollowsManual")]
     automatic_follows_manual: bool,
     automatic: MarkerVisualStyle,
+    #[serde(
+        rename = "layoutAffectingMarkers",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    layout_affecting_markers: Option<bool>,
 }
 
 /// Imported fonts live under the *active* data directory, which is the shared
@@ -430,6 +436,41 @@ mod tests {
             decode_font(&bytes, &format),
             Err(AppError::Other(code)) if code == "CUSTOM_FONT_FILE_INVALID"
         ));
+    }
+
+    #[test]
+    fn deleting_a_font_keeps_the_layout_affecting_marker_choice() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let stored = r##"{"version":2,"wordMatchScope":"book","manual":{"color":"#E9B949","opacity":34,"background":true,"underline":false,"bold":false,"font":"custom-doomed"},"automaticFollowsManual":false,"automatic":{"color":"#C0BA96","opacity":16,"background":true,"underline":true,"bold":false,"font":"inherit"},"layoutAffectingMarkers":true}"##;
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('marker_style_config', ?1)",
+                params![stored],
+            )
+            .unwrap();
+        }
+        {
+            let mut conn = db.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            clear_marker_style_font(&tx, "custom-doomed").unwrap();
+            tx.commit().unwrap();
+        }
+        let value: String = db
+            .reader()
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'marker_style_config'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&value).unwrap();
+        assert_eq!(parsed["manual"]["font"], "inherit");
+        assert_eq!(
+            parsed["layoutAffectingMarkers"], true,
+            "deleting a font must not reset the marker layout opt-in: {value}"
+        );
     }
 
     #[test]
