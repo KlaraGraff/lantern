@@ -1278,6 +1278,11 @@ struct AliasRow {
 /// it could mean. `resolve` scans against alias text once, not once per
 /// (alias, canonical) row — a row count of 2 for "达西小姐" is what makes it
 /// ambiguous, not two separate substring searches for it.
+///
+/// Text is compared lowercased: matching already is, so "Lizzy" -> Elizabeth
+/// and "lizzy" -> Charlotte are the same alias, not two spellings that race
+/// for the same span. The group keeps the first-seen spelling as its key text,
+/// since that is what a disclosure line quotes.
 fn alias_groups(conn: &Connection, book_id: &str) -> AppResult<Vec<(String, Vec<AliasRow>)>> {
     let mut statement = conn.prepare(
         // `kind = 'name'` only. 'description' rows ("那个总在拍马屁的牧师" →
@@ -1301,21 +1306,32 @@ fn alias_groups(conn: &Connection, book_id: &str) -> AppResult<Vec<(String, Vec<
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut by_alias: HashMap<String, Vec<AliasRow>> = HashMap::new();
-    let mut order: Vec<String> = Vec::new();
+    // Keyed by the lowercased alias; carries the first-seen spelling alongside
+    // it, which is the text `resolve` reports as having matched.
+    let mut order: Vec<(String, String)> = Vec::new();
     for (alias, canonical, mentions) in rows {
-        if !by_alias.contains_key(&alias) {
-            order.push(alias.clone());
+        let key = alias.to_lowercase();
+        if !by_alias.contains_key(&key) {
+            order.push((key.clone(), alias));
         }
-        by_alias.entry(alias).or_default().push(AliasRow {
-            canonical,
-            mentions,
-        });
+        let group = by_alias.entry(key).or_default();
+        match group.iter_mut().find(|row| row.canonical == canonical) {
+            // "Lizzy" and "lizzy" are two storage rows for one person; one
+            // canonical must not become two candidates of the same spelling.
+            Some(row) => row.mentions = row.mentions.max(mentions),
+            None => group.push(AliasRow {
+                canonical,
+                mentions,
+            }),
+        }
     }
     // Longest alias first (by character count, not bytes — a CJK alias of
     // four characters is 12 UTF-8 bytes and must still outrank a two-character
     // one). Ties broken by the alias text itself purely so the scan order is
     // deterministic and tests aren't at the mercy of hash-map iteration order.
-    order.sort_by(|a, b| {
+    // Sorted on the lowercased key, so two spellings of one alias can never
+    // land in different places.
+    order.sort_by(|(a, _), (b, _)| {
         b.chars()
             .count()
             .cmp(&a.chars().count())
@@ -1323,8 +1339,8 @@ fn alias_groups(conn: &Connection, book_id: &str) -> AppResult<Vec<(String, Vec<
     });
     Ok(order
         .into_iter()
-        .map(|alias| {
-            let rows = by_alias.remove(&alias).unwrap_or_default();
+        .map(|(key, alias)| {
+            let rows = by_alias.remove(&key).unwrap_or_default();
             (alias, rows)
         })
         .collect())
@@ -2569,6 +2585,54 @@ mod tests {
         assert_eq!(resolution.confidence, AliasConfidence::Medium);
         // Default picks the higher-mentions canonical.
         assert_eq!(resolution.default_canonical.as_deref(), Some("Miss Darcy"));
+    }
+
+    #[test]
+    fn case_differing_spellings_are_one_ambiguous_alias() {
+        // Matching lowercases, so "Lizzy" and "lizzy" were always the same
+        // span — only the grouping disagreed, which let the first one win it
+        // and hid the ambiguity from the reader.
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Elizabeth Bennet", "Lizzy", "auto", 40);
+        insert_alias(&db, "b1", "Charlotte Lucas", "lizzy", "auto", 12);
+        let resolution = resolve(&db.reader(), "b1", "What did Lizzy say?").unwrap();
+        assert_eq!(
+            resolution.matched.len(),
+            1,
+            "one span, one match: {:?}",
+            resolution.matched
+        );
+        assert_eq!(resolution.confidence, AliasConfidence::Medium);
+        let mut canonicals = resolution.matched[0].canonicals.clone();
+        canonicals.sort();
+        assert_eq!(
+            canonicals,
+            vec![
+                "Charlotte Lucas".to_string(),
+                "Elizabeth Bennet".to_string()
+            ]
+        );
+        assert_eq!(
+            resolution.default_canonical.as_deref(),
+            Some("Elizabeth Bennet")
+        );
+    }
+
+    #[test]
+    fn case_differing_spellings_of_one_person_are_not_ambiguous() {
+        // The same person spelled two ways is one candidate, not two — a
+        // duplicate row must not make an unambiguous name look ambiguous.
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Elizabeth Bennet", "Lizzy", "auto", 40);
+        insert_alias(&db, "b1", "Elizabeth Bennet", "lizzy", "auto", 7);
+        let resolution = resolve(&db.reader(), "b1", "What did Lizzy say?").unwrap();
+        assert_eq!(resolution.matched.len(), 1);
+        assert_eq!(
+            resolution.matched[0].canonicals,
+            vec!["Elizabeth Bennet".to_string()]
+        );
+        assert_eq!(resolution.confidence, AliasConfidence::High);
+        assert_eq!(resolution.default_canonical, None);
     }
 
     #[test]

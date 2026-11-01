@@ -297,25 +297,31 @@ export default function PersonAliasesSection({
         .map((candidate) => candidate.canonical),
       entries: ambiguity.candidates
         .filter((candidate) => candidate.canonical !== keep)
-        .map((candidate) => ({
-          id: candidate.entryId,
-          alias: ambiguity.alias,
-          source: "auto",
-          mentions: candidate.mentions,
-          kind: "name",
-          sourceQuery: null,
-        })),
+        .flatMap((candidate) =>
+          candidate.entryIds.map((id) => ({
+            id,
+            alias: ambiguity.alias,
+            source: "auto" as const,
+            mentions: candidate.mentions,
+            kind: "name" as const,
+            sourceQuery: null,
+          })),
+        ),
     });
 
   /** Rings the chip `focusAlias` landed on, so the reader's eye finds the one
    *  alias they came in doubting before it finds the row it sits in. */
   const spotlit = (alias: string) => (alias === spotlight ? " ring-2 ring-accent/60" : "");
 
-  /** Jump from a table chip to the card that explains it. */
+  /** Jump from a table chip to the card that explains it. The bridge is keyed
+   *  by `ambiguity.alias` — the first-seen spelling — so a chip spelled
+   *  differently has to look the card up by its lowercased alias. */
   const revealBridge = (alias: string) => {
-    setSettledAliases((current) => current.filter((settled) => settled !== alias));
+    const key = ambiguities.find((item) => item.alias.toLowerCase() === alias.toLowerCase())?.alias;
+    if (key === undefined) return;
+    setSettledAliases((current) => current.filter((settled) => settled !== key));
     window.requestAnimationFrame(() => {
-      bridgeRefs.current.get(alias)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      bridgeRefs.current.get(key)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
   };
 
@@ -413,7 +419,7 @@ export default function PersonAliasesSection({
         <div className="flex flex-col gap-[7px]">
           {ambiguity.candidates.map((candidate, index) => (
             <div
-              key={candidate.entryId}
+              key={candidate.canonical}
               className="grid grid-cols-[1fr_88px_auto] items-center gap-2.5 sm:grid-cols-[1fr_132px_auto]"
             >
               <div className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-text-primary">
@@ -476,7 +482,7 @@ export default function PersonAliasesSection({
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             {ambiguity.candidates.map((candidate) => (
               <Button
-                key={candidate.entryId}
+                key={candidate.canonical}
                 size="sm"
                 variant="secondary"
                 disabled={busy != null}
@@ -734,7 +740,7 @@ export default function PersonAliasesSection({
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {row.names.map((entry) =>
-                    flaggedAliases.has(entry.alias) ? (
+                    flaggedAliases.has(entry.alias.toLowerCase()) ? (
                       // No × here: the honest fix for an ambiguity is a choice
                       // between two people, and that lives on the bridge card.
                       <button
@@ -747,7 +753,10 @@ export default function PersonAliasesSection({
                         <span className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 text-[10px]">
                           <Split size={9} />
                           {t("indexManager.aliases.bridgeBadge", {
-                            count: ambiguities.find((item) => item.alias === entry.alias)?.candidates.length ?? 2,
+                            count:
+                              ambiguities.find(
+                                (item) => item.alias.toLowerCase() === entry.alias.toLowerCase(),
+                              )?.candidates.length ?? 2,
                           })}
                         </span>
                       </button>

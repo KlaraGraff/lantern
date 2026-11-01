@@ -1263,7 +1263,11 @@ mod tests {
         // `QueryReturnedMoreThanOneRow` on any library carrying this shape.
         let db = Db {
             conn: Arc::new(Mutex::new(conn)),
-            read_conn: Arc::new(Mutex::new(Connection::open(&db_path).unwrap())),
+            read_conn: Arc::new(Mutex::new({
+                let read = Connection::open(&db_path).unwrap();
+                crate::db::register_unicode_lower(&read).unwrap();
+                read
+            })),
             data_dir: Arc::new(Mutex::new(dir.path().to_path_buf())),
             local_dir: Arc::new(Mutex::new(dir.path().to_path_buf())),
         };

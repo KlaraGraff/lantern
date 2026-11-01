@@ -1293,6 +1293,15 @@ fn insert_book_with_ts(db: &Db, id: &str, status: &str, updated_at: i64) {
     ).unwrap();
 }
 
+fn insert_titled_book(db: &Db, id: &str, title: &str, updated_at: i64) {
+    let conn = db.conn.lock().unwrap();
+    conn.execute(
+        "INSERT INTO books (id, title, author, file_path, format, status, progress, created_at, updated_at)
+         VALUES (?1, ?2, 'Author', 'books/test.epub', 'epub', 'reading', 0, ?3, ?3)",
+        params![id, title, updated_at],
+    ).unwrap();
+}
+
 #[test]
 fn pagination_returns_first_page() {
     let (_dir, db) = setup();
@@ -1422,6 +1431,51 @@ fn pagination_filter_by_status() {
     let page = query_books(&db, Some("reading"), None, None, None, 10).unwrap();
     assert_eq!(page.books.len(), 2);
     assert_eq!(page.total, 2);
+}
+
+#[test]
+fn search_finds_non_ascii_title_in_any_case() {
+    let (_dir, db) = setup();
+    insert_titled_book(&db, "fr", "Émile ou De l'éducation", 1000);
+    insert_titled_book(&db, "ru", "Анна Каренина", 1001);
+
+    for query in ["émile", "ÉMILE", "Émile"] {
+        let page = query_books(&db, None, Some(query), None, None, 10).unwrap();
+        assert_eq!(page.books.len(), 1, "query {query:?} should match one book");
+        assert_eq!(page.books[0].id, "fr");
+        assert_eq!(page.total, 1, "query {query:?} count");
+    }
+
+    for query in ["анна", "АННА", "Анна"] {
+        let page = query_books(&db, None, Some(query), None, None, 10).unwrap();
+        assert_eq!(page.books.len(), 1, "query {query:?} should match one book");
+        assert_eq!(page.books[0].id, "ru");
+    }
+}
+
+#[test]
+fn search_still_folds_ascii_and_escapes_like_wildcards() {
+    let (_dir, db) = setup();
+    insert_titled_book(&db, "plain", "The Quiet American", 1000);
+    insert_titled_book(&db, "pct", "100% Ready", 1001);
+    insert_titled_book(&db, "underscore", "snake_case notes", 1002);
+
+    // ASCII case-insensitivity is unchanged.
+    let page = query_books(&db, None, Some("QUIET american"), None, None, 10).unwrap();
+    assert_eq!(page.books.len(), 1);
+    assert_eq!(page.books[0].id, "plain");
+
+    // `%` and `_` stay literal instead of becoming LIKE wildcards.
+    let page = query_books(&db, None, Some("100%"), None, None, 10).unwrap();
+    assert_eq!(page.books.len(), 1);
+    assert_eq!(page.books[0].id, "pct");
+    let page = query_books(&db, None, Some("100_"), None, None, 10).unwrap();
+    assert!(page.books.is_empty(), "`_` must not act as a wildcard");
+    let page = query_books(&db, None, Some("snake_case"), None, None, 10).unwrap();
+    assert_eq!(page.books.len(), 1);
+    assert_eq!(page.books[0].id, "underscore");
+    let page = query_books(&db, None, Some("snakeYcase"), None, None, 10).unwrap();
+    assert!(page.books.is_empty(), "`_` must not act as a wildcard");
 }
 
 #[test]
@@ -1702,6 +1756,202 @@ fn delete_book_can_preserve_book_notes_as_detached_material() {
         note,
         (None, "detached".into(), None, "quoted passage".into())
     );
+}
+
+/// A peer runs `validate_event` on every `note.upsert` it replays, so the
+/// payload a local delete publishes has to pass the same check — a note the
+/// author's own device can read and nobody else can is a sync that silently
+/// stops. `position` is pinned to `scope = 'book'` with a location, which a
+/// detached row cannot honour once its book is gone.
+#[test]
+fn bookmark_with_text_survives_book_delete_as_a_detached_note() {
+    let (_dir, db) = setup();
+    insert_book(&db, "b1", "epub");
+    let now = chrono::Utc::now().timestamp_millis();
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO notes
+             (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+              content, content_format, created_at, updated_at)
+             VALUES ('note-place', 'b1', 'position', NULL, 'book', 'epubcfi(/6/4!/2)',
+                     NULL, '  a thought worth keeping  ', 'plain_text', ?1, ?1)",
+            params![now],
+        )
+        .unwrap();
+    }
+
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+    do_delete_book_with_note_policy("b1", true, &db, &sync).unwrap();
+
+    let stored: (
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    ) = db
+        .reader()
+        .query_row(
+            "SELECT book_id, anchor_kind, scope, location, selected_text, content
+             FROM notes WHERE id = 'note-place'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(stored.0, None, "a detached note has no book");
+    assert_eq!(
+        stored.1, "selection",
+        "the kept text is plain detached text now"
+    );
+    assert_eq!(stored.2, "detached");
+    assert_eq!(stored.3, None);
+    assert_eq!(
+        stored.5, "  a thought worth keeping  ",
+        "the reader's words carry over verbatim — trim only decides whether it is kept"
+    );
+
+    let events = queued_events(&db);
+    let published: Vec<&serde_json::Value> = events
+        .iter()
+        .filter(|(kind, _)| kind == "note.upsert")
+        .map(|(_, payload)| payload)
+        .collect();
+    assert_eq!(
+        published.len(),
+        1,
+        "the kept bookmark owes peers exactly one note.upsert, got {events:?}"
+    );
+    let payload: NotePayload = serde_json::from_value(published[0].clone()).unwrap();
+    assert_eq!(payload.anchor_kind, "selection");
+    assert_eq!(payload.scope, "detached");
+    assert_eq!(payload.book_id, None);
+    assert_eq!(payload.location, None);
+    let event = crate::sync::events::Event {
+        id: ulid::Ulid::new().to_string(),
+        ts: now,
+        device: "dev-A".into(),
+        v: crate::sync::events::EVENT_SCHEMA_VERSION,
+        body: EventBody::NoteUpsert(payload),
+        extra: serde_json::Map::new(),
+    };
+    crate::sync::validation::validate_event(&event, "dev-A")
+        .expect("a peer must accept the note this delete publishes");
+}
+
+/// The other half of the product decision: a kept place with nothing written on
+/// it has no text to keep, so it goes with its book instead of littering the
+/// detached list with empty rows. Whitespace is not text.
+#[test]
+fn empty_bookmark_is_deleted_with_its_book() {
+    let (_dir, db) = setup();
+    insert_book(&db, "b1", "epub");
+    let now = chrono::Utc::now().timestamp_millis();
+    {
+        let conn = db.conn.lock().unwrap();
+        for (id, content) in [("note-blank", ""), ("note-spaces", " \n\t ")] {
+            conn.execute(
+                "INSERT INTO notes
+                 (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+                  content, content_format, created_at, updated_at)
+                 VALUES (?1, 'b1', 'position', NULL, 'book', 'epubcfi(/6/4!/2)',
+                         NULL, ?2, 'plain_text', ?3, ?3)",
+                params![id, content, now],
+            )
+            .unwrap();
+        }
+    }
+
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+    do_delete_book_with_note_policy("b1", true, &db, &sync).unwrap();
+
+    let remaining: i64 = db
+        .reader()
+        .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(remaining, 0, "an empty bookmark is not worth keeping");
+    let published = queued_events(&db)
+        .into_iter()
+        .filter(|(kind, _)| kind == "note.upsert")
+        .count();
+    assert_eq!(published, 0, "nothing kept means nothing published");
+}
+
+/// Preserving notes must not change what a passage note already did: it is
+/// detached with its quote intact, and that payload is still one a peer takes.
+#[test]
+fn passage_note_is_detached_exactly_as_before() {
+    let (_dir, db) = setup();
+    insert_book(&db, "b1", "epub");
+    let now = chrono::Utc::now().timestamp_millis();
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO notes
+             (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+              content, content_format, created_at, updated_at)
+             VALUES ('note-passage', 'b1', 'selection', NULL, 'book', 'epubcfi(/6/4!)',
+                     'quoted passage', 'my note', 'plain_text', ?1, ?1)",
+            params![now],
+        )
+        .unwrap();
+    }
+
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+    do_delete_book_with_note_policy("b1", true, &db, &sync).unwrap();
+
+    let stored: (Option<String>, String, String, Option<String>) = db
+        .reader()
+        .query_row(
+            "SELECT book_id, anchor_kind, scope, selected_text
+             FROM notes WHERE id = 'note-passage'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        (
+            None,
+            "selection".into(),
+            "detached".into(),
+            Some("quoted passage".into())
+        )
+    );
+
+    let events = queued_events(&db);
+    let payload: Vec<&serde_json::Value> = events
+        .iter()
+        .filter(|(kind, _)| kind == "note.upsert")
+        .map(|(_, payload)| payload)
+        .collect();
+    assert_eq!(payload.len(), 1, "got {events:?}");
+    let payload: NotePayload = serde_json::from_value(payload[0].clone()).unwrap();
+    assert_eq!(payload.anchor_kind, "selection");
+    assert_eq!(payload.selected_text.as_deref(), Some("quoted passage"));
+    let event = crate::sync::events::Event {
+        id: ulid::Ulid::new().to_string(),
+        ts: now,
+        device: "dev-A".into(),
+        v: crate::sync::events::EVENT_SCHEMA_VERSION,
+        body: EventBody::NoteUpsert(payload),
+        extra: serde_json::Map::new(),
+    };
+    crate::sync::validation::validate_event(&event, "dev-A")
+        .expect("a passage note was already a valid detached note before this change");
 }
 
 /// Deleting a book must hand its pages back to the file, not merely mark them

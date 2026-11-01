@@ -1091,6 +1091,7 @@ mod tests {
 
         let conn = Connection::open_in_memory().unwrap();
         Db::run_migrations_on(&conn).unwrap();
+        crate::db::register_unicode_lower(&conn).unwrap();
         let conn = Arc::new(Mutex::new(conn));
         let db = Db {
             read_conn: conn.clone(),
