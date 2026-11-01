@@ -1076,7 +1076,11 @@ fn icloud_real_from_placeholder(
     if !s.starts_with('.') || !s.ends_with(".icloud") {
         return None;
     }
-    let real = &s[1..s.len() - ".icloud".len()];
+    // A bare `.icloud` satisfies the pattern but wraps no file name; slicing
+    // it would index `1..0` and panic.
+    let real = s
+        .get(1..s.len() - ".icloud".len())
+        .filter(|s| !s.is_empty())?;
     Some(parent.join(real))
 }
 
@@ -1233,6 +1237,20 @@ mod tests {
         result.unwrap();
         assert_eq!(fs::read(dst.join("evicted.epub")).unwrap(), b"downloaded");
         assert!(real.exists(), "copy-back must keep the iCloud source file");
+    }
+
+    /// A file literally named `.icloud` satisfies `is_icloud_placeholder`
+    /// (starts with `.`, ends with `.icloud`) but names no real file. Slicing
+    /// off both ends used to index `1..0` and panic, taking the whole
+    /// sync-disable copy-back with it instead of reporting the bad entry.
+    #[test]
+    fn placeholder_with_empty_stem_is_rejected_instead_of_panicking() {
+        let tmp = TempDir::new().unwrap();
+        assert!(icloud_real_from_placeholder(tmp.path(), ".icloud".into()).is_none());
+        assert_eq!(
+            icloud_real_from_placeholder(tmp.path(), ".foo.epub.icloud".into()),
+            Some(tmp.path().join("foo.epub")),
+        );
     }
 
     #[test]

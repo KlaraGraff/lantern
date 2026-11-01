@@ -622,8 +622,14 @@ async fn fetch_edge(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
 }
 
 async fn fetch_remote(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
+    fetch_remote_from(DICTIONARY_ENDPOINT, text, accent).await
+}
+
+/// Same lookup against an explicit endpoint, so a test can stand in for the
+/// service without reaching the network.
+async fn fetch_remote_from(endpoint: &str, text: &str, accent: Accent) -> AppResult<Vec<u8>> {
     let response = crate::ai::http_client()
-        .get(DICTIONARY_ENDPOINT)
+        .get(endpoint)
         .query(&[("audio", text), ("type", accent.query_value())])
         .timeout(REQUEST_TIMEOUT)
         .send()
@@ -631,8 +637,10 @@ async fn fetch_remote(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
         .map_err(|_| AppError::Other(ERR_SOURCE_UNAVAILABLE.to_string()))?;
 
     let status = response.status();
-    if status.is_server_error() {
+    if status == reqwest::StatusCode::INTERNAL_SERVER_ERROR {
         // `returned null audio` — the corpus has no entry for this text.
+        // Any other 5xx is the service being briefly unavailable, and must
+        // not be remembered as a permanent miss.
         return Err(AppError::Other(ERR_NOT_IN_DICTIONARY.to_string()));
     }
     if !status.is_success() {
@@ -1378,6 +1386,33 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.to_string(), ERR_CUSTOM_NOT_CONFIGURED);
         server.join().expect("server thread");
+    }
+
+    /// Only HTTP 500 (`returned null audio`) says the corpus has no entry, and
+    /// that answer is written to a `.miss` marker that stays fresh for 30 days.
+    /// A gateway fault must not be remembered that way, or one outage silences
+    /// a word for a month.
+    #[tokio::test]
+    async fn dictionary_server_faults_are_not_remembered_as_misses() {
+        let (port, server) = one_shot_server(500);
+        let endpoint = format!("http://127.0.0.1:{port}/dictvoice");
+        let missing = fetch_remote_from(&endpoint, "schedule", Accent::Us)
+            .await
+            .unwrap_err();
+        server.join().expect("server thread");
+        assert_eq!(missing.to_string(), ERR_NOT_IN_DICTIONARY);
+
+        let (port, server) = one_shot_server(503);
+        let endpoint = format!("http://127.0.0.1:{port}/dictvoice");
+        let unavailable = fetch_remote_from(&endpoint, "schedule", Accent::Us)
+            .await
+            .unwrap_err();
+        server.join().expect("server thread");
+        assert_eq!(
+            unavailable.to_string(),
+            ERR_SOURCE_UNAVAILABLE,
+            "a transient 503 must not be cached as a permanent miss",
+        );
     }
 
     /// The voice list has no endpoint to ask, so a rejection is the only place

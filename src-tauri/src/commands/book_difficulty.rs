@@ -544,7 +544,14 @@ pub fn load(db: &Db, book_id: &str) -> AppResult<BookDifficulty> {
         return Ok(BookDifficulty::empty(book_id, DifficultyStatus::Pending));
     };
     if let Some(stored) = row.source_sha256.as_deref() {
-        let current = crate::ai::grounding::index::current_source_sha256(db, book_id)?;
+        // Asked of the same resolver the computation reads through, not of
+        // `books.source_sha256`: a conversion book is computed from the EPUB
+        // converted on this device, and the original file's hash can never
+        // match it.
+        let current = match resolve_readable_source(db, book_id)? {
+            BookSource::Ready(source) => source.sha256,
+            BookSource::Missing | BookSource::Unsupported { .. } => None,
+        };
         row.stale = current.as_deref() != Some(stored);
     }
     Ok(row)
@@ -982,15 +989,19 @@ fn median_wpm_query(conn: &rusqlite::Connection, book_id: Option<&str>) -> AppRe
             let mut stmt = conn.prepare(
                 "SELECT word_count, dwell_ms FROM reading_screen_dwells
                   WHERE book_id = ?1 AND word_count > 0 AND dwell_ms > 0
+                    AND (word_count * 60000.0) / dwell_ms <= ?3
                   ORDER BY started_at DESC LIMIT ?2",
             )?;
             let rows = stmt
-                .query_map(params![book_id, PACE_SAMPLE], |row| {
-                    Ok(ScreenPace {
-                        word_count: row.get("word_count")?,
-                        dwell_ms: row.get("dwell_ms")?,
-                    })
-                })?
+                .query_map(
+                    params![book_id, PACE_SAMPLE, crate::mastery::ABSOLUTE_MAX_WPM],
+                    |row| {
+                        Ok(ScreenPace {
+                            word_count: row.get("word_count")?,
+                            dwell_ms: row.get("dwell_ms")?,
+                        })
+                    },
+                )?
                 .collect::<Result<Vec<_>, _>>()?;
             rows
         }
@@ -998,15 +1009,19 @@ fn median_wpm_query(conn: &rusqlite::Connection, book_id: Option<&str>) -> AppRe
             let mut stmt = conn.prepare(
                 "SELECT word_count, dwell_ms FROM reading_screen_dwells
                   WHERE word_count > 0 AND dwell_ms > 0
+                    AND (word_count * 60000.0) / dwell_ms <= ?2
                   ORDER BY started_at DESC LIMIT ?1",
             )?;
             let rows = stmt
-                .query_map(params![PACE_SAMPLE], |row| {
-                    Ok(ScreenPace {
-                        word_count: row.get("word_count")?,
-                        dwell_ms: row.get("dwell_ms")?,
-                    })
-                })?
+                .query_map(
+                    params![PACE_SAMPLE, crate::mastery::ABSOLUTE_MAX_WPM],
+                    |row| {
+                        Ok(ScreenPace {
+                            word_count: row.get("word_count")?,
+                            dwell_ms: row.get("dwell_ms")?,
+                        })
+                    },
+                )?
                 .collect::<Result<Vec<_>, _>>()?;
             rows
         }
@@ -1783,5 +1798,78 @@ mod tests {
         // "canter" must not count as passed: it appears only on the
         // looked-up side, contributing 0 passed / (0 + 1) for band4.
         assert_eq!(rates.band_pass_rates[3], Some(0.0));
+    }
+
+    /// A conversion book is read from the EPUB the app converted locally, so
+    /// its row carries that artifact's hash while `books.source_sha256` still
+    /// describes the original `.mobi`. The two are different files and never
+    /// hash alike, so comparing the row against the wrong one called a book
+    /// computed a second ago stale — permanently, because recomputing stores
+    /// the artifact hash again.
+    #[test]
+    fn a_converted_book_is_not_stale_right_after_it_is_computed() {
+        let (directory, db) = test_db();
+        let books_dir = directory.path().join("books");
+        std::fs::create_dir_all(&books_dir).unwrap();
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/fixtures/reader-compat/minimal-deflated.epub"
+        );
+        std::fs::copy(fixture, books_dir.join("book.epub")).unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO books (
+                     id, title, author, file_path, source_format, render_format,
+                     source_file_path, source_sha256, conversion_version,
+                     preparation_state, status, progress, created_at, updated_at
+                 ) VALUES ('book', 'Book', 'Author', 'books/book.mobi', 'mobi', 'epub',
+                           'books/book.mobi', 'the-original-mobi-hash', 1,
+                           'ready', 'unread', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        let local_dir = db.local_dir.lock().unwrap().clone();
+        let prepared = local_dir.join("prepared");
+        std::fs::create_dir_all(&prepared).unwrap();
+        std::fs::copy(
+            fixture,
+            prepared.join(format!(
+                "book.converted.v{}.epub",
+                crate::commands::books::CONVERSION_VERSION
+            )),
+        )
+        .unwrap();
+
+        let computed = compute_and_store(&db, "book").unwrap();
+        assert_eq!(computed.status, DifficultyStatus::TooShort);
+        assert!(
+            !computed.stale,
+            "the row describes the artifact it was just read from"
+        );
+        assert!(!load(&db, "book").unwrap().stale);
+    }
+
+    /// The dwell table keeps every screen, including the ones the collector
+    /// already refused as evidence (a page flip captured in 10 ms is six
+    /// million words a minute). `reading_behavior::reader_median_wpm` filters
+    /// those out through `ABSOLUTE_MAX_WPM`; this query claims to mirror it,
+    /// so it must not let one of them set the pace the open card quotes.
+    #[test]
+    fn an_impossible_screen_does_not_set_the_pace_the_card_quotes() {
+        let (_dir, db) = test_db();
+        insert_book(&db, "");
+        // Two ordinary screens: 1 000 words in 5 minutes = 200 wpm.
+        insert_dwell(&db, "d1", "book", 1000, 5 * 60_000, 1);
+        insert_dwell(&db, "d2", "book", 1000, 5 * 60_000, 2);
+        // A reader flipping through pages: 1 000 words in 10 ms = 6 000 000 wpm.
+        insert_dwell(&db, "d3", "book", 1000, 10, 3);
+        insert_dwell(&db, "d4", "book", 1000, 10, 4);
+        insert_dwell(&db, "d5", "book", 1000, 10, 5);
+
+        let pace = load_reading_pace(&db, "book").unwrap();
+        assert_eq!(pace.book_words_per_minute, Some(200.0));
+        assert_eq!(pace.overall_words_per_minute, Some(200.0));
     }
 }
