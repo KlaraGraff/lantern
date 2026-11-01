@@ -126,23 +126,28 @@ export interface AliasAmbiguity {
  * disclosure line above an answer will actually quote.
  */
 export function aliasAmbiguities(rows: PersonAliasRow[]): AliasAmbiguity[] {
-  const byAlias = new Map<string, AmbiguityCandidate[]>();
+  // Keyed on the lowercased text, because that is how `resolve()` matches:
+  // "Lizzy" and "lizzy" address the same word in the book and the busier of
+  // the two wins the default. Bucketing on the literal string left that pair
+  // as two harmless-looking single-candidate aliases.
+  const byAlias = new Map<string, { alias: string; candidates: AmbiguityCandidate[] }>();
   for (const row of rows) {
     for (const entry of row.names) {
-      const candidates = byAlias.get(entry.alias) ?? [];
-      candidates.push({
+      const key = entry.alias.toLowerCase();
+      const bucket = byAlias.get(key) ?? { alias: entry.alias, candidates: [] };
+      bucket.candidates.push({
         canonical: row.canonical,
         mentions: rowMentions(row),
         entryId: entry.id,
       });
-      byAlias.set(entry.alias, candidates);
+      byAlias.set(key, bucket);
     }
   }
-  return [...byAlias.entries()]
-    .filter(([, candidates]) => candidates.length > 1)
-    .map(([alias, candidates]) => ({
-      alias,
-      candidates: [...candidates].sort(
+  return [...byAlias.values()]
+    .filter((bucket) => bucket.candidates.length > 1)
+    .map((bucket) => ({
+      alias: bucket.alias,
+      candidates: [...bucket.candidates].sort(
         (a, b) => b.mentions - a.mentions || a.canonical.localeCompare(b.canonical),
       ),
     }))

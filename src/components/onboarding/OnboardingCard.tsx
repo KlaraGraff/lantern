@@ -11,6 +11,7 @@ import {
   AUTO_ANALYSIS_INTRO_KEY,
   ONBOARDING_DONE,
   ONBOARDING_STATE_KEY,
+  onboardingProgressLabel,
   shouldIntroduceAutoAnalysis,
   shouldShowOnboarding,
   type OnboardingStep,
@@ -170,11 +171,10 @@ export default function OnboardingCard() {
 
   const dots = autoAnalysisStep ? ([1, 2, 3, 4] as const) : ([1, 2, 3] as const);
 
-  const progressLabel = phase === "review"
-    ? t("onboarding.progress.done")
-    : step === 3
-      ? t("onboarding.progress.last")
-      : t("onboarding.progress.stepOf", { step });
+  const progress = onboardingProgressLabel(step, phase);
+  const progressLabel = progress.key === "onboarding.progress.stepOf"
+    ? t(progress.key, { step: progress.step })
+    : t(progress.key);
 
   // The 16px gutter is a floor, not the value: on a phone this card is within a
   // few points of the whole screen, so a flat 16px puts the step dots and

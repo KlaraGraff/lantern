@@ -31,7 +31,13 @@ export default function ReaderZoneGuide({ oneHand, onDismiss }: ReaderZoneGuideP
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === "Escape" || event.key === " ") onDismiss();
+        if (event.key !== "Enter" && event.key !== "Escape" && event.key !== " ") return;
+        // This layer owns the keypress. Left to bubble, the reader's own
+        // window-level Escape handler reads the same press as "back to the
+        // shelf" — the guide is not a modal dialog, so nothing stops it there.
+        event.preventDefault();
+        event.stopPropagation();
+        onDismiss();
       }}
       aria-label={t("reader.zoneGuide.dismiss")}
     >
