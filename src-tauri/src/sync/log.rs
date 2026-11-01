@@ -144,11 +144,15 @@ impl EventLog {
         // earlier). `next_ulid` also compares against the last ID persisted
         // by a prior process, so a clock rollback cannot make this append
         // sort before an existing line.
+        //
+        // `last_id` is staged locally and only committed to `inner` once the
+        // batch is accepted, so a refused batch leaves no trace at all.
         let now = SystemTime::now();
+        let mut last_id = inner.last_id;
         let mut events = Vec::with_capacity(entries.len());
         for (body, ts) in entries {
-            let ulid = next_ulid(inner.last_id, now)?;
-            inner.last_id = Some(ulid);
+            let ulid = next_ulid(last_id, now)?;
+            last_id = Some(ulid);
             events.push(Event {
                 id: ulid.to_string(),
                 ts,
@@ -161,13 +165,43 @@ impl EventLog {
 
         let mut buf = Vec::with_capacity(events.len() * 256);
         for ev in &events {
-            serde_json::to_writer(&mut buf, ev)
-                .map_err(|e| AppError::Other(format!("event serialize: {e}")))?;
-            buf.push(b'\n');
+            let line_len = encode_event_line(ev, &mut buf)?;
+            // `parse_log_bytes` refuses any line over the cap, which makes the
+            // whole file unreadable for every peer — so the writer must never
+            // produce one. Refuse the batch before `append_bytes` runs: not a
+            // byte reaches the file, so there is no partial batch.
+            if line_len > MAX_LOG_LINE_BYTES {
+                return Err(AppError::Other(format!(
+                    "SYNC_EVENT_TOO_LARGE: event {} serialises to {line_len} bytes, over the {MAX_LOG_LINE_BYTES}-byte log line limit",
+                    ev.id
+                )));
+            }
         }
         append_bytes(&self.path, &buf, self.use_coordinator)?;
+        inner.last_id = last_id;
 
         Ok(events)
+    }
+
+    /// Byte length of the single log line `append_batch_varied` would write
+    /// for `body` at `ts`, trailing newline included.
+    ///
+    /// `flush_outbox` measures rows with this before appending, so a row the
+    /// writer would refuse is dropped on its own instead of blocking every
+    /// later event behind it. The probe event carries a placeholder ULID —
+    /// ULIDs are a fixed 26 characters — so the answer is exactly what the
+    /// writer would compute, without consuming an ID from the sequence.
+    pub fn line_len(&self, body: &EventBody, ts: i64) -> AppResult<usize> {
+        let probe = Event {
+            id: PROBE_ULID.to_string(),
+            ts,
+            device: self.device.clone(),
+            v: EVENT_SCHEMA_VERSION,
+            body: body.clone(),
+            extra: Map::new(),
+        };
+        let mut buf = Vec::with_capacity(256);
+        encode_event_line(&probe, &mut buf)
     }
 
     /// Parse every event in the log. Malformed or truncated lines are
@@ -188,6 +222,23 @@ impl EventLog {
     pub fn read_after(&self, last_id: Option<&str>) -> AppResult<Vec<Event>> {
         read_log_file_after(&self.path, last_id)
     }
+}
+
+/// Fixed-width stand-in for a real ULID — every ULID encodes to exactly 26
+/// characters, so a line measured with this id is measured correctly.
+const PROBE_ULID: &str = "00000000000000000000000000";
+
+/// Serialise `event` as one log line (JSON + `\n`) onto `buf`. Returns the
+/// number of bytes this event contributed, newline included.
+///
+/// Every log-line write goes through here so the length the cap check sees is
+/// the length that reaches the file.
+fn encode_event_line(event: &Event, buf: &mut Vec<u8>) -> AppResult<usize> {
+    let start = buf.len();
+    serde_json::to_writer(&mut *buf, event)
+        .map_err(|e| AppError::Other(format!("event serialize: {e}")))?;
+    buf.push(b'\n');
+    Ok(buf.len() - start)
 }
 
 fn next_ulid(previous: Option<ulid::Ulid>, now: SystemTime) -> AppResult<ulid::Ulid> {
@@ -528,6 +579,110 @@ mod tests {
         let log = open_log(&tmp);
         assert!(log.path().exists());
         assert!(log.path().parent().unwrap().exists());
+    }
+
+    // ---- crew: the writer must never emit a line the reader refuses ----
+
+    /// A body whose serialised line clears `MAX_LOG_LINE_BYTES`. Padding goes
+    /// in `description`, which `BookImport` carries verbatim onto the wire.
+    fn oversized_body(n: usize) -> EventBody {
+        let EventBody::BookImport(mut payload) = sample_body(n) else {
+            unreachable!()
+        };
+        payload.description = Some("x".repeat(MAX_LOG_LINE_BYTES));
+        EventBody::BookImport(payload)
+    }
+
+    #[test]
+    fn oversized_single_event_is_rejected_and_file_unchanged() {
+        let tmp = TempDir::new().unwrap();
+        let log = open_log(&tmp);
+        log.append(sample_body(1), 1_714_770_000_000).unwrap();
+        let before = std::fs::read(log.path()).unwrap();
+
+        let error = log
+            .append(oversized_body(2), 1_714_770_000_001)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("SYNC_EVENT_TOO_LARGE"),
+            "the error must name the cap so the flush can act on it: {error}"
+        );
+
+        assert_eq!(
+            std::fs::read(log.path()).unwrap(),
+            before,
+            "a refused event must not touch the file"
+        );
+        let events = log.read_all().unwrap();
+        assert_eq!(events.len(), 1, "only the pre-existing event is readable");
+    }
+
+    #[test]
+    fn batch_with_one_oversized_event_writes_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let log = open_log(&tmp);
+        // A normal event ahead of the oversized one must not slip through:
+        // the batch is refused whole, never truncated to its valid prefix.
+        let entries = vec![
+            (sample_body(1), 1_714_770_000_000),
+            (oversized_body(2), 1_714_770_000_001),
+            (sample_body(3), 1_714_770_000_002),
+        ];
+        let error = log.append_batch_varied(entries).unwrap_err().to_string();
+        assert!(error.contains("SYNC_EVENT_TOO_LARGE"), "{error}");
+        assert_eq!(
+            std::fs::read(log.path()).unwrap().len(),
+            0,
+            "a batch containing one oversized event must write nothing"
+        );
+    }
+
+    #[test]
+    fn normal_events_still_append_after_a_refusal() {
+        let tmp = TempDir::new().unwrap();
+        let log = open_log(&tmp);
+        log.append_batch_varied(vec![(oversized_body(1), 1_714_770_000_000)])
+            .unwrap_err();
+
+        // The refused batch must not have consumed ULIDs or moved `last_id`,
+        // so the next good append still lands and its id still sorts later
+        // than everything already on disk.
+        let first = log.append(sample_body(2), 1_714_770_000_001).unwrap();
+        let second = log
+            .append_batch_varied(vec![(sample_body(3), 1_714_770_000_002)])
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(first.id < second.id, "ids must stay monotonic");
+
+        let events = log.read_all().unwrap();
+        assert_eq!(events.len(), 2, "normal events still append");
+        assert!(matches!(&events[0].body, EventBody::BookImport(p) if p.id == "b2"));
+        assert!(matches!(&events[1].body, EventBody::BookImport(p) if p.id == "b3"));
+    }
+
+    /// `flush_outbox` measures every row with `line_len` before appending.
+    /// That number must be the exact byte count the writer would produce,
+    /// otherwise a row can be judged publishable and then rejected — which
+    /// would put the whole batch back into the retry-forever loop.
+    #[test]
+    fn line_len_matches_the_written_line() {
+        let tmp = TempDir::new().unwrap();
+        let log = open_log(&tmp);
+        let body = sample_body(7);
+        let predicted = log.line_len(&body, 1_714_770_000_000).unwrap();
+
+        log.append(body, 1_714_770_000_000).unwrap();
+        let on_disk = std::fs::read(log.path()).unwrap();
+        assert_eq!(
+            predicted,
+            on_disk.len(),
+            "line_len must equal the newline-terminated line actually written"
+        );
+        // The cap is on the line without its newline; a line of exactly
+        // MAX_LOG_LINE_BYTES bytes of JSON is still readable.
+        assert_eq!(on_disk.last(), Some(&b'\n'));
     }
 
     #[test]

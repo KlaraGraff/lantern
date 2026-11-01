@@ -1799,6 +1799,73 @@ fn snapshot_tombstone_for_collection_book_removes_join_row() {
     );
 }
 
+/// The membership tombstone is clearable: a local re-add newer than the peer's
+/// delete outranks it, so neither the row nor the tombstone may be touched.
+/// Leaving the tombstone behind would block every later add of the pair and
+/// travel on in this device's own snapshot.
+#[test]
+fn snapshot_older_membership_tombstone_keeps_newer_local_readd() {
+    let mut snapshot = Snapshot::from_events("dev-B", &[]).unwrap();
+    snapshot.state.tombstones.insert(
+        merge::entity::COLLECTION_BOOK.to_string(),
+        vec![TombstoneRow {
+            id: "c1:b1".into(),
+            ts: 2_000,
+        }],
+    );
+
+    let mut local = open_db();
+    local
+        .execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'reading', 0, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+    local
+        .execute(
+            "INSERT INTO collections (id, name, sort_order, created_at, updated_at)
+             VALUES ('c1', 'Top', 0, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+    local
+        .execute(
+            "INSERT INTO collection_books (collection_id, book_id, created_at, updated_at, updated_by_device)
+             VALUES ('c1', 'b1', 3000, 3000, 'dev-A')",
+            [],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+    }
+    let n: i64 = local
+        .query_row(
+            "SELECT COUNT(*) FROM collection_books WHERE collection_id = 'c1' AND book_id = 'b1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        n, 1,
+        "a newer local re-add must survive an older peer membership tombstone"
+    );
+    let tombstone: Option<i64> = local
+        .query_row(
+            "SELECT ts FROM _tombstones WHERE entity = ?1 AND id = 'c1:b1'",
+            params![merge::entity::COLLECTION_BOOK],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(
+        tombstone, None,
+        "an outranked peer delete must not be recorded"
+    );
+}
+
 #[test]
 fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
     // Apply event set X directly to DB1; build snapshot from X and apply

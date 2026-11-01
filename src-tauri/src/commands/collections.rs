@@ -208,6 +208,14 @@ pub(crate) fn do_add_book_to_collection(
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
+        let key = format!("{collection_id}:{book_id}");
+        // A stale peer add must not resurrect a removed membership, and a local
+        // re-add must clear the tombstone its own removal left behind — the
+        // same clearable-tombstone rule `apply_collection_book_add` applies.
+        tx.execute(
+            "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+            params![entity::COLLECTION_BOOK, key],
+        )?;
         let changed = tx.execute(
             "INSERT OR IGNORE INTO collection_books (collection_id, book_id, created_at, updated_at, updated_by_device) VALUES (?1, ?2, ?3, ?3, ?4)",
             params![collection_id, book_id, now, device],
@@ -246,6 +254,12 @@ pub(crate) fn do_remove_book_from_collection(
             params![collection_id, book_id],
         )?;
         if changed > 0 {
+            insert_tombstone(
+                tx,
+                entity::COLLECTION_BOOK,
+                &format!("{collection_id}:{book_id}"),
+                now,
+            )?;
             events.push(EventBody::CollectionBookRemove {
                 collection: collection_id.to_string(),
                 book: book_id.to_string(),
@@ -354,6 +368,21 @@ mod tests {
             .unwrap()
     }
 
+    fn membership_tombstone_ts(db: &Db, collection_id: &str, book_id: &str) -> Option<i64> {
+        use rusqlite::OptionalExtension;
+        db.reader()
+            .query_row(
+                "SELECT ts FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![
+                    entity::COLLECTION_BOOK,
+                    format!("{collection_id}:{book_id}")
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap()
+    }
+
     #[test]
     fn delete_collection_tombstones_collection_and_memberships() {
         let (_dir, db, sync) = setup();
@@ -401,6 +430,117 @@ mod tests {
             membership_count(&db, "c1", "b1"),
             0,
             "deleted collection's membership must stay deleted"
+        );
+    }
+
+    #[test]
+    fn remove_then_add_locally_leaves_row_and_no_tombstone() {
+        let (_dir, db, sync) = setup();
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+
+        assert!(do_add_book_to_collection("c1", "b1", &db, &sync).unwrap());
+        assert_eq!(membership_count(&db, "c1", "b1"), 1);
+
+        assert!(do_remove_book_from_collection("c1", "b1", &db, &sync).unwrap());
+        assert_eq!(membership_count(&db, "c1", "b1"), 0);
+        assert!(
+            membership_tombstone_ts(&db, "c1", "b1").is_some(),
+            "a local remove must leave a tombstone so a late peer add cannot resurrect it"
+        );
+
+        assert!(do_add_book_to_collection("c1", "b1", &db, &sync).unwrap());
+        assert_eq!(
+            membership_count(&db, "c1", "b1"),
+            1,
+            "re-adding the book locally must put the membership back"
+        );
+        assert_eq!(
+            membership_tombstone_ts(&db, "c1", "b1"),
+            None,
+            "the local re-add must clear its own tombstone"
+        );
+    }
+
+    #[test]
+    fn peer_remove_then_readd_respects_event_order() {
+        let (_dir, db, _sync) = setup();
+        insert_book(&db, "b1", "Book");
+        insert_book(&db, "b2", "Book 2");
+        insert_collection(&db, "c1", "Favorites");
+        insert_collection(&db, "c2", "Later");
+
+        // add@1, remove@2, add@3 — the re-add is the newest event and wins.
+        apply(
+            &db,
+            EventBody::CollectionBookAdd {
+                collection: "c1".to_string(),
+                book: "b1".to_string(),
+            },
+            1_000,
+        );
+        apply(
+            &db,
+            EventBody::CollectionBookRemove {
+                collection: "c1".to_string(),
+                book: "b1".to_string(),
+            },
+            2_000,
+        );
+        assert_eq!(membership_count(&db, "c1", "b1"), 0);
+        apply(
+            &db,
+            EventBody::CollectionBookAdd {
+                collection: "c1".to_string(),
+                book: "b1".to_string(),
+            },
+            3_000,
+        );
+        assert_eq!(
+            membership_count(&db, "c1", "b1"),
+            1,
+            "a re-add newer than the remove must win"
+        );
+        assert_eq!(
+            membership_tombstone_ts(&db, "c1", "b1"),
+            None,
+            "the winning re-add must clear the tombstone it superseded"
+        );
+
+        // add@1, remove@3, add@2 — the late add is older than the remove.
+        apply(
+            &db,
+            EventBody::CollectionBookAdd {
+                collection: "c2".to_string(),
+                book: "b2".to_string(),
+            },
+            1_000,
+        );
+        apply(
+            &db,
+            EventBody::CollectionBookRemove {
+                collection: "c2".to_string(),
+                book: "b2".to_string(),
+            },
+            3_000,
+        );
+        apply(
+            &db,
+            EventBody::CollectionBookAdd {
+                collection: "c2".to_string(),
+                book: "b2".to_string(),
+            },
+            2_000,
+        );
+        assert_eq!(
+            membership_count(&db, "c2", "b2"),
+            0,
+            "an add older than the removal must not resurrect the membership"
+        );
+        assert_eq!(
+            membership_tombstone_ts(&db, "c2", "b2"),
+            Some(3_000),
+            "the removal's tombstone must survive the outranked add"
         );
     }
 }

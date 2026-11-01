@@ -480,6 +480,42 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
         params![id],
     )?;
     tx.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
+    // Device-local per-book rows (migrations 043/054/055/059/060/066/076).
+    // None of these syncs, so no tombstone is owed for any of them; they are
+    // still keyed on a book that no longer exists, and the DDL's ON DELETE
+    // CASCADE never runs (replay opens with `foreign_keys=OFF`).
+    tx.execute(
+        "DELETE FROM auto_highlight_dismissals WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM book_manual_order WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM book_person_alias_embeddings WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM book_person_aliases WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM book_reader_coverage WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM book_word_counts WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM pending_book_reviews WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM level_word_classifications WHERE book_id = ?1",
+        params![id],
+    )?;
     // The one global `settings` row keyed off a book. It needs no `setting`
     // tombstone: the key is not on the sync whitelist, so no peer ever had it,
     // and the book's own tombstone already makes this deletion converge.
@@ -1720,14 +1756,24 @@ fn apply_collection_book_add(
     book: &str,
 ) -> AppResult<()> {
     let key = format!("{collection}:{book}");
-    if is_tombstoned(tx, entity::COLLECTION_BOOK, &key)?
-        || parent_tombstoned(
-            tx,
-            &[(entity::COLLECTION, collection), (entity::BOOK, book)],
-        )?
+    if parent_tombstoned(
+        tx,
+        &[(entity::COLLECTION, collection), (entity::BOOK, book)],
+    )? {
+        return Ok(());
+    }
+    // The membership tombstone is clearable: removing a book and adding it
+    // back must sync. A tombstone at or after this event still wins; a strictly
+    // older one is superseded, exactly like `book_setting` above.
+    if tombstone_timestamp(tx, entity::COLLECTION_BOOK, &key)?
+        .is_some_and(|timestamp| timestamp >= event.ts)
     {
         return Ok(());
     }
+    tx.execute(
+        "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+        params![entity::COLLECTION_BOOK, key],
+    )?;
     tx.execute(
         "INSERT OR IGNORE INTO collection_books
          (collection_id, book_id, created_at, updated_at, updated_by_device)
@@ -2269,6 +2315,99 @@ mod tests {
         assert!(
             checked >= 12,
             "expected to verify many child tables, only checked {checked} — did the seed drift from the schema?"
+        );
+    }
+
+    /// The device-local tables that nothing syncs: a book delete has to clear
+    /// them itself, because replay runs with `foreign_keys=OFF` and the DDL's
+    /// ON DELETE CASCADE is documentation only. Covers migration 054's
+    /// `auto_highlight_dismissals` plus the other per-book local caches the
+    /// same audit turned up.
+    #[test]
+    fn book_delete_clears_device_local_rows_for_that_book_only() {
+        let mut conn = open_db();
+        conn.execute_batch(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+                 VALUES ('b1','T','A','books/b1.epub','reading',42,1700000000000,1700000000000),
+                        ('b2','T2','A2','books/b2.epub','reading',7,1700000000000,1700000000000);
+
+             INSERT INTO auto_highlight_dismissals
+                 (id, book_id, anchor, dismissed, created_at, updated_at)
+                 VALUES ('d1','b1','lookup:l1',1,1700000000000,1700000000000),
+                        ('d2','b2','lookup:l2',1,1700000000000,1700000000000);
+
+             INSERT INTO book_manual_order (book_id, position) VALUES ('b1', 0), ('b2', 1);
+
+             INSERT INTO book_person_aliases
+                 (id, book_id, canonical, alias, source, mentions, created_at)
+                 VALUES ('a1','b1','Mr. Darcy','达西','auto',3,1700000000000),
+                        ('a2','b2','Mr. Bingley','彬格莱','auto',2,1700000000000);
+
+             INSERT INTO book_person_alias_embeddings
+                 (alias_id, book_id, embedding, dimensions, model, created_at)
+                 VALUES ('a1','b1',X'00',3,'m',1700000000000),
+                        ('a2','b2',X'00',3,'m',1700000000000);
+
+             INSERT INTO book_reader_coverage (book_id, status) VALUES ('b1','done'), ('b2','done');
+
+             INSERT INTO book_word_counts (book_id, word, tokens) VALUES ('b1','whale',9), ('b2','carriage',4);
+
+             INSERT INTO pending_book_reviews (book_id, reason, created_at)
+                 VALUES ('b1','failed',1700000000000), ('b2','offline',1700000000000);
+
+             INSERT INTO level_word_classifications
+                 (normalized_word, book_id, verdict, classified_at, batch_id)
+                 VALUES ('deck','b1','topical',1700000000000,'batch-1'),
+                        ('deck','b2','general',1700000000000,'batch-2');",
+        )
+        .unwrap();
+
+        {
+            let tx = conn.transaction().unwrap();
+            cascade_delete(&tx, entity::BOOK, "b1", 1700000001000).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let tables = [
+            "auto_highlight_dismissals",
+            "book_manual_order",
+            "book_person_aliases",
+            "book_person_alias_embeddings",
+            "book_reader_coverage",
+            "book_word_counts",
+            "pending_book_reviews",
+            "level_word_classifications",
+        ];
+        for table in tables {
+            let deleted: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM \"{table}\" WHERE book_id = 'b1'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                deleted, 0,
+                "`{table}` still has rows for the deleted book — cascade_delete_book is missing a DELETE for it"
+            );
+            let kept: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM \"{table}\" WHERE book_id = 'b2'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                kept, 1,
+                "`{table}` lost the other book's row — the delete is not scoped to the deleted book"
+            );
+        }
+        let tombstones: i64 = conn
+            .query_row("SELECT COUNT(*) FROM _tombstones", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            tombstones, 0,
+            "device-local per-book rows must not produce sync tombstones"
         );
     }
 
@@ -4562,7 +4701,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn collection_book_remove_then_add_blocked_by_composite_tombstone() {
+    fn collection_book_remove_then_older_add_blocked_by_composite_tombstone() {
         let mut db = open_db();
         apply_all(
             &mut db,
@@ -4593,8 +4732,9 @@ mod tests {
                         book: "b1".into(),
                     },
                 ),
+                // Late, stale re-add: older than the removal, so it loses.
                 ev(
-                    1400,
+                    1250,
                     "dev-A",
                     EventBody::CollectionBookAdd {
                         collection: "c1".into(),
@@ -4609,7 +4749,7 @@ mod tests {
                 [], |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(n, 0, "composite tombstone should suppress re-add");
+        assert_eq!(n, 0, "a re-add older than the remove must stay suppressed");
     }
 
     // -----------------------------------------------------------------------
