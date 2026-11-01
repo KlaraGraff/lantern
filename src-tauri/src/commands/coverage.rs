@@ -253,15 +253,22 @@ pub fn load_alias_names(db: &Db, book_id: &str) -> AppResult<HashSet<String>> {
     // misses the table, and that guard is not reentrant.
     let entries = {
         let conn = db.reader();
-        let mut statement =
-            conn.prepare("SELECT canonical, alias FROM book_person_aliases WHERE book_id = ?1")?;
+        let mut statement = conn
+            .prepare("SELECT canonical, alias, kind FROM book_person_aliases WHERE book_id = ?1")?;
         let mut rows = statement.query([book_id])?;
         let mut entries: Vec<Vec<(String, bool)>> = Vec::new();
         while let Some(row) = rows.next()? {
-            for column in [0usize, 1] {
-                let text: String = row.get(column)?;
-                entries.push(crate::commands::book_difficulty::tokenize_cased(&text));
+            let canonical: String = row.get(0)?;
+            entries.push(crate::commands::book_difficulty::tokenize_cased(&canonical));
+            // A `description` row's alias is the reader's own phrase ("The
+            // pompous clergyman"), not a spelling the book uses for the
+            // person. Only its canonical says what the name is.
+            let kind: String = row.get(2)?;
+            if kind == "description" {
+                continue;
             }
+            let alias: String = row.get(1)?;
+            entries.push(crate::commands::book_difficulty::tokenize_cased(&alias));
         }
         entries
     };

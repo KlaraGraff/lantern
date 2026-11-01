@@ -87,7 +87,13 @@ pub fn short_section_summary(chunks: &[SummaryChunk]) -> String {
         .map(|chunk| chunk.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    let mut end = source.len().min(200);
+    // 200 characters, not 200 bytes: a CJK section would otherwise be cut to
+    // roughly a third of the budget.
+    let mut end = source
+        .char_indices()
+        .nth(200)
+        .map(|(index, _)| index)
+        .unwrap_or(source.len());
     while end > 0 && !source.is_char_boundary(end) {
         end -= 1;
     }
@@ -668,6 +674,25 @@ mod tests {
             short_section_summary(&[chunk(0, 30, "First sentence. Second sentence.")]),
             "First sentence. Second sentence."
         );
+    }
+
+    #[test]
+    fn short_section_summary_counts_characters_not_bytes() {
+        // 67 CJK characters is 201 bytes, so a byte-based cap cuts it to 66 —
+        // but it sits well inside the intended 200-character budget and must
+        // come back whole.
+        let text = "风".repeat(66) + "。";
+        assert_eq!(text.chars().count(), 67);
+        assert!(text.len() > 200);
+        assert_eq!(short_section_summary(&[chunk(0, 30, &text)]), text);
+
+        // And the cap still bites past 200 characters, on a character
+        // boundary: the summary stops at the last sentence end within budget
+        // rather than splitting a character.
+        let long = format!("{}。{}", "风".repeat(199), "雨".repeat(50));
+        let summary = short_section_summary(&[chunk(0, 30, &long)]);
+        assert_eq!(summary.chars().count(), 200);
+        assert!(summary.ends_with('。'));
     }
 
     #[test]
