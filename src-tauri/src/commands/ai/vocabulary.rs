@@ -662,10 +662,12 @@ pub(crate) fn gloss_display_width(text: &str) -> usize {
     text.chars().map(char_display_width).sum()
 }
 
-/// Twenty-eight columns — fourteen Chinese characters, or a short English
+/// Thirty-two columns — sixteen Chinese characters, or a short English
 /// phrase. Mirrors `MAX_GLOSS_WIDTH` in `src/components/vocab/gloss.ts`; the
-/// frontend applies the same ceiling to glosses that never came from here.
-pub(crate) const MAX_GLOSS_WIDTH: usize = 28;
+/// frontend applies the same ceiling to glosses that never came from here. The
+/// two must stay equal: a lower value here truncates glosses the UI would have
+/// shown whole.
+pub(crate) const MAX_GLOSS_WIDTH: usize = 32;
 
 /// What to ask the model for, in the language the gloss will be written in.
 /// A CJK gloss says in eight characters what English needs four words for, so
@@ -861,6 +863,16 @@ mod tests {
         // Twenty Chinese characters is forty columns — over the ceiling, while
         // twenty Latin ones were not.
         assert!(sanitize_gloss(&"述".repeat(20)).ends_with('…'));
+    }
+
+    // The ceiling has to be the one the reader's UI applies, or a gloss that
+    // fits on screen is still stored cut short.
+    #[test]
+    fn gloss_ceiling_matches_the_client_width() {
+        assert_eq!(MAX_GLOSS_WIDTH, 32);
+        let fits_in_the_card = "非常仔细、一丝不苟地（做某事）";
+        assert_eq!(gloss_display_width(fits_in_the_card), 30);
+        assert_eq!(sanitize_gloss(fits_in_the_card), fits_in_the_card);
     }
 
     // A short gloss is the point; the cap must never fire on one.

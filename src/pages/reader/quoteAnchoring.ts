@@ -48,7 +48,11 @@ function flatten(strs: string[]): FlatText {
   const raw: number[] = [];
   let cursor = 0;
   for (const str of strs) {
-    for (const char of str) {
+    // Indexed by UTF-16 unit, not by code point: `raw` has to line up with
+    // `strs.join("")`'s offsets, and `for...of` would hand out an astral
+    // character once while the string grew by two units.
+    for (let at = 0; at < str.length; at += 1) {
+      const char = str[at];
       if (/\s/.test(char)) {
         // Collapse: only the first character of a whitespace run is kept, and
         // it stands in for the whole run.
@@ -60,7 +64,7 @@ function flatten(strs: string[]): FlatText {
         text += char;
         raw.push(cursor);
       }
-      cursor += char.length;
+      cursor += 1;
     }
   }
   return { text, raw, rawLength: cursor };

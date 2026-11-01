@@ -337,3 +337,61 @@ fn lookup_rate_scale_output_is_always_bounded() {
         );
     }
 }
+
+/// A reader who has cleared the word floor and never looked anything up has a
+/// measured rate of exactly 0.0 — the extreme low end of §5.2's range, not
+/// "no calibration". It must land on the floor (MIN_SCALE), not on the neutral
+/// 1.0, or the reader whose skips mean least gets full undiscounted credit.
+#[test]
+fn zero_lookup_rate_gets_the_lowest_scale() {
+    let (_dir, db) = fixture();
+    insert_screen(&db, "s1", MIN_WORDS_FOR_LOOKUP_RATE, 1_700_000_000_000);
+
+    let conn = db.reader();
+    let calibration = compute(&conn, 1_700_000_100_000).unwrap();
+    assert_eq!(calibration.lookup_rate_per_1000, Some(0.0));
+    assert_eq!(
+        lookup_rate_scale(calibration.lookup_rate_per_1000),
+        MIN_SCALE
+    );
+}
+
+/// The calibration median is the same measurement
+/// `commands::reading_behavior::reader_median_wpm` makes from the same table,
+/// so it has to apply the same absolute-pace filter: a screen turned past at
+/// several thousand words a minute is not reading, and must not drag the
+/// stored median out of the human range.
+#[test]
+fn reading_speed_median_ignores_page_turn_screens() {
+    let (_dir, db) = fixture();
+    // Thirty screens actually read: 200 words per minute.
+    for index in 0..MIN_SCREENS_FOR_SPEED {
+        insert_screen(
+            &db,
+            &format!("read{index}"),
+            200,
+            1_700_000_000_000 + index * 60_000,
+        );
+    }
+    // Thirty more recent screens flipped through in a minute: 3,000 wpm.
+    for index in 0..MIN_SCREENS_FOR_SPEED {
+        insert_screen(
+            &db,
+            &format!("skip{index}"),
+            3_000,
+            1_700_000_500_000 + index * 60_000,
+        );
+    }
+
+    let conn = db.reader();
+    let calibration = compute(&conn, 1_700_000_900_000).unwrap();
+    assert_eq!(
+        calibration.reading_speed_sample_screens, MIN_SCREENS_FOR_SPEED,
+        "page-turn screens are not measurable reading"
+    );
+    let wpm = calibration.reading_speed_wpm.expect("30 real screens");
+    assert!(
+        (wpm - 200.0).abs() < 0.5,
+        "median should be the 200 wpm of real reading, got {wpm}"
+    );
+}
