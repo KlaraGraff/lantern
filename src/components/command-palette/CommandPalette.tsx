@@ -28,6 +28,7 @@ import {
   GROUP_LIMIT,
   GROUP_ORDER,
   buildCommandSpecs,
+  isPaletteRowActivation,
   rankByMatch,
   splitMatch,
   wrapIndex,
@@ -291,6 +292,11 @@ export default function CommandPalette() {
       setSelected((index) => wrapIndex(index, event.key === "ArrowDown" ? 1 : -1, rows.length));
     } else if (event.key === "Enter") {
       event.preventDefault();
+      if (!isPaletteRowActivation({
+        key: event.key,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.nativeEvent.keyCode,
+      })) return;
       runRow(rows[selected], event.metaKey || event.ctrlKey);
     } else if (event.key === "Escape") {
       event.preventDefault();
