@@ -16,6 +16,7 @@ interface PeerInfo {
   platform: string;
   app_version: string;
   max_event_schema: number;
+  newer_than_this?: boolean;
   last_seen: number;
   pending_events: number;
 }
@@ -403,6 +404,11 @@ export default function LibrarySyncSettings({ settings, save, showSavedToast }: 
                               time: formatRelative(p.last_seen, now),
                             })}
                           </p>
+                          {p.newer_than_this && (
+                            <p className="text-[11px] text-warning">
+                              {t("settings.librarySync.peerNewer", { version: p.app_version })}
+                            </p>
+                          )}
                         </div>
                         {p.pending_events > 0 && (
                           <span className="text-[11px] font-medium text-text-muted bg-white dark:bg-bg-surface rounded-full px-2 py-0.5">

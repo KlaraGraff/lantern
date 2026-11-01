@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { isReadingOnlyBook } from "./reader-settings";
 import { useBookOpenGate } from "./BookOpenGateProvider";
 import { AlertCircle, Check, CloudDownload, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
@@ -137,6 +138,11 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
                 {book.title}
               </h3>
               <p className="text-[14px] text-text-secondary tracking-[-0.15px] leading-5">
+                {isReadingOnlyBook(book) && (
+                  <span className="mr-2 rounded-full bg-bg-muted px-2 py-0.5 text-[12px] text-text-muted" title={t("bookGrid.readingOnlyTitle")}>
+                    {t("bookGrid.readingOnly")}
+                  </span>
+                )}
                 {book.author}
               </p>
               {/* The blurb is `dc:description` straight out of the EPUB, and

@@ -108,6 +108,9 @@ pub struct PeerInfo {
     /// watermark). Approximate — counts the line bytes, not
     /// individual events. Good enough for the UI's "N pending" pill.
     pub pending_events: i64,
+    /// The peer writes event types this build cannot read (its schema is
+    /// newer), so its changes are skipped here until this app is updated.
+    pub newer_than_this: bool,
 }
 
 /// JSON-friendly mirror of `ReplayReport`. We keep it explicit (rather
@@ -195,6 +198,8 @@ pub async fn sync_status(
                     name: p.name,
                     platform: p.platform,
                     app_version: p.app_version,
+                    newer_than_this: p.max_event_schema
+                        > crate::sync::events::EVENT_SCHEMA_VERSION,
                     max_event_schema: p.max_event_schema,
                     last_seen: p.last_seen,
                     pending_events: 0,

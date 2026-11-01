@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { isReadingOnlyBook } from "./reader-settings";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
 import { useBookOpenGate } from "./BookOpenGateProvider";
@@ -208,6 +209,14 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
                   <span className="text-[12px] font-medium text-white leading-4">
                     {book.preparation_state === "failed" ? t("book.preparationFailed") : t("book.preparing")}
                   </span>
+                </div>
+              )}
+              {isReadingOnlyBook(book) && !isPendingPreparation(book) && (
+                <div
+                  className="absolute top-2 left-2 rounded-full bg-black/55 px-2 py-1 text-[12px] font-medium text-white"
+                  title={t("bookGrid.readingOnlyTitle")}
+                >
+                  {t("bookGrid.readingOnly")}
                 </div>
               )}
               {!paper && book.status === "finished" && book.available !== false && (
