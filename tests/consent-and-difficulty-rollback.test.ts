@@ -66,7 +66,9 @@ test("a consent answer still reaches the waiting caller when the setting write f
   // JSON rather than deepEqual: the action runs in a VM realm, whose arrays
   // have a different prototype and fail an identity-sensitive deep compare.
   assert.equal(JSON.stringify(writes), '[{"key":"icloud_download_on_cellular","value":"allow"}]');
-  assert.equal(JSON.stringify(resolved), '["allow"]');
+  // The stored answer is what the backend gate reads; an unsaved "allow"
+  // cannot take effect, so the caller is told "deny".
+  assert.equal(JSON.stringify(resolved), '["deny"]');
 });
 
 test("a failed override write keeps the newer difficulty row that arrived meanwhile", async () => {
