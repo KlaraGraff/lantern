@@ -363,7 +363,7 @@ pub(crate) fn query_all_lookup_records(
         values.push(Box::new(book_id));
     }
     if !search.is_empty() {
-        conditions.push(r"(LOWER(l.lookup_text) LIKE ? ESCAPE '\' OR LOWER(l.definition) LIKE ? ESCAPE '\' OR LOWER(COALESCE(l.context_sentence, '')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(b.title, '')) LIKE ? ESCAPE '\')".to_string());
+        conditions.push(r"(lantern_lower(l.lookup_text) LIKE ? ESCAPE '\' OR lantern_lower(l.definition) LIKE ? ESCAPE '\' OR lantern_lower(COALESCE(l.context_sentence, '')) LIKE ? ESCAPE '\' OR lantern_lower(COALESCE(b.title, '')) LIKE ? ESCAPE '\')".to_string());
         let pattern = crate::db::sqlite_contains_pattern(&search);
         for _ in 0..4 {
             values.push(Box::new(pattern.clone()));
@@ -389,7 +389,7 @@ pub(crate) fn query_all_lookup_records(
         for _ in 0..4 {
             facet_values.push(Box::new(pattern.clone()));
         }
-        r" WHERE (LOWER(l.lookup_text) LIKE ? ESCAPE '\' OR LOWER(l.definition) LIKE ? ESCAPE '\' OR LOWER(COALESCE(l.context_sentence, '')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(b.title, '')) LIKE ? ESCAPE '\')".to_string()
+        r" WHERE (lantern_lower(l.lookup_text) LIKE ? ESCAPE '\' OR lantern_lower(l.definition) LIKE ? ESCAPE '\' OR lantern_lower(COALESCE(l.context_sentence, '')) LIKE ? ESCAPE '\' OR lantern_lower(COALESCE(b.title, '')) LIKE ? ESCAPE '\')".to_string()
     };
     let facet_sql = format!(
         "SELECT l.book_id, b.title, COUNT(*) AS count FROM lookup_records l LEFT JOIN books b ON l.book_id = b.id{facet_where} GROUP BY l.book_id, b.title ORDER BY LOWER(COALESCE(b.title, '')), l.book_id"

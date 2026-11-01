@@ -200,7 +200,7 @@ pub(crate) fn query_books_sorted(
     if let Some(q) = search {
         if !q.is_empty() {
             conditions.push(
-                r"(LOWER(books.title) LIKE ? ESCAPE '\' OR LOWER(books.author) LIKE ? ESCAPE '\')"
+                r"(lantern_lower(books.title) LIKE ? ESCAPE '\' OR lantern_lower(books.author) LIKE ? ESCAPE '\')"
                     .to_string(),
             );
             let pattern = crate::db::sqlite_contains_pattern(q);
@@ -245,7 +245,7 @@ pub(crate) fn query_books_sorted(
         }
         if search.is_some_and(|q| !q.is_empty()) {
             cc.push(
-                r"(LOWER(books.title) LIKE ? ESCAPE '\' OR LOWER(books.author) LIKE ? ESCAPE '\')"
+                r"(lantern_lower(books.title) LIKE ? ESCAPE '\' OR lantern_lower(books.author) LIKE ? ESCAPE '\')"
                     .to_string(),
             );
         }
@@ -399,7 +399,7 @@ pub(crate) fn query_books_lite(
     if let Some(q) = search {
         if !q.is_empty() {
             conditions.push(
-                r"(LOWER(title) LIKE ? ESCAPE '\' OR LOWER(author) LIKE ? ESCAPE '\')".to_string(),
+                r"(lantern_lower(title) LIKE ? ESCAPE '\' OR lantern_lower(author) LIKE ? ESCAPE '\')".to_string(),
             );
             let pattern = crate::db::sqlite_contains_pattern(q);
             param_values.push(Box::new(pattern.clone()));

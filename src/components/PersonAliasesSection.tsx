@@ -311,11 +311,15 @@ export default function PersonAliasesSection({
    *  alias they came in doubting before it finds the row it sits in. */
   const spotlit = (alias: string) => (alias === spotlight ? " ring-2 ring-accent/60" : "");
 
-  /** Jump from a table chip to the card that explains it. */
+  /** Jump from a table chip to the card that explains it. The bridge is keyed
+   *  by `ambiguity.alias` — the first-seen spelling — so a chip spelled
+   *  differently has to look the card up by its lowercased alias. */
   const revealBridge = (alias: string) => {
-    setSettledAliases((current) => current.filter((settled) => settled !== alias));
+    const key = ambiguities.find((item) => item.alias.toLowerCase() === alias.toLowerCase())?.alias;
+    if (key === undefined) return;
+    setSettledAliases((current) => current.filter((settled) => settled !== key));
     window.requestAnimationFrame(() => {
-      bridgeRefs.current.get(alias)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      bridgeRefs.current.get(key)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
   };
 
@@ -734,7 +738,7 @@ export default function PersonAliasesSection({
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {row.names.map((entry) =>
-                    flaggedAliases.has(entry.alias) ? (
+                    flaggedAliases.has(entry.alias.toLowerCase()) ? (
                       // No × here: the honest fix for an ambiguity is a choice
                       // between two people, and that lives on the bridge card.
                       <button
@@ -747,7 +751,10 @@ export default function PersonAliasesSection({
                         <span className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 text-[10px]">
                           <Split size={9} />
                           {t("indexManager.aliases.bridgeBadge", {
-                            count: ambiguities.find((item) => item.alias === entry.alias)?.candidates.length ?? 2,
+                            count:
+                              ambiguities.find(
+                                (item) => item.alias.toLowerCase() === entry.alias.toLowerCase(),
+                              )?.candidates.length ?? 2,
                           })}
                         </span>
                       </button>

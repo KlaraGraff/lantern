@@ -221,7 +221,7 @@ pub(crate) fn query_notes(
         "SELECT COUNT(*) FROM notes n LEFT JOIN books b ON b.id = n.book_id
          WHERE (?1 IS NULL OR n.book_id = ?1)
            AND (?2 IS NULL OR n.anchor_kind = ?2)
-           AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
+           AND (?3 IS NULL OR lantern_lower(n.content) LIKE ?3 ESCAPE '\\' OR lantern_lower(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR lantern_lower(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR lantern_lower(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
            AND (?4 IS NULL OR n.normalized_word = ?4)
            AND (?5 IS NULL OR n.updated_at >= ?5)
            AND (?6 IS NULL OR n.updated_at <= ?6)",
@@ -241,7 +241,7 @@ pub(crate) fn query_notes(
         "SELECT {NOTE_COLUMNS} FROM notes n LEFT JOIN books b ON b.id = n.book_id
          WHERE (?1 IS NULL OR n.book_id = ?1)
            AND (?2 IS NULL OR n.anchor_kind = ?2)
-           AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
+           AND (?3 IS NULL OR lantern_lower(n.content) LIKE ?3 ESCAPE '\\' OR lantern_lower(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR lantern_lower(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR lantern_lower(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
            AND (?4 IS NULL OR n.normalized_word = ?4)
            AND (?5 IS NULL OR n.updated_at >= ?5)
            AND (?6 IS NULL OR n.updated_at <= ?6)

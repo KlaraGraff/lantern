@@ -200,6 +200,25 @@ fn register_sqlite_vec() {
     });
 }
 
+/// Register `lantern_lower(text)`, a deterministic scalar function that
+/// lowercases with Rust's Unicode-aware `to_lowercase` and passes NULL
+/// through. SQLite's built-in `LOWER()` folds ASCII only, so it leaves
+/// "Émile" untouched and the search predicates could never match a query
+/// that `sqlite_contains_pattern` had already folded to "émile".
+pub fn register_unicode_lower(conn: &Connection) -> AppResult<()> {
+    use rusqlite::functions::FunctionFlags;
+    conn.create_scalar_function(
+        "lantern_lower",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| match ctx.get::<Option<String>>(0)? {
+            Some(value) => Ok(Some(value.to_lowercase())),
+            None => Ok(None),
+        },
+    )?;
+    Ok(())
+}
+
 /// SQLite handle for the local materialized view.
 ///
 /// Two connections: `conn` (write) and `read_conn` (read). SQLite WAL
@@ -287,6 +306,7 @@ impl Db {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | OpenFlags::SQLITE_OPEN_URI,
         )?;
+        register_unicode_lower(&conn)?;
         let dummy_data_dir = db_path
             .parent()
             .unwrap_or_else(|| Path::new(""))
@@ -319,6 +339,7 @@ impl Db {
                 | OpenFlags::SQLITE_OPEN_URI,
         )?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        register_unicode_lower(&conn)?;
         let data_dir = db_path
             .parent()
             .unwrap_or_else(|| Path::new(""))
@@ -363,6 +384,7 @@ impl Db {
         register_sqlite_vec();
         let db_path = db_dir.join(DB_FILE_NAME);
         let conn = Connection::open(&db_path)?;
+        register_unicode_lower(&conn)?;
 
         // WAL is safe here because the DB lives in the OS app-data dir
         // (local-only), not iCloud. Pre-Chunk-6 we ran DELETE so iCloud
@@ -406,6 +428,7 @@ impl Db {
                 | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | rusqlite::OpenFlags::SQLITE_OPEN_URI,
         )?;
+        register_unicode_lower(&read_conn)?;
 
         Ok((
             Self {
@@ -681,6 +704,56 @@ impl Db {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn lantern_lower_folds_non_ascii_like_rust() {
+        let conn = Connection::open_in_memory().unwrap();
+        register_unicode_lower(&conn).unwrap();
+
+        let lowered: String = conn
+            .query_row("SELECT lantern_lower(?1)", params!["ÉMILE"], |r| r.get(0))
+            .unwrap();
+        assert_eq!(lowered, "ÉMILE".to_lowercase());
+        assert_eq!(lowered, "émile");
+
+        // Cyrillic folds too; SQLite's own LOWER() would leave it alone.
+        let lower = |value: &str| -> String {
+            conn.query_row("SELECT lantern_lower(?1)", params![value], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(lower("Анна"), "анна");
+        let sqlite_builtin: String = conn
+            .query_row("SELECT LOWER(?1)", params!["Анна"], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sqlite_builtin, "Анна");
+    }
+
+    #[test]
+    fn lantern_lower_passes_null_through() {
+        let conn = Connection::open_in_memory().unwrap();
+        register_unicode_lower(&conn).unwrap();
+
+        let null_result: Option<String> = conn
+            .query_row("SELECT lantern_lower(NULL)", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(null_result, None);
+    }
+
+    #[test]
+    fn registered_lower_folds_both_sides_of_the_search_predicate() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+
+        // The exact predicate shape the search commands now use.
+        let matched: bool = conn
+            .query_row(
+                "SELECT lantern_lower(?1) LIKE ?2 ESCAPE '\\'",
+                params!["Émile ou De l'éducation", sqlite_contains_pattern("ÉMILE")],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(matched);
+    }
 
     #[test]
     fn sqlite_like_pattern_escapes_wildcards_and_escape_character() {

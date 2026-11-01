@@ -124,25 +124,41 @@ export interface AliasAmbiguity {
  * The candidate order mirrors `resolve()`: it picks the highest-`mentions`
  * canonical as `default_canonical`, so `candidates[0]` is the name the
  * disclosure line above an answer will actually quote.
+ *
+ * Aliases are compared lowercased, because matching is: "Lizzy" -> Elizabeth
+ * and "lizzy" -> Charlotte are one ambiguous alias, not two spellings racing
+ * for the same span. The group reports the first-seen spelling, which is what
+ * the reader sees on the chip.
  */
 export function aliasAmbiguities(rows: PersonAliasRow[]): AliasAmbiguity[] {
-  const byAlias = new Map<string, AmbiguityCandidate[]>();
+  const byAlias = new Map<string, { alias: string; candidates: AmbiguityCandidate[] }>();
   for (const row of rows) {
     for (const entry of row.names) {
-      const candidates = byAlias.get(entry.alias) ?? [];
-      candidates.push({
-        canonical: row.canonical,
-        mentions: rowMentions(row),
-        entryId: entry.id,
-      });
-      byAlias.set(entry.alias, candidates);
+      const key = entry.alias.toLowerCase();
+      const group = byAlias.get(key) ?? { alias: entry.alias, candidates: [] };
+      const candidate = group.candidates.find((one) => one.canonical === row.canonical);
+      // Two spellings of one person are still one candidate — a duplicate
+      // must not make an unambiguous name look like a choice.
+      if (candidate) {
+        if (rowMentions(row) > candidate.mentions) {
+          candidate.mentions = rowMentions(row);
+          candidate.entryId = entry.id;
+        }
+      } else {
+        group.candidates.push({
+          canonical: row.canonical,
+          mentions: rowMentions(row),
+          entryId: entry.id,
+        });
+      }
+      byAlias.set(key, group);
     }
   }
-  return [...byAlias.entries()]
-    .filter(([, candidates]) => candidates.length > 1)
-    .map(([alias, candidates]) => ({
-      alias,
-      candidates: [...candidates].sort(
+  return [...byAlias.values()]
+    .filter((group) => group.candidates.length > 1)
+    .map((group) => ({
+      alias: group.alias,
+      candidates: [...group.candidates].sort(
         (a, b) => b.mentions - a.mentions || a.canonical.localeCompare(b.canonical),
       ),
     }))
@@ -152,9 +168,13 @@ export function aliasAmbiguities(rows: PersonAliasRow[]): AliasAmbiguity[] {
     );
 }
 
-/** Which alias texts in this table are ambiguous, for badging the chips. */
+/**
+ * Which alias texts in this table are ambiguous, for badging the chips.
+ * Lowercased, because that is the key `aliasAmbiguities` groups on — callers
+ * must look up their chip's alias lowercased too.
+ */
 export function ambiguousAliasSet(ambiguities: AliasAmbiguity[]): Set<string> {
-  return new Set(ambiguities.map((ambiguity) => ambiguity.alias));
+  return new Set(ambiguities.map((ambiguity) => ambiguity.alias.toLowerCase()));
 }
 
 export interface AliasTableCounts {

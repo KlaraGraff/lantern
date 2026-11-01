@@ -154,10 +154,10 @@ items AS (
 const SCOPE_FILTER: &str = "
   (?1 IS NULL OR i.book_id = ?1)
   AND (?2 IS NULL
-       OR LOWER(COALESCE(i.selected_text, '')) LIKE ?2 ESCAPE '\\'
-       OR LOWER(COALESCE(i.content, '')) LIKE ?2 ESCAPE '\\'
-       OR LOWER(COALESCE(i.normalized_word, '')) LIKE ?2 ESCAPE '\\'
-       OR LOWER(COALESCE(b.title, '')) LIKE ?2 ESCAPE '\\')
+       OR lantern_lower(COALESCE(i.selected_text, '')) LIKE ?2 ESCAPE '\\'
+       OR lantern_lower(COALESCE(i.content, '')) LIKE ?2 ESCAPE '\\'
+       OR lantern_lower(COALESCE(i.normalized_word, '')) LIKE ?2 ESCAPE '\\'
+       OR lantern_lower(COALESCE(b.title, '')) LIKE ?2 ESCAPE '\\')
   AND (?3 IS NULL OR i.updated_at >= ?3)
   AND (?4 IS NULL OR i.updated_at <= ?4)
 ";

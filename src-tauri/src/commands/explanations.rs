@@ -384,7 +384,7 @@ pub(crate) fn query_all_explanations(
     }
     if !search.is_empty() {
         conditions.push(
-            r"(LOWER(e.passage) LIKE ? ESCAPE '\' OR LOWER(e.explanation) LIKE ? ESCAPE '\')"
+            r"(lantern_lower(e.passage) LIKE ? ESCAPE '\' OR lantern_lower(e.explanation) LIKE ? ESCAPE '\')"
                 .to_string(),
         );
         let pattern = crate::db::sqlite_contains_pattern(&search);
@@ -408,7 +408,7 @@ pub(crate) fn query_all_explanations(
             facet_values.push(Box::new(pattern.clone()));
         }
         facet_conditions.push(
-            r"(LOWER(e.passage) LIKE ? ESCAPE '\' OR LOWER(e.explanation) LIKE ? ESCAPE '\')"
+            r"(lantern_lower(e.passage) LIKE ? ESCAPE '\' OR lantern_lower(e.explanation) LIKE ? ESCAPE '\')"
                 .to_string(),
         );
     }

@@ -51,29 +51,55 @@ pub(crate) fn do_delete_book_with_note_policy(
                 )?;
                 let notes = statement
                     .query_map(params![id], |row| {
-                        Ok(NotePayload {
+                        // A kept place is a bookmark: a location plus whatever
+                        // the reader wrote on it, possibly nothing. Only the
+                        // text is worth carrying past the book — the location
+                        // points into a book that is about to stop existing —
+                        // so a blank one stays with the book (the cascade
+                        // below removes it) instead of becoming an empty
+                        // detached row, and a written one loses its `position`
+                        // anchor (`validate_note_fields` pins that kind to a
+                        // live book scope) to become an ordinary unanchored
+                        // note, the same shape every other detached note has.
+                        let anchor_kind: String = row.get("anchor_kind")?;
+                        let content: String = row.get("content")?;
+                        let kept_place = anchor_kind == "position";
+                        if kept_place && content.trim().is_empty() {
+                            return Ok(None);
+                        }
+                        Ok(Some(NotePayload {
                             id: row.get("id")?,
                             book_id: None,
-                            anchor_kind: row.get("anchor_kind")?,
+                            anchor_kind: if kept_place {
+                                "selection".to_string()
+                            } else {
+                                anchor_kind
+                            },
                             normalized_word: row.get("normalized_word")?,
                             scope: "detached".to_string(),
                             location: None,
                             selected_text: row.get("selected_text")?,
-                            content: row.get("content")?,
+                            content,
                             content_format: row.get("content_format")?,
                             created_at: row.get("created_at")?,
-                        })
+                        }))
                     })?
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
                 notes
             };
             for note in detached_notes {
+                // `anchor_kind` is rewritten from the payload rather than left
+                // alone so the row a peer rebuilds from `note` and the row this
+                // device keeps cannot disagree.
                 tx.execute(
                     "UPDATE notes
-                     SET book_id = NULL, scope = 'detached', location = NULL,
+                     SET book_id = NULL, anchor_kind = ?4, scope = 'detached', location = NULL,
                          updated_at = ?2, updated_by_device = ?3
                      WHERE id = ?1",
-                    params![note.id, now, device],
+                    params![note.id, now, device, note.anchor_kind],
                 )?;
                 events.push(EventBody::NoteUpsert(note));
             }
