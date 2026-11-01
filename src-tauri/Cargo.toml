@@ -114,7 +114,7 @@ libc = "0.2"
 # implementation at all, and an unconditional dependency breaks the iOS build.
 # `process` is what `relaunch()` after a finished download goes through.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-zstd = "0.13"
+zstd = "0.14"
 tar = "0.4"
 tauri-plugin-updater = "=2.10.1"
 tauri-plugin-process = "=2.3.1"
