@@ -58,6 +58,7 @@ export function reviewKeyAction(
     && state.answerVisible
     && !state.submitting
     && !state.onTextEntry
+    && plain
     && /^[1-4]$/.test(event.key)
   ) {
     return { kind: "rate", rating: RATINGS[Number(event.key) - 1] };

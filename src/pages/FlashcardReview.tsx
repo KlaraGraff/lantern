@@ -293,6 +293,8 @@ export default function FlashcardReview() {
     if (!reviewing && !done) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
+      // A dialog over the page (Settings via ⌘,) owns its own keys.
+      if (target?.closest('[aria-modal="true"]')) return;
       // The advertised shortcuts are decided in `reviewKeyAction`, which puts
       // the keys that do nothing native on a button ahead of the
       // "focus is on a control" guard: the reveal button and the rating

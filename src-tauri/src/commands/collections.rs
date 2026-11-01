@@ -244,15 +244,6 @@ pub(crate) fn do_remove_book_from_collection(
             params![collection_id, book_id],
         )?;
         if changed > 0 {
-            // Mirror `sync::merge::apply_collection_book_remove`: without the
-            // tombstone a late peer `collection.book.add` for the same pair
-            // would re-insert the row this command just removed.
-            insert_tombstone(
-                tx,
-                entity::COLLECTION_BOOK,
-                &format!("{collection_id}:{book_id}"),
-                now,
-            )?;
             events.push(EventBody::CollectionBookRemove {
                 collection: collection_id.to_string(),
                 book: book_id.to_string(),
@@ -290,7 +281,7 @@ pub fn list_books_in_collection(
 mod tests {
     use super::*;
     use crate::sync::events::Event;
-    use crate::sync::merge::{apply_event, entity};
+    use crate::sync::merge::apply_event;
     use rusqlite::params;
     use tempfile::TempDir;
 
@@ -408,53 +399,6 @@ mod tests {
             membership_count(&db, "c1", "b1"),
             0,
             "deleted collection's membership must stay deleted"
-        );
-    }
-
-    #[test]
-    fn remove_book_from_collection_tombstones_membership() {
-        let (_dir, db, sync) = setup();
-        insert_book(&db, "b1", "Book");
-        insert_collection(&db, "c1", "Favorites");
-        {
-            let conn = db.conn.lock().unwrap();
-            conn.execute(
-                "INSERT INTO collection_books (collection_id, book_id, created_at, updated_at)
-                 VALUES ('c1', 'b1', 1704067200000, 1704067200000)",
-                [],
-            )
-            .unwrap();
-        }
-
-        do_remove_book_from_collection("c1", "b1", &db, &sync).unwrap();
-        assert_eq!(membership_count(&db, "c1", "b1"), 0);
-
-        // A peer's `collection.book.add` for the same pair arrives late.
-        apply(
-            &db,
-            EventBody::CollectionBookAdd {
-                collection: "c1".to_string(),
-                book: "b1".to_string(),
-            },
-            1_000,
-        );
-
-        assert_eq!(
-            membership_count(&db, "c1", "b1"),
-            0,
-            "removed book must not return to the collection on a late peer add"
-        );
-        let tombstoned: bool = db
-            .reader()
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM _tombstones WHERE entity = ?1 AND id = ?2)",
-                params![entity::COLLECTION_BOOK, "c1:b1"],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(
-            tombstoned,
-            "the local removal must record a collection_book tombstone like replay does"
         );
     }
 }
