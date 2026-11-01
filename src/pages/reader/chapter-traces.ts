@@ -77,3 +77,27 @@ export function chapterQuestions(messages: readonly ChatMessageRow[], scope: Cha
   }
   return questions.sort((left, right) => left.createdAt - right.createdAt);
 }
+
+/** A person the reader has met, as `list_people_so_far` returns them. */
+export interface PersonSoFar {
+  canonical: string;
+  /** The spine section of their first mention. */
+  first_section: number;
+  mentions_in_section: number;
+}
+
+/**
+ * 「本章」's people: those first met in this chapter, then everyone met
+ * before it — each in order of first appearance, as the backend sends them.
+ * The backend already leaves out anyone first named past the reader's
+ * section, so nothing here can reach ahead in the book.
+ */
+export function chapterPeople(people: readonly PersonSoFar[], scope: ChapterScope): { newcomers: PersonSoFar[]; earlier: PersonSoFar[] } {
+  const newcomers: PersonSoFar[] = [];
+  const earlier: PersonSoFar[] = [];
+  for (const person of people) {
+    if (scope.start !== undefined && person.first_section >= scope.start) newcomers.push(person);
+    else earlier.push(person);
+  }
+  return { newcomers, earlier };
+}

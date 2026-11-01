@@ -3567,6 +3567,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
                 bookId,
                 chapterTitle: currentChapterTitle ?? undefined,
                 scope: currentScope,
+                currentSection: currentSectionIndex >= 0 ? currentSectionIndex : undefined,
                 onNavigate: (cfi) => { navigateToCfi(cfi); },
                 onOpenChat: (chatId) => {
                   setInitialChatId(chatId);

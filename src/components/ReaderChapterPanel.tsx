@@ -8,11 +8,13 @@ import { loadReaderNotes } from "../pages/reader/load-reader-notes";
 import { loadFoliateModules, type CfiModule } from "../pages/reader/foliate-modules";
 import {
   cfiSectionIndex,
+  chapterPeople,
   chapterQuestions,
   inChapter,
   type ChapterQuestion,
   type ChatMessageRow,
   type ChapterScope,
+  type PersonSoFar,
 } from "../pages/reader/chapter-traces";
 import { mergeMarkRows, sortMarkRows, type CompareLocation, type MarkRow, type ReaderNote } from "./reader-mark-rows";
 import { savedHighlightColor } from "./mark-palette";
@@ -20,6 +22,8 @@ import type { TracesTab } from "../pages/reader/side-panel";
 
 /** How many of the book's chats are read for questions — the most recent ones. */
 const QUESTION_CHAT_LIMIT = 40;
+/** Earlier people shown before 「全部」: the list is a reminder, not a cast list. */
+const EARLIER_PEOPLE_LIMIT = 12;
 
 interface ChatRow {
   id: string;
@@ -30,6 +34,8 @@ interface ReaderChapterPanelProps {
   bookId: string;
   chapterTitle?: string;
   scope: ChapterScope;
+  /** The spine section being read; people first named after it stay hidden. */
+  currentSection?: number;
   onNavigate: (cfi: string) => void;
   onOpenChat: (chatId: string) => void;
   /** The whole-book lists, which used to be this card's tabs. */
@@ -39,14 +45,15 @@ interface ReaderChapterPanelProps {
 /**
  * 「本章」: what the reader left in this chapter (`chapter-traces.ts`), in the
  * order the design gives — words, highlights and notes, questions asked. Every
- * row goes back to where it was made. People so far are not here yet: nothing
- * stores where a person first appears, so there is no spoiler-safe list to
- * show without a new backend index.
+ * row goes back to where it was made. Last, the people met so far: the
+ * backend works out where each name first appears and returns only those
+ * named up to the reader's section, so the list never reaches ahead.
  */
 export default function ReaderChapterPanel({
   bookId,
   chapterTitle,
   scope,
+  currentSection,
   onNavigate,
   onOpenChat,
   onShowWholeBook,
@@ -57,6 +64,21 @@ export default function ReaderChapterPanel({
   const [notes, setNotes] = useState<ReaderNote[]>([]);
   const [messages, setMessages] = useState<ChatMessageRow[]>([]);
   const [cfiModule, setCfiModule] = useState<CfiModule | null>(null);
+  const [people, setPeople] = useState<PersonSoFar[]>([]);
+  const [showAllEarlier, setShowAllEarlier] = useState(false);
+
+  // A book without a name index (not indexed yet, or the feature off) simply
+  // has no people section.
+  useEffect(() => {
+    setPeople([]);
+    setShowAllEarlier(false);
+    if (currentSection === undefined) return;
+    let cancelled = false;
+    invoke<PersonSoFar[]>("list_people_so_far", { bookId, sectionIndex: currentSection })
+      .then((rows) => { if (!cancelled) setPeople(rows); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId, currentSection]);
 
   useEffect(() => {
     let controller = new AbortController();
@@ -123,6 +145,8 @@ export default function ReaderChapterPanel({
   ), [highlights, notes, scope, compareLocation]);
 
   const questions = useMemo(() => chapterQuestions(messages, scope), [messages, scope]);
+  const { newcomers, earlier } = useMemo(() => chapterPeople(people, scope), [people, scope]);
+  const shownEarlier = showAllEarlier ? earlier : earlier.slice(0, EARLIER_PEOPLE_LIMIT);
   const empty = chapterWords.length === 0 && chapterMarks.length === 0 && questions.length === 0;
 
   return (
@@ -171,6 +195,43 @@ export default function ReaderChapterPanel({
                 </li>
               ))}
             </ul>
+          </Section>
+        )}
+        {people.length > 0 && (
+          <Section title={t("reader.chapter.people")} count={people.length}>
+            <div className="flex flex-wrap gap-1.5">
+              {newcomers.map((person) => (
+                <span
+                  key={person.canonical}
+                  title={t("reader.chapter.peopleNew")}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-bg px-2.5 py-1 text-[13px] text-text-primary"
+                >
+                  <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+                  {person.canonical}
+                  <span className="sr-only">{t("reader.chapter.peopleNew")}</span>
+                </span>
+              ))}
+              {shownEarlier.map((person) => (
+                <span key={person.canonical} className="rounded-full border border-border px-2.5 py-1 text-[13px] text-text-secondary">
+                  {person.canonical}
+                </span>
+              ))}
+              {earlier.length > shownEarlier.length && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllEarlier(true)}
+                  className="cursor-pointer rounded-full px-2 py-1 text-[12px] text-text-muted underline-offset-2 hover:text-text-primary hover:underline"
+                >
+                  {t("reader.chapter.peopleMore", { count: earlier.length - shownEarlier.length })}
+                </button>
+              )}
+            </div>
+            {newcomers.length > 0 && (
+              <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-text-muted">
+                <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+                {t("reader.chapter.peopleNew")}
+              </p>
+            )}
           </Section>
         )}
       </div>
