@@ -317,22 +317,36 @@ fn find_covering_rule(
         return Ok(exact);
     }
 
+    // A `word_forms` row is keyed by whichever spelling was first looked up, so
+    // the link has to be read both ways: the rule's word may own the row
+    // (`engage -> [engaging]`) or be one of the page word's stored forms
+    // (`engaging -> [engage, engaged]`). Same reading as
+    // `word_frequency::FormIndex`, which the mastery path scores with.
     let mut statement = conn.prepare(
         "SELECT r.id, r.book_id, r.normalized_word, r.display_word, r.match_mode,
-                r.color, r.enabled, r.created_at, r.updated_at, f.forms
+                r.color, r.enabled, r.created_at, r.updated_at,
+                own.forms AS own_forms, other.forms AS other_forms
          FROM word_mark_rules r
-         JOIN word_forms f ON f.normalized_word = r.normalized_word
+         LEFT JOIN word_forms own ON own.normalized_word = r.normalized_word
+         LEFT JOIN word_forms other ON other.normalized_word = ?2
          WHERE r.book_id = ?1 AND r.match_mode = 'exact' AND r.enabled = 1
          ORDER BY r.created_at ASC, r.id ASC",
     )?;
-    let mut rows = statement.query(params![book_id])?;
+    let parsed = |value: Option<String>| {
+        value
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+            .unwrap_or_default()
+    };
+    let mut rows = statement.query(params![book_id, normalized_word])?;
     while let Some(row) = rows.next()? {
-        let forms_json: String = row.get("forms")?;
-        let forms: Vec<String> = serde_json::from_str(&forms_json).unwrap_or_default();
-        if forms
+        let rule_word: String = row.get("normalized_word")?;
+        let covers = parsed(row.get("own_forms")?)
             .iter()
             .any(|form| normalize_learning_term(form) == normalized_word)
-        {
+            || parsed(row.get("other_forms")?)
+                .iter()
+                .any(|form| normalize_learning_term(form) == rule_word);
+        if covers {
             return Ok(Some(row_to_rule(row)?));
         }
     }
@@ -1622,6 +1636,35 @@ mod tests {
                 .unwrap();
         assert!(separate.changed);
         assert_eq!(separate.rule.normalized_word, "engaging");
+    }
+
+    /// `word_forms` rows are keyed by the word that was first looked up, which
+    /// may be an inflected form: `engaging -> ["engage", "engaged"]` is a row
+    /// `set_word_forms` can legitimately write. The form index used by mastery
+    /// scoring reads that row in both directions, so this lookup must too —
+    /// otherwise a marked word's own inflection is not covered and a second,
+    /// overlapping rule is minted for it.
+    #[test]
+    fn covering_rule_matches_a_form_stored_under_the_inflected_word() {
+        let (_dir, db, sync) = setup();
+        let rule =
+            set_word_mark_rule_enabled_inner("book", "Engage", true, Some("lookup"), &db, &sync)
+                .unwrap();
+        store_forms(&db, "engaging", &["engage", "engaged"]);
+
+        let covering = find_covering_rule(&db.reader(), "book", "engaging", true)
+            .unwrap()
+            .expect("the marked word is one of the inflected word's stored forms");
+        assert_eq!(covering.id, rule.id);
+
+        let ensured =
+            ensure_word_mark_rule_inner("book", "Engaging", Some("lookup"), true, &db, &sync)
+                .unwrap();
+        assert!(
+            !ensured.changed,
+            "a covered form must not mint a second rule"
+        );
+        assert_eq!(ensured.rule.id, rule.id);
     }
 
     #[test]

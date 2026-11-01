@@ -70,7 +70,10 @@ export function compactTokens(tokens: number, scale: TokenScale): string {
   const safe = Number.isFinite(tokens) && tokens > 0 ? tokens : 0;
   if (safe < step) return String(Math.round(safe));
   const scaled = safe / step;
-  return scaled < 10 ? scaled.toFixed(1) : String(Math.round(scaled));
+  // Decided on the rounded value: 9.999 rounds to 10, which is no longer "below
+  // ten" and must not keep the decimal the branch above exists to carry.
+  const tenths = Math.round(scaled * 10);
+  return tenths < 100 ? (tenths / 10).toFixed(1) : String(Math.round(scaled));
 }
 
 /** Whether a token figure needs its unit word at all. */
