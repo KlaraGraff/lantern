@@ -12,6 +12,8 @@ interface ResetDataDialogProps {
   onCancel: () => void;
   onContinue: () => void;
   onConfirm: (typed: string) => void;
+  /** Present only where library backup exists (desktop). */
+  onOpenBackup?: () => void;
 }
 
 /**
@@ -19,7 +21,15 @@ interface ResetDataDialogProps {
  * app sits on until it relaunches. Focus starts on 取消 in both steps, so an
  * Enter pressed out of habit backs out instead of going further.
  */
-export default function ResetDataDialog({ step, summary, error, onCancel, onContinue, onConfirm }: ResetDataDialogProps) {
+export default function ResetDataDialog({
+  step,
+  summary,
+  error,
+  onCancel,
+  onContinue,
+  onConfirm,
+  onOpenBackup,
+}: ResetDataDialogProps) {
   const { t } = useTranslation();
   const titleId = useId();
   const inputId = useId();
@@ -78,6 +88,14 @@ export default function ResetDataDialog({ step, summary, error, onCancel, onCont
             {summary.syncEnabled && (
               <p className="mt-3 rounded-md border border-border bg-bg-input px-3 py-2 text-[12px] leading-5 text-text-secondary">
                 {t("settings.reset.syncNote")}
+              </p>
+            )}
+            {onOpenBackup && (
+              <p className="mt-3 text-[12px] leading-5 text-text-secondary">
+                {t("settings.reset.backupHint")}{" "}
+                <button type="button" onClick={onOpenBackup} className="text-accent-text hover:underline cursor-pointer">
+                  {t("settings.reset.backupLink")}
+                </button>
               </p>
             )}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
