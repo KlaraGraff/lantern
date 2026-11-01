@@ -396,7 +396,10 @@ fn process_data<R: Runtime>(
             // Unlike chat/completions, the Responses API includes usage on
             // the completion event automatically — no `stream_options` opt-in
             // needed.
-            if let Some(value) = parsed["response"].get("usage") {
+            if let Some(value) = parsed["response"]
+                .get("usage")
+                .filter(|value| !value.is_null())
+            {
                 crate::ai::usage::merge_into(usage, value.clone());
             }
             let (final_text, has_tool_call) = response_output(&parsed["response"])?;
@@ -716,6 +719,34 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("AI_RESPONSE_INCOMPLETE"));
+    }
+
+    #[test]
+    fn null_usage_in_completed_event_is_not_recorded() {
+        // Some Responses-compatible gateways finish with an explicit
+        // `"usage": null`. Storing that would write a bogus zero-token row
+        // instead of the documented "no usage object captured" skip.
+        let app = tauri::test::mock_app();
+        let emitted = AtomicBool::new(false);
+        let usage: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+        let mut state = ResponseStreamState::default();
+        let data = serde_json::json!({
+            "type": "response.completed",
+            "response": {
+                "status": "completed",
+                "usage": null,
+                "output": [{"type": "message", "status": "completed", "content": [
+                    {"type": "output_text", "text": "answer"}
+                ]}]
+            }
+        })
+        .to_string();
+
+        let finished = process_data(app.handle(), "ai-test", &data, &emitted, &usage, &mut state)
+            .expect("a completed response with null usage is still a valid answer");
+
+        assert!(finished);
+        assert_eq!(*usage.lock().unwrap(), None);
     }
 
     #[test]

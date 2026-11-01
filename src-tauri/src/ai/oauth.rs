@@ -217,7 +217,9 @@ async fn read_http_request(
         let mut buffer = [0u8; 1024];
         let count = match tokio::time::timeout(timeout, stream.read(&mut buffer)).await {
             Ok(Ok(count)) => count,
-            Ok(Err(error)) => return Err(error.into()),
+            // A stray local connection that is reset mid-request is not the
+            // browser callback; skipping it keeps the 60s window open.
+            Ok(Err(_)) => return Ok(None),
             Err(_) => {
                 write_callback_error(stream, "The callback request timed out.").await;
                 return Ok(None);
@@ -393,6 +395,7 @@ pub async fn get_valid_token(secrets: &Secrets) -> AppResult<(String, Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write as _;
 
     #[test]
     fn test_generate_pkce_format() {
@@ -595,6 +598,51 @@ mod tests {
 
         let result = handle.await.unwrap().unwrap();
         assert_eq!(result, "auth_code_xyz");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_reset_local_connection_does_not_kill_the_wait_for_the_real_callback() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move { handle_callback(listener, "real_state").await });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // A stray local client (speculative preconnect, port scanner) that is
+        // reset instead of closed cleanly: SO_LINGER 0 makes close() send RST.
+        {
+            let stray = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            // SO_LINGER 0 makes close() send RST instead of FIN.
+            let linger = libc::linger {
+                l_onoff: 1,
+                l_linger: 0,
+            };
+            unsafe {
+                libc::setsockopt(
+                    std::os::unix::io::AsRawFd::as_raw_fd(&stray),
+                    libc::SOL_SOCKET,
+                    libc::SO_LINGER,
+                    &linger as *const libc::linger as *const libc::c_void,
+                    std::mem::size_of::<libc::linger>() as libc::socklen_t,
+                );
+            }
+            (&stray)
+                .write_all(b"GET /auth/callback?code=x&state=y HTT")
+                .unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
+        stream
+            .write_all(
+                b"GET /auth/callback?code=real_code&state=real_state HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(handle.await.unwrap().unwrap(), "real_code");
     }
 
     #[tokio::test]
