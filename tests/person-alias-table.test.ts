@@ -126,7 +126,7 @@ test("each candidate carries the row id that deleting it would remove", () => {
   assert.deepEqual(
     ambiguity.candidates
       .filter((candidate) => candidate.canonical !== "Elizabeth")
-      .map((candidate) => candidate.entryId),
+      .map((candidate) => candidate.entryIds[0]),
     ["drop"],
   );
 });

@@ -29,6 +29,11 @@ function group(canonical: string, mentions: number, aliases: string[]): AliasGro
   return { canonical, entries: aliases.map((alias) => entry(alias, mentions)) };
 }
 
+/** One row with an id the test can name, rather than the helper's counter. */
+function named(id: string, alias: string, mentions: number): AliasEntryView {
+  return { id, alias, source: "auto", mentions, kind: "name", sourceQuery: null };
+}
+
 test("case-differing spellings under two people are one ambiguous alias", () => {
   const rows = personAliasRows([
     group("Elizabeth Bennet", 40, ["Lizzy"]),
@@ -68,4 +73,22 @@ test("both spellings badge, because the set is keyed lowercased", () => {
   assert.ok(flagged.has("Lizzy".toLowerCase()), "the LIZZY chip badges too");
   assert.ok(flagged.has("lizzy"), "the lowercase chip badges");
   assert.equal(flagged.size, 1, "one ambiguous alias, not one per spelling");
+});
+
+test("a candidate collects every row that spells the alias, whatever the case", () => {
+  // "改成只指 Elizabeth" deletes every row of the other candidates. Charlotte
+  // holds both spellings, so missing one would leave the alias still pointing
+  // at her and the card would come straight back after the refresh.
+  const rows = personAliasRows([
+    { canonical: "Elizabeth Bennet", entries: [named("e1", "Lizzy", 40)] },
+    {
+      canonical: "Charlotte Lucas",
+      entries: [named("cL", "Lizzy", 12), named("cl", "lizzy", 12)],
+    },
+  ]);
+  const charlotte = aliasAmbiguities(rows)[0].candidates.find(
+    (candidate) => candidate.canonical === "Charlotte Lucas",
+  );
+
+  assert.deepEqual(charlotte?.entryIds, ["cL", "cl"], "both of Charlotte's rows, not just one");
 });

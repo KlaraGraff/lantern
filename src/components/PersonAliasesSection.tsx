@@ -297,14 +297,16 @@ export default function PersonAliasesSection({
         .map((candidate) => candidate.canonical),
       entries: ambiguity.candidates
         .filter((candidate) => candidate.canonical !== keep)
-        .map((candidate) => ({
-          id: candidate.entryId,
-          alias: ambiguity.alias,
-          source: "auto",
-          mentions: candidate.mentions,
-          kind: "name",
-          sourceQuery: null,
-        })),
+        .flatMap((candidate) =>
+          candidate.entryIds.map((id) => ({
+            id,
+            alias: ambiguity.alias,
+            source: "auto" as const,
+            mentions: candidate.mentions,
+            kind: "name" as const,
+            sourceQuery: null,
+          })),
+        ),
     });
 
   /** Rings the chip `focusAlias` landed on, so the reader's eye finds the one
@@ -417,7 +419,7 @@ export default function PersonAliasesSection({
         <div className="flex flex-col gap-[7px]">
           {ambiguity.candidates.map((candidate, index) => (
             <div
-              key={candidate.entryId}
+              key={candidate.canonical}
               className="grid grid-cols-[1fr_88px_auto] items-center gap-2.5 sm:grid-cols-[1fr_132px_auto]"
             >
               <div className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-text-primary">
@@ -480,7 +482,7 @@ export default function PersonAliasesSection({
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             {ambiguity.candidates.map((candidate) => (
               <Button
-                key={candidate.entryId}
+                key={candidate.canonical}
                 size="sm"
                 variant="secondary"
                 disabled={busy != null}

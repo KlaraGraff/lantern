@@ -93,11 +93,12 @@ export interface AmbiguityCandidate {
   canonical: string;
   mentions: number;
   /**
-   * The `(alias, canonical)` row itself. "改成只指 X" is a delete of every
-   * *other* candidate's row, so the bridge card needs the ids, not just the
-   * names.
+   * Every row of this person that spells this alias, any case. "改成只指 X" is
+   * a delete of every *other* candidate's row, so the bridge card needs the
+   * ids, not just the names — and all of them, or a spelling the delete missed
+   * brings the card straight back.
    */
-  entryId: string;
+  entryIds: string[];
 }
 
 /** One alias text that two or more people in this book answer to. */
@@ -138,17 +139,18 @@ export function aliasAmbiguities(rows: PersonAliasRow[]): AliasAmbiguity[] {
       const group = byAlias.get(key) ?? { alias: entry.alias, candidates: [] };
       const candidate = group.candidates.find((one) => one.canonical === row.canonical);
       // Two spellings of one person are still one candidate — a duplicate
-      // must not make an unambiguous name look like a choice.
+      // must not make an unambiguous name look like a choice. Every spelling's
+      // row still has to be listed, though: "keep only" deletes all of them.
       if (candidate) {
         if (rowMentions(row) > candidate.mentions) {
           candidate.mentions = rowMentions(row);
-          candidate.entryId = entry.id;
         }
+        candidate.entryIds.push(entry.id);
       } else {
         group.candidates.push({
           canonical: row.canonical,
           mentions: rowMentions(row),
-          entryId: entry.id,
+          entryIds: [entry.id],
         });
       }
       byAlias.set(key, group);
