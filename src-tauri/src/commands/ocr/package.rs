@@ -883,7 +883,14 @@ where
     let final_root = versions.join(&directory);
     if final_root.exists() {
         let current = installed_runtime_at(package_root)?;
-        if current.as_ref().is_some_and(|info| info.root == final_root) {
+        // `installed_runtime_at` reports a canonicalized root; compare against
+        // the canonical form here too, or the current version is mistaken for
+        // a stale directory and deleted.
+        let same_as_current = match (&current, final_root.canonicalize()) {
+            (Some(info), Ok(canonical)) => canonical == info.root,
+            _ => false,
+        };
+        if same_as_current {
             self_test(&final_root, cancel)?;
             return Ok(current.expect("checked above"));
         }
@@ -1894,6 +1901,46 @@ mod tests {
         assert_eq!(
             installed_runtime_at(&root).unwrap().unwrap().version,
             "1.0.0"
+        );
+    }
+
+    /// Re-installing the version that is already current must reuse the live
+    /// directory. `installed_runtime_at` reports a canonicalized root, so a
+    /// plain string compare against the raw `versions/<dir>` path misses on
+    /// any data dir reached through a symlink (macOS `/var` -> `/private/var`),
+    /// and the "stale directory" branch then deletes the runtime in place.
+    #[test]
+    fn reinstall_of_current_version_keeps_live_directory() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().join("ocr-runtime");
+        let versions = root.join("versions");
+        fs::create_dir_all(&versions).unwrap();
+
+        let manifest = test_manifest("1.0.0", b"same");
+        let directory = format!("1.0.0-{}", &manifest.sha256[..12]);
+        let live = versions.join(&directory);
+        seed_runtime(&live, &manifest);
+        write_current_pointer(
+            &root,
+            &CurrentPointer {
+                version: manifest.version.clone(),
+                directory: directory.clone(),
+            },
+        )
+        .unwrap();
+        let marker = live.join("live-marker");
+        fs::write(&marker, b"keep").unwrap();
+
+        let candidate = versions.join(".install-test");
+        seed_runtime_payload(&candidate);
+        let cancel = AtomicBool::new(false);
+        let runtime =
+            activate_candidate(&root, &candidate, &manifest, &cancel, |_, _| Ok(())).unwrap();
+
+        assert_eq!(runtime.version, "1.0.0");
+        assert!(
+            marker.is_file(),
+            "the current runtime directory was deleted and rebuilt instead of reused"
         );
     }
 

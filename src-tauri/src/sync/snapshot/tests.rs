@@ -2738,3 +2738,56 @@ fn snapshot_cover_change_invalidates_only_the_replaced_identity() {
         .unwrap();
     assert_eq!(data, b"new cover");
 }
+
+/// A font re-imported after a peer deleted it keeps its id (the hash of its
+/// bytes) and a newer row. The peer's older snapshot must leave that font in
+/// place and must not file its tombstone next to it — a stored tombstone would
+/// keep later snapshots from ever upserting the font again, and travel on in
+/// this device's own snapshot to devices that then never receive it.
+#[test]
+fn a_reimported_font_outranks_an_older_snapshot_tombstone() {
+    const FONT_ID: &str = "custom-aa00000000000000000000000000000000000000000000000000000000ff00";
+    let mut snapshot = Snapshot::from_events("dev-B", &[]).unwrap();
+    snapshot.state.tombstones.insert(
+        merge::entity::CUSTOM_FONT.to_string(),
+        vec![TombstoneRow {
+            id: FONT_ID.into(),
+            ts: 1_000,
+        }],
+    );
+
+    let mut local = open_db();
+    local
+        .execute(
+            "INSERT INTO custom_fonts (id, family_name, file_name, format, file_size, created_at, updated_at, updated_by_device)
+             VALUES (?1, 'Reimported', 'reimported.ttf', 'truetype', 10, 3000, 3000, 'dev-A')",
+            params![FONT_ID],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+    }
+    let family: Option<String> = local
+        .query_row(
+            "SELECT family_name FROM custom_fonts WHERE id = ?1",
+            params![FONT_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(family.as_deref(), Some("Reimported"));
+    let tombstone: Option<i64> = local
+        .query_row(
+            "SELECT ts FROM _tombstones WHERE entity = ?1 AND id = ?2",
+            params![merge::entity::CUSTOM_FONT, FONT_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(
+        tombstone, None,
+        "an outranked peer delete must not be recorded"
+    );
+}
