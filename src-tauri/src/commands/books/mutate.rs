@@ -47,8 +47,7 @@ pub(crate) fn do_delete_book_with_note_policy(
                 let mut statement = tx.prepare(
                     "SELECT id, anchor_kind, normalized_word, selected_text, content,
                             content_format, created_at
-                     FROM notes WHERE book_id = ?1 AND scope = 'book'
-                       AND anchor_kind <> 'position'",
+                     FROM notes WHERE book_id = ?1 AND scope = 'book'",
                 )?;
                 let notes = statement
                     .query_map(params![id], |row| {

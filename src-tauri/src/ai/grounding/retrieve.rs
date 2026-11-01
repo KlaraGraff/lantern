@@ -323,7 +323,12 @@ pub(crate) fn retrieve_ranked(
     let mut current_last_index: Option<i64> = None;
     for chunk in candidates.into_values() {
         match current.as_mut() {
-            Some(existing) if current_last_index == Some(chunk.chunk_index - 1) => {
+            // Consecutive chunks only merge within one section: a merged
+            // excerpt is cited by its first chunk's section.
+            Some(existing)
+                if current_last_index == Some(chunk.chunk_index - 1)
+                    && existing.section_index == chunk.section_index =>
+            {
                 existing.text.push('\n');
                 existing.text.push_str(&chunk.text);
                 existing.token_estimate += chunk.token_estimate;
@@ -729,6 +734,26 @@ mod tests {
     /// not stitch that text into the current excerpt: the merged chunk keeps
     /// the first chunk's `section_index` and `section_href`, so the excerpt
     /// and its citation would claim chapter N while quoting chapter N+1.
+    #[test]
+    fn hits_on_both_sides_of_a_section_boundary_stay_separate_excerpts() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET section_index = CASE WHEN chunk_index = 0 THEN 0 ELSE 1 END",
+            [],
+        )
+        .unwrap();
+
+        let result = retrieve(&conn, "book", "alpha signal", 500, None).unwrap();
+        for chunk in &result {
+            if chunk.section_index == 0 {
+                assert!(
+                    !chunk.text.contains("rare signal"),
+                    "section 1 text cited as section 0: {result:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn neighbor_expansion_stays_inside_the_hit_section() {
         let conn = setup();

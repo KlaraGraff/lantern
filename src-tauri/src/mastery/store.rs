@@ -409,23 +409,23 @@ fn glance_entry_detail(tx: &Transaction<'_>, book_id: &str, glance_count: i64) -
 /// The vocabulary rows a lookup applies to: every row spelling this word, the
 /// one in the book being read first.
 ///
-/// "Spelling this word" is [`normalize`] equality, the same rule
-/// [`load_vocab_targets`] matches with on the promotion side. `COLLATE NOCASE`
-/// equality against the selected text is not enough: a word the reader saved
-/// with its punctuation attached (`"Quiet,"`) is promoted as `"quiet"` and has
-/// to be demoted by a lookup of `"quiet"` too, or it climbs tiers forever.
+/// "Spelling this word" is `COLLATE NOCASE` equality against either what the
+/// reader selected or its normalized form — the same rule
+/// `propagate_progress_to_siblings` uses to decide two rows are one entry, so
+/// the set that gets demoted is exactly the set that gets propagated to.
 fn load_lookup_targets(
     tx: &Transaction<'_>,
     book_id: &str,
-    _lookup_text: &str,
+    lookup_text: &str,
     normalized: &str,
 ) -> AppResult<Vec<VocabTarget>> {
     let mut stmt = tx.prepare(
         "SELECT id, word, mastery FROM vocab_words
-          ORDER BY (book_id = ?1) DESC, created_at ASC, id ASC",
+          WHERE word = ?1 COLLATE NOCASE OR word = ?2 COLLATE NOCASE
+          ORDER BY (book_id = ?3) DESC, created_at ASC, id ASC",
     )?;
     let rows = stmt
-        .query_map(params![book_id], |row| {
+        .query_map(params![lookup_text.trim(), normalized, book_id], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -435,7 +435,6 @@ fn load_lookup_targets(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows
         .into_iter()
-        .filter(|(_, word, _)| normalize(word) == normalized)
         .filter_map(|(id, _, mastery)| {
             Tier::from_db_str(&mastery).map(|tier| VocabTarget { id, tier, mastery })
         })
