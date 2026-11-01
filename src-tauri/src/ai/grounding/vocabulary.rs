@@ -197,7 +197,15 @@ pub fn parse_candidates(raw: &str, batch: &VocabularyBatch) -> Vec<VocabularyCan
         if !normalized_contains(&chunk.text, quote) || !normalized_contains(quote, term) {
             continue;
         }
-        let key = item.lemma.as_deref().unwrap_or(term).trim().to_lowercase();
+        // A blank `lemma` is a model saying "same as the term", not a reason
+        // to drop a candidate that already quoted its source chunk.
+        let key = item
+            .lemma
+            .as_deref()
+            .map(str::trim)
+            .filter(|lemma| !lemma.is_empty())
+            .unwrap_or(term)
+            .to_lowercase();
         if key.is_empty() || !seen.insert(key) {
             continue;
         }
@@ -335,6 +343,23 @@ mod tests {
         let values = parse_candidates(raw, &batch);
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].term, "resilient");
+    }
+
+    #[test]
+    fn blank_lemma_keeps_the_candidate() {
+        let batch = VocabularyBatch {
+            index: 0,
+            chunks: vec![chunk("a", 0, "A resilient person endured hardship.", 8)],
+            token_estimate: 8,
+        };
+        // A model that has nothing to add for `lemma` sends "" rather than
+        // omitting the key. The candidate is otherwise fully traceable, so it
+        // must survive — deduping falls back to the term.
+        let raw = r#"{"items":[{"term":"resilient","lemma":"","quote":"A resilient person endured hardship.","chunkId":"a"}]}"#;
+        let values = parse_candidates(raw, &batch);
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].term, "resilient");
+        assert_eq!(values[0].lemma, None);
     }
 
     #[test]
