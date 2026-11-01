@@ -5,6 +5,7 @@ use tauri::State;
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::sync::events::EventBody;
+use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -137,11 +138,27 @@ pub fn rename_collection(
 pub(crate) fn do_delete_collection(id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
     let now = chrono::Utc::now().timestamp_millis();
     sync.with_tx(db, now, |tx, events| {
+        // Mirror `sync::merge::apply_collection_delete`: tombstone each join
+        // row so a delayed `collection.book.add` for the same pair stays
+        // suppressed, then the collection itself so a delayed
+        // `collection.create` cannot resurrect it on this device.
+        let book_ids: Vec<String> = {
+            let mut statement =
+                tx.prepare("SELECT book_id FROM collection_books WHERE collection_id = ?1")?;
+            let collected = statement
+                .query_map(params![id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            collected
+        };
+        for book_id in book_ids {
+            insert_tombstone(tx, entity::COLLECTION_BOOK, &format!("{id}:{book_id}"), now)?;
+        }
         tx.execute(
             "DELETE FROM collection_books WHERE collection_id = ?1",
             params![id],
         )?;
         tx.execute("DELETE FROM collections WHERE id = ?1", params![id])?;
+        insert_tombstone(tx, entity::COLLECTION, id, now)?;
         events.push(EventBody::CollectionDelete { id: id.to_string() });
         Ok(())
     })
@@ -227,6 +244,15 @@ pub(crate) fn do_remove_book_from_collection(
             params![collection_id, book_id],
         )?;
         if changed > 0 {
+            // Mirror `sync::merge::apply_collection_book_remove`: without the
+            // tombstone a late peer `collection.book.add` for the same pair
+            // would re-insert the row this command just removed.
+            insert_tombstone(
+                tx,
+                entity::COLLECTION_BOOK,
+                &format!("{collection_id}:{book_id}"),
+                now,
+            )?;
             events.push(EventBody::CollectionBookRemove {
                 collection: collection_id.to_string(),
                 book: book_id.to_string(),
@@ -258,4 +284,177 @@ pub fn list_books_in_collection(
         .query_map(params![collection_id], |row| row.get(0))?
         .collect::<Result<Vec<String>, _>>()?;
     Ok(book_ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::events::Event;
+    use crate::sync::merge::{apply_event, entity};
+    use rusqlite::params;
+    use tempfile::TempDir;
+
+    fn setup() -> (TempDir, Db, SyncWriter) {
+        let dir = TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".to_string());
+        (dir, db, sync)
+    }
+
+    fn insert_book(db: &Db, id: &str, title: &str) {
+        let conn = db.conn.lock().unwrap();
+        let now: i64 = 1_704_067_200_000;
+        conn.execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES (?1, ?2, 'Author', 'books/test.epub', 'reading', 0, ?3, ?3)",
+            params![id, title, now],
+        )
+        .unwrap();
+    }
+
+    fn insert_collection(db: &Db, id: &str, name: &str) {
+        let conn = db.conn.lock().unwrap();
+        let now: i64 = 1_704_067_200_000;
+        conn.execute(
+            "INSERT INTO collections (id, name, sort_order, created_at, updated_at)
+             VALUES (?1, ?2, 0, ?3, ?3)",
+            params![id, name, now],
+        )
+        .unwrap();
+    }
+
+    fn event(ts: i64, body: EventBody) -> Event {
+        Event {
+            id: format!("01HYZX0000000000000000{ts:04X}"),
+            ts,
+            device: "dev-B".to_string(),
+            v: crate::sync::events::EVENT_SCHEMA_VERSION,
+            body,
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn apply(db: &Db, body: EventBody, ts: i64) {
+        let mut conn = db.conn.lock().unwrap();
+        let tx = conn.transaction().unwrap();
+        apply_event(&tx, &event(ts, body)).unwrap();
+        tx.commit().unwrap();
+    }
+
+    fn collection_count(db: &Db, id: &str) -> i64 {
+        db.reader()
+            .query_row(
+                "SELECT COUNT(*) FROM collections WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn membership_count(db: &Db, collection_id: &str, book_id: &str) -> i64 {
+        db.reader()
+            .query_row(
+                "SELECT COUNT(*) FROM collection_books WHERE collection_id = ?1 AND book_id = ?2",
+                params![collection_id, book_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn delete_collection_tombstones_collection_and_memberships() {
+        let (_dir, db, sync) = setup();
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO collection_books (collection_id, book_id, created_at, updated_at)
+                 VALUES ('c1', 'b1', 1704067200000, 1704067200000)",
+                [],
+            )
+            .unwrap();
+        }
+
+        do_delete_collection("c1", &db, &sync).unwrap();
+        assert_eq!(collection_count(&db, "c1"), 0);
+        assert_eq!(membership_count(&db, "c1", "b1"), 0);
+
+        // A peer publishes the create/add before the delete; they arrive late.
+        apply(
+            &db,
+            EventBody::CollectionCreate {
+                id: "c1".to_string(),
+                name: "Favorites".to_string(),
+                sort_order: 0,
+            },
+            1_000,
+        );
+        apply(
+            &db,
+            EventBody::CollectionBookAdd {
+                collection: "c1".to_string(),
+                book: "b1".to_string(),
+            },
+            1_100,
+        );
+
+        assert_eq!(
+            collection_count(&db, "c1"),
+            0,
+            "deleted collection must stay deleted after a late peer create"
+        );
+        assert_eq!(
+            membership_count(&db, "c1", "b1"),
+            0,
+            "deleted collection's membership must stay deleted"
+        );
+    }
+
+    #[test]
+    fn remove_book_from_collection_tombstones_membership() {
+        let (_dir, db, sync) = setup();
+        insert_book(&db, "b1", "Book");
+        insert_collection(&db, "c1", "Favorites");
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO collection_books (collection_id, book_id, created_at, updated_at)
+                 VALUES ('c1', 'b1', 1704067200000, 1704067200000)",
+                [],
+            )
+            .unwrap();
+        }
+
+        do_remove_book_from_collection("c1", "b1", &db, &sync).unwrap();
+        assert_eq!(membership_count(&db, "c1", "b1"), 0);
+
+        // A peer's `collection.book.add` for the same pair arrives late.
+        apply(
+            &db,
+            EventBody::CollectionBookAdd {
+                collection: "c1".to_string(),
+                book: "b1".to_string(),
+            },
+            1_000,
+        );
+
+        assert_eq!(
+            membership_count(&db, "c1", "b1"),
+            0,
+            "removed book must not return to the collection on a late peer add"
+        );
+        let tombstoned: bool = db
+            .reader()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _tombstones WHERE entity = ?1 AND id = ?2)",
+                params![entity::COLLECTION_BOOK, "c1:b1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            tombstoned,
+            "the local removal must record a collection_book tombstone like replay does"
+        );
+    }
 }

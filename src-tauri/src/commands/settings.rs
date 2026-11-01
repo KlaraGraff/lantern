@@ -1,6 +1,6 @@
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ai::router::{self, AiCredentialView, AiProfileView};
@@ -704,11 +704,19 @@ pub fn list_reader_setting_conflicts(
     keys: Vec<String>,
     db: State<'_, Db>,
 ) -> AppResult<Vec<ReaderSettingConflict>> {
-    validate_reader_book_keys(&keys)?;
+    do_list_reader_setting_conflicts(&source_book_id, &keys, &db)
+}
+
+fn do_list_reader_setting_conflicts(
+    source_book_id: &str,
+    keys: &[String],
+    db: &Db,
+) -> AppResult<Vec<ReaderSettingConflict>> {
+    validate_reader_book_keys(keys)?;
     if keys.iter().any(|key| reader_global_key(key).is_none()) {
         return Err(AppError::Other("READER_SETTING_NOT_PROMOTABLE".to_string()));
     }
-    let wanted = keys.into_iter().collect::<HashSet<_>>();
+    let wanted = keys.iter().cloned().collect::<HashSet<_>>();
     let conn = db.reader();
     let mut stmt = conn.prepare(
         "SELECT b.id, b.title, COALESCE(b.author, ''), bs.key
@@ -725,24 +733,31 @@ pub fn list_reader_setting_conflicts(
             row.get::<_, String>(3)?,
         ))
     })?;
-    let mut conflicts: BTreeMap<String, ReaderSettingConflict> = BTreeMap::new();
+    // Ordered by the query — `lower(b.title), b.id` — not by id, which is what
+    // a map keyed on `id` would silently impose.
+    let mut conflicts: Vec<ReaderSettingConflict> = Vec::new();
+    let mut index: HashMap<String, usize> = HashMap::new();
     for row in rows {
         let (id, title, author, key) = row?;
         if !wanted.contains(&key) {
             continue;
         }
-        conflicts
-            .entry(id.clone())
-            .or_insert_with(|| ReaderSettingConflict {
-                id,
-                title,
-                author,
-                conflicting_keys: Vec::new(),
-            })
-            .conflicting_keys
-            .push(key);
+        let position = match index.get(&id) {
+            Some(position) => *position,
+            None => {
+                conflicts.push(ReaderSettingConflict {
+                    id: id.clone(),
+                    title,
+                    author,
+                    conflicting_keys: Vec::new(),
+                });
+                index.insert(id, conflicts.len() - 1);
+                conflicts.len() - 1
+            }
+        };
+        conflicts[position].conflicting_keys.push(key);
     }
-    Ok(conflicts.into_values().collect())
+    Ok(conflicts)
 }
 
 #[tauri::command]
@@ -967,7 +982,8 @@ fn set_book_setting_in_tx(
 #[cfg(test)]
 mod tests {
     use super::{
-        do_delete_book_settings, do_promote_book_settings_to_global, do_set_book_settings_bulk,
+        do_delete_book_settings, do_list_reader_setting_conflicts,
+        do_promote_book_settings_to_global, do_set_book_settings_bulk,
         do_undo_promote_book_settings, set_settings_bulk_inner, PromotedBookSetting,
         ReaderSettingsPromotionUndo,
     };
@@ -1776,6 +1792,48 @@ mod tests {
         assert!(do_undo_promote_book_settings(&foreign_book_key, &db, &sync).is_err());
         assert!(get_book_settings(&db, "book1").is_empty());
         assert_eq!(get_global_setting(&db, "ai_api_key"), None);
+    }
+
+    /// The confirm screen lists every other book holding an override. The
+    /// query orders by book title; the rows must come back in that order so a
+    /// reader scanning a long list sees books alphabetically, not by UUID.
+    #[test]
+    fn reader_setting_conflicts_follow_title_order() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+
+        // Ids deliberately anti-correlated with titles: sorting by id would
+        // put "Zulu Book" first.
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('book-a', 'Zulu Book', 'Author', 'books/z.epub', 'reading', 0, '2024-01-01', '2024-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('book-z', 'Alpha Book', 'Author', 'books/a.epub', 'reading', 0, '2024-01-01', '2024-01-01')",
+            [],
+        ).unwrap();
+        drop(conn);
+
+        for book in ["book-a", "book-z"] {
+            do_set_book_settings_bulk(
+                book,
+                &HashMap::from([("font_size".to_string(), "24".to_string())]),
+                &db,
+                &sync,
+            )
+            .unwrap();
+        }
+
+        let conflicts =
+            do_list_reader_setting_conflicts("book1", &["font_size".to_string()], &db).unwrap();
+        let titles: Vec<&str> = conflicts
+            .iter()
+            .map(|conflict| conflict.title.as_str())
+            .collect();
+        assert_eq!(titles, vec!["Alpha Book", "Zulu Book"]);
     }
 
     #[test]

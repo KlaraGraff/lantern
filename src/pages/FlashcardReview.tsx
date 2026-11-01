@@ -35,6 +35,7 @@ import {
 import { vocabSourceText } from "../components/vocab/source-label";
 import { pileKey, type ReviewPile, type ReviewPileKind } from "../components/review/review-piles";
 import { notifyReaders } from "../utils/notifyReaders";
+import { reviewKeyAction } from "./flashcards/review-keyboard";
 import { TOP_INSET } from "../utils/top-inset";
 
 type Rating = "again" | "hard" | "good" | "easy";
@@ -291,39 +292,25 @@ export default function FlashcardReview() {
   useEffect(() => {
     if (!reviewing && !done) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        goBack();
-        return;
-      }
       const target = event.target as HTMLElement | null;
-      // The hint key is checked before the "focus is on a control" guard
-      // below: the reveal button holds focus by default, and H does nothing
-      // native on a button, so deferring there would make the advertised
-      // shortcut dead exactly where the reader starts. Typing targets are
-      // still excluded.
-      if (
-        reviewing
-        && !reviewAnswerVisible
-        && !event.metaKey && !event.ctrlKey && !event.altKey
-        && (event.key === "h" || event.key === "H")
-        && !target?.closest("input, select, textarea, [contenteditable='true']")
-      ) {
-        event.preventDefault();
-        revealReviewHint();
-        return;
-      }
-      if (target?.closest("button, input, select, textarea, [contenteditable='true']")) return;
-      if (reviewing && !reviewAnswerVisible && event.code === "Space") {
-        event.preventDefault();
-        setReviewAnswerVisible(true);
-        return;
-      }
-      if (reviewing && reviewAnswerVisible && !reviewSubmitting && /^[1-4]$/.test(event.key)) {
-        const ratings = ["again", "hard", "good", "easy"] as const;
-        event.preventDefault();
-        void completeReview(ratings[Number(event.key) - 1]);
-      }
+      // The advertised shortcuts are decided in `reviewKeyAction`, which puts
+      // the keys that do nothing native on a button ahead of the
+      // "focus is on a control" guard: the reveal button and the rating
+      // buttons hold focus by default, so anything deferred behind that guard
+      // would be dead exactly where the reader starts.
+      const action = reviewKeyAction(event, {
+        reviewing: reviewing !== null,
+        answerVisible: reviewAnswerVisible,
+        submitting: reviewSubmitting,
+        onControl: Boolean(target?.closest("button, input, select, textarea, [contenteditable='true']")),
+        onTextEntry: Boolean(target?.closest("input, select, textarea, [contenteditable='true']")),
+      });
+      if (!action) return;
+      event.preventDefault();
+      if (action.kind === "back") goBack();
+      else if (action.kind === "hint") revealReviewHint();
+      else if (action.kind === "reveal") setReviewAnswerVisible(true);
+      else void completeReview(action.rating);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

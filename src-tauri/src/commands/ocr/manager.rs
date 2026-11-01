@@ -416,7 +416,9 @@ fn automatic_jobs() -> i32 {
         let physical = sysctl_u64("hw.physicalcpu");
         let available_memory = available_memory_bytes();
         if let (Some(physical), Some(available_memory)) = (physical, available_memory) {
-            return jobs_for_resources(physical, available_memory);
+            // `ocr_jobs.jobs` and the backend request only accept 1..=4 workers;
+            // a value above that makes `create_job` reject the whole job.
+            return jobs_for_resources(physical, available_memory).clamp(1, 4);
         }
     }
     1
@@ -770,6 +772,44 @@ mod tests {
 
         assert_eq!(jobs_for_resources(18, 6 * gib), 4);
         assert_eq!(jobs_for_resources(18, 4 * gib), 1);
+    }
+
+    #[test]
+    fn automatic_jobs_is_accepted_by_job_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books (
+                     id, title, author, file_path, format, source_format,
+                     source_file_path, source_sha256, status, progress,
+                     created_at, updated_at
+                 ) VALUES (
+                     'book-1', 'Scanned', 'Author', 'books/source.pdf', 'pdf',
+                     'pdf', 'books/source.pdf', 'source-hash', 'unread', 0, 1, 1
+                 )",
+                [],
+            )
+            .unwrap();
+        }
+        let conn = db.conn.lock().unwrap();
+        let job = create_job(
+            &conn,
+            NewOcrJob {
+                book_id: "book-1",
+                source_sha256: "source-hash",
+                backend: Some("ocrmypdf"),
+                backend_version: None,
+                language_profile: "chi_sim+eng",
+                quality_profile: "fast",
+                jobs: automatic_jobs(),
+                conversion_version: 1,
+                created_at: 2,
+            },
+        )
+        .expect("the worker count automatic_jobs() picks must be storable in ocr_jobs");
+        assert!(job.jobs.is_some_and(|jobs| (1..=4).contains(&jobs)));
     }
 
     #[test]

@@ -374,8 +374,13 @@ impl OcrBackend for OcrmypdfBackend {
 }
 
 fn runtime_executable(root: &Path) -> AppResult<PathBuf> {
-    let candidates: &[&str] = if cfg!(windows) {
+    runtime_executable_for(root, cfg!(windows))
+}
+
+fn runtime_executable_for(root: &Path, windows: bool) -> AppResult<PathBuf> {
+    let candidates: &[&str] = if windows {
         &[
+            "bin/lantern-ocr.exe",
             "lantern-ocr.cmd",
             "bin/ocrmypdf.exe",
             "Scripts/ocrmypdf.exe",
@@ -1002,6 +1007,23 @@ mod tests {
             &mut |_| {},
             &CancellationToken::default(),
         )
+    }
+
+    #[test]
+    fn installed_windows_launcher_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::write(root.join("bin/lantern-ocr.exe"), b"launcher").unwrap();
+        assert_eq!(
+            runtime_executable_for(root, true).unwrap(),
+            root.join("bin/lantern-ocr.exe")
+        );
+        fs::write(root.join("bin/lantern-ocr"), b"launcher").unwrap();
+        assert_eq!(
+            runtime_executable_for(root, false).unwrap(),
+            root.join("bin/lantern-ocr")
+        );
     }
 
     #[test]
