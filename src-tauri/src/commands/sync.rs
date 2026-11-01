@@ -600,6 +600,42 @@ pub async fn sync_disable(
     Ok(())
 }
 
+/// Stop this session's sync for 重置全部数据: no more ticks, no more
+/// publishing. Unlike `sync_disable` it copies nothing back and touches
+/// nothing in the shared folder — the reset leaves the iCloud copy as it is,
+/// and the local files it would copy into are about to be wiped.
+pub(crate) fn stop_for_reset(
+    local_dir: &Path,
+    sync_writer: &SyncWriter,
+    sync_state: &SyncState,
+) -> AppResult<()> {
+    let old_watcher = sync_state
+        .watcher
+        .lock()
+        .map_err(|e| AppError::Other(format!("watcher mutex: {e}")))?
+        .take();
+    if let Some(watcher) = old_watcher.as_ref() {
+        watcher.request_stop();
+    }
+    if let Some(engine) = sync_state.engine_snapshot()? {
+        engine.cancel();
+    }
+    drop(old_watcher);
+    replay::tick_mutex_wait();
+    *sync_state
+        .engine
+        .lock()
+        .map_err(|e| AppError::Other(format!("engine mutex: {e}")))? = None;
+    sync_writer.set_log(None);
+    sync_writer.set_should_queue(false);
+    sync_writer.set_cover_tx(None);
+    sync_writer.set_flush_tx(None);
+    if sync::migration::is_sync_enabled(local_dir) {
+        sync::migration::set_sync_enabled(local_dir, false)?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn sync_cancel(app: tauri::AppHandle, sync_state: State<'_, SyncState>) -> AppResult<()> {
     if let Some(engine) = sync_state.engine_snapshot()? {
@@ -1096,6 +1132,32 @@ fn icloud_real_from_placeholder(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn stop_for_reset_turns_sync_off_and_leaves_the_shared_folder_alone() {
+        let tmp = TempDir::new().unwrap();
+        let local = tmp.path().join("local");
+        let shared = tmp.path().join("shared");
+        fs::create_dir_all(&local).unwrap();
+        fs::create_dir_all(shared.join("books")).unwrap();
+        fs::write(shared.join("books/a.epub"), b"book").unwrap();
+        sync::migration::write_sync_settings(&local, Some(&shared)).unwrap();
+
+        let writer = SyncWriter::new("dev-reset".into());
+        let log = EventLog::open(&shared.join("logs/dev-reset.jsonl"), "dev-reset", false).unwrap();
+        writer.set_log(Some(Arc::new(log)));
+        writer.set_should_queue(true);
+        let state = SyncState::new(None, None);
+
+        stop_for_reset(&local, &writer, &state).unwrap();
+
+        assert!(!sync::migration::is_sync_enabled(&local));
+        assert!(!writer.is_sync_enabled());
+        assert!(state.engine_snapshot().unwrap().is_none());
+        assert_eq!(fs::read(shared.join("books/a.epub")).unwrap(), b"book");
+        // Idempotent: a second press after a failed relaunch is harmless.
+        stop_for_reset(&local, &writer, &state).unwrap();
+    }
 
     #[test]
     fn move_dir_contents_skips_missing_src() {

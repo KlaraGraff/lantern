@@ -1,8 +1,11 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::commands::sync::{stop_for_reset, SyncState};
+use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::resolve_log_dir;
+use crate::sync::writer::SyncWriter;
+use crate::{reset, resolve_log_dir, sync, LocalDir};
 
 const MAX_WEBVIEW_LOG_SCOPE_CHARS: usize = 96;
 // Wide enough for a reader diagnostic line to carry a JS stack or the runtime
@@ -70,4 +73,48 @@ pub fn log_webview_warning(scope: String, message: String) {
         .take(MAX_WEBVIEW_LOG_MESSAGE_CHARS)
         .collect();
     log::warn!("webview fallback [{scope}]: {message}");
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetDataSummary {
+    pub book_count: i64,
+    pub sync_enabled: bool,
+}
+
+/// What the first 重置全部数据 step lists: how many books go, and whether
+/// to explain that sync is switched off first.
+#[tauri::command]
+pub fn reset_data_summary(
+    db: State<'_, Db>,
+    local: State<'_, LocalDir>,
+) -> AppResult<ResetDataSummary> {
+    let book_count = db
+        .reader()
+        .query_row("SELECT COUNT(*) FROM books", [], |row| row.get(0))?;
+    Ok(ResetDataSummary {
+        book_count,
+        sync_enabled: sync::migration::is_sync_enabled(&local.0),
+    })
+}
+
+/// Turn sync off for this session and mark the data for wiping. The wipe
+/// itself runs at the start of the next launch (see `reset`); the frontend
+/// relaunches the app as soon as this returns.
+#[tauri::command(async)]
+pub fn reset_all_data(
+    confirmation: String,
+    local: State<'_, LocalDir>,
+    sync_writer: State<'_, SyncWriter>,
+    sync_state: State<'_, SyncState>,
+) -> AppResult<()> {
+    // The typed word travels with the request, so nothing that merely can
+    // call commands sets the marker without the second confirmation.
+    if confirmation.trim() != "RESET" {
+        return Err(AppError::Other("RESET_NOT_CONFIRMED".into()));
+    }
+    log::warn!("reset: 重置全部数据 requested");
+    let _transition = sync_writer.begin_transition()?;
+    stop_for_reset(&local.0, &sync_writer, &sync_state)?;
+    reset::request(&local.0)
 }
