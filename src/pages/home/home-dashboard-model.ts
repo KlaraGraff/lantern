@@ -64,10 +64,18 @@ export function minutesLeft(totalTokens: number | null | undefined, progress: nu
 export type LastRead = { kind: "today" } | { kind: "yesterday" } | { kind: "daysAgo"; days: number };
 
 export function lastReadOf(at: number, now: Date): LastRead {
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (at >= startOfToday) return { kind: "today" };
-  if (at >= startOfToday - DAY_MS) return { kind: "yesterday" };
-  return { kind: "daysAgo", days: Math.max(2, Math.ceil((startOfToday - at) / DAY_MS)) };
+  const startOfDay = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset).getTime();
+  if (at >= startOfDay(0)) return { kind: "today" };
+  // Local midnights, not fixed 24-hour spans: a local day is 23 or 25 hours
+  // long at a DST change, so subtracting `DAY_MS` makes the night before read
+  // as "2 days ago" twice a year.
+  if (at >= startOfDay(1)) return { kind: "yesterday" };
+  return { kind: "daysAgo", days: Math.max(2, localDayNumber(now) - localDayNumber(new Date(at))) };
+}
+
+/** A day counter with no DST in it: the local calendar date, read as if it were UTC. */
+function localDayNumber(date: Date): number {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS);
 }
 
 export interface LookupLike {

@@ -176,9 +176,9 @@ export default function ReadingSettings({
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(getDefaultReaderTheme());
   const [customTheme, setCustomTheme] = useState<ReaderCustomTheme>(() => parseReaderCustomTheme(null));
   const [readerBackground, setReaderBackground] = useState<ReaderBackground | null>(null);
-  const [fontFamily, setFontFamily] = useState("georgia");
+  const [fontFamily, setFontFamily] = useState(() => createDefaultReaderSettings().font);
   const [cjkFontFamily, setCjkFontFamily] = useState("system");
-  const [fontSize, setFontSize] = useState(26);
+  const [fontSize, setFontSize] = useState(() => createDefaultReaderSettings().fontSize);
   const [narrowFontShrink, setNarrowFontShrink] = useState(true);
   const [lineSpacing, setLineSpacing] = useState<LineSpacing>("auto");
   const [charSpacing, setCharSpacing] = useState(0);
@@ -187,19 +187,19 @@ export default function ReadingSettings({
   const [textJustification, setTextJustification] = useState(
     () => createDefaultReaderSettings().textJustification,
   );
-  const [paragraphSpacing, setParagraphSpacing] = useState<ParagraphSpacing>("original");
+  const [paragraphSpacing, setParagraphSpacing] = useState<ParagraphSpacing>(() => createDefaultReaderSettings().paragraphSpacing);
   const [firstLineIndent, setFirstLineIndent] = useState(false);
   // Same default as `createDefaultReaderSettings()` — read from there instead
   // of a second hard-coded number, so the pre-hydration row and the reader's
   // own default cannot drift apart.
   const [margins, setMargins] = useState(() => createDefaultReaderSettings().margins);
-  const [readingMode, setReadingMode] = useState<ReadingMode>("scrolling");
+  const [readingMode, setReadingMode] = useState<ReadingMode>(() => createDefaultReaderSettings().readingMode);
   const [pageLayout, setPageLayout] = useState<"1" | "2">("2");
   const [pageTurnAnimation, setPageTurnAnimation] = useState<PageTurnAnimation>("slide");
   const [oneHandMode, setOneHandMode] = useState(false);
   const [edgePeek, setEdgePeek] = useState(true);
   const [showChapterProgress, setShowChapterProgress] = useState(true);
-  const [showBookProgress, setShowBookProgress] = useState(false);
+  const [showBookProgress, setShowBookProgress] = useState(() => createDefaultReaderSettings().showBookProgress);
   const [showPageNumbers, setShowPageNumbers] = useState(false);
   const [previousPageBinding, setPreviousPageBinding] = useState(DEFAULT_PREVIOUS_PAGE_BINDING);
   const [nextPageBinding, setNextPageBinding] = useState(DEFAULT_NEXT_PAGE_BINDING);
