@@ -106,3 +106,29 @@ export function buildCommandSpecs(options: {
       .map((section): CommandSpec => ({ id: `cmd:settings:${section}`, kind: "settings", section })),
   ];
 }
+
+export interface PaletteChapter {
+  title: string;
+  /** 1-based, as the TOC numbers it. */
+  page: number;
+  depth: number;
+  disabled?: boolean;
+}
+
+/**
+ * The reader window's ⌘K list. Empty, the whole table of contents in book
+ * order, so the arrow keys walk it like the TOC; typed, the matches best
+ * first, ties in book order. Entries the engine cannot navigate to are left
+ * out — a row that does nothing on ↵ reads as a broken palette.
+ */
+export function chapterMatches(chapters: readonly PaletteChapter[], query: string, limit = 50): PaletteChapter[] {
+  const reachable = chapters.filter((chapter) => !chapter.disabled && chapter.title.trim());
+  if (!query.trim()) return reachable;
+  return rankByMatch(reachable, query, (chapter) => chapter.title, limit);
+}
+
+/** Where the highlight starts: the current chapter when it is listed, else the top. */
+export function initialChapterIndex(rows: readonly PaletteChapter[], currentPage: number): number {
+  const at = rows.findIndex((chapter) => chapter.page === currentPage);
+  return at < 0 ? 0 : at;
+}

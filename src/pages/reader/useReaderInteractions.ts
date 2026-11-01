@@ -117,6 +117,8 @@ interface ReaderInteractionsOptions {
    * alone cannot catch it inside a foliate chapter's iframe.
    */
   onOpenSearch(): void;
+  /** ⌘K / Ctrl+K — the chapter palette, bound inside each chapter document for the same reason. */
+  onOpenChapterPalette(): void;
   /**
    * A bare Esc inside a chapter document, handed to the reader so the same
    * one-layer-per-press order applies wherever focus happens to be.
@@ -175,6 +177,7 @@ export function useReaderInteractions({
   handleReaderBinding,
   onReturnJump,
   onOpenSearch,
+  onOpenChapterPalette,
   onEscape,
 }: ReaderInteractionsOptions) {
   const installDocumentInteractions = useCallback(({
@@ -616,12 +619,19 @@ export function useReaderInteractions({
         (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
         && (event.key === "f" || event.key === "F")
       );
+      const isChapterPaletteShortcut = (
+        (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+        && (event.key === "k" || event.key === "K")
+      );
       if (isReturnJumpShortcut) {
         event.preventDefault();
         onReturnJump();
       } else if (isSearchShortcut) {
         event.preventDefault();
         onOpenSearch();
+      } else if (isChapterPaletteShortcut) {
+        event.preventDefault();
+        onOpenChapterPalette();
       } else if (
         event.key === "Escape" && !event.repeat
         && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
@@ -986,6 +996,7 @@ export function useReaderInteractions({
     handleZoomFit,
     onReturnJump,
     onOpenSearch,
+    onOpenChapterPalette,
     onEscape,
     openLearningInteraction,
     pendingSelectionMenuRef,

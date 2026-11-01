@@ -37,6 +37,7 @@ import OcrReaderHud from "../components/OcrReaderHud";
 import TranslationPopover from "../components/TranslationPopover";
 import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
+import ReaderChapterPalette from "../components/command-palette/ReaderChapterPalette";
 import BookSearchPanel from "../components/BookSearchPanel";
 import { parseTocSavedState, type TocSavedState } from "../components/toc-state";
 import TextBookReader from "../components/TextBookReader";
@@ -400,6 +401,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
+  const [chapterPaletteOpen, setChapterPaletteOpen] = useState(false);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
   const [chapterProgress, setChapterProgress] = useState(0);
@@ -1257,7 +1259,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     readerViewportRef,
     panelRef,
     // Cards are meant to stay open while reading, so they do not block paging.
-    overlayOpen: Boolean(settingsOpen || contextMenu || translation || customAction),
+    overlayOpen: Boolean(settingsOpen || contextMenu || translation || customAction || chapterPaletteOpen),
     sidePanelOpen: Boolean(sidePanel),
     turnPage: turnReaderPage,
     onPdfZoom: handleZoom,
@@ -1796,6 +1798,24 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setSettingsOpen(false);
     setSearchFocusToken((token) => token + 1);
   }, [supportsSearch, setSearchOpen, setTocOpen]);
+  // ⌘K / Ctrl+K — chapter jumps. Toggles, like the library palette; a book
+  // with no navigable chapter has nothing to offer, so the key stays inert.
+  const handleToggleChapterPalette = useCallback(() => {
+    // The ref, not the state: this handler is bound into every chapter
+    // document, and a changing identity would re-bind them.
+    if (!chaptersRef.current.some((chapter) => chapter.targetHref)) return;
+    setChapterPaletteOpen((open) => !open);
+  }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || event.shiftKey || event.altKey) return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      event.preventDefault();
+      handleToggleChapterPalette();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleToggleChapterPalette]);
   const installDocumentInteractions = useReaderInteractions({
     supportsSelection,
     pendingSelectionMenuRef,
@@ -1824,6 +1844,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     handleReaderBinding,
     onReturnJump: handleJumpBack,
     onOpenSearch: handleOpenSearch,
+    onOpenChapterPalette: handleToggleChapterPalette,
     onEscape: forwardEscape,
   });
 
@@ -3758,6 +3779,14 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       }) && (
         <ReaderZoneGuide oneHand={oneHandMode} onDismiss={dismissZoneGuide} />
       )}
+
+      <ReaderChapterPalette
+        open={chapterPaletteOpen}
+        chapters={tocChapters}
+        currentPage={currentChapterIndex + 1}
+        onJump={handleTocNavigate}
+        onClose={() => setChapterPaletteOpen(false)}
+      />
 
       {bookId && book && <ReaderExportDialog
         open={exportOpen}
