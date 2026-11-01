@@ -34,8 +34,13 @@ interface ReaderChapterPanelProps {
   bookId: string;
   chapterTitle?: string;
   scope: ChapterScope;
-  /** The spine section being read; people first named after it stay hidden. */
-  currentSection?: number;
+  /**
+   * The reader's live position, read when `positionKey` changes: people first
+   * named past it stay hidden. Absent, there is no people section.
+   */
+  readPosition?: () => { location: string | null; viewportText?: string };
+  /** Changes as the reader moves on (section, whole percent). */
+  positionKey?: string;
   onNavigate: (cfi: string) => void;
   onOpenChat: (chatId: string) => void;
   /** The whole-book lists, which used to be this card's tabs. */
@@ -53,7 +58,8 @@ export default function ReaderChapterPanel({
   bookId,
   chapterTitle,
   scope,
-  currentSection,
+  readPosition,
+  positionKey,
   onNavigate,
   onOpenChat,
   onShowWholeBook,
@@ -67,18 +73,23 @@ export default function ReaderChapterPanel({
   const [people, setPeople] = useState<PersonSoFar[]>([]);
   const [showAllEarlier, setShowAllEarlier] = useState(false);
 
-  // A book without a name index (not indexed yet, or the feature off) simply
-  // has no people section.
   useEffect(() => {
     setPeople([]);
     setShowAllEarlier(false);
-    if (currentSection === undefined) return;
+  }, [bookId]);
+
+  // A book without a name index (not indexed yet, or the feature off) simply
+  // has no people section. The previous list stays up until the new one
+  // arrives, so turning a page does not blink the section.
+  useEffect(() => {
+    if (!readPosition) return;
     let cancelled = false;
-    invoke<PersonSoFar[]>("list_people_so_far", { bookId, sectionIndex: currentSection })
+    const { location, viewportText } = readPosition();
+    invoke<PersonSoFar[]>("list_people_so_far", { bookId, location, viewportText: viewportText ?? null })
       .then((rows) => { if (!cancelled) setPeople(rows); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [bookId, currentSection]);
+  }, [bookId, readPosition, positionKey]);
 
   useEffect(() => {
     let controller = new AbortController();

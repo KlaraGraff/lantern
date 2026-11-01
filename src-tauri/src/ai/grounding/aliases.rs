@@ -121,46 +121,107 @@ pub fn list_person_aliases(conn: &Connection, book_id: &str) -> AppResult<Vec<Al
     Ok(groups)
 }
 
-/// One person the reader has already met by a given spine section, for the
-/// reader's 「本章」 card. `mentions_in_section` counts the chunks in that one
-/// section that name them — the card's own "so far in this chapter" weight,
-/// not the book-wide `mentions` column.
+/// One person the reader has already met, for the reader's 「本章」 card.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonSoFar {
     pub canonical: String,
     pub first_section: i64,
-    pub mentions_in_section: i64,
 }
 
-/// Everyone named in this book's `kind = 'name'` rows whose first appearance
-/// is in `section_index` or earlier, ordered the way the chapter card reads:
-/// earliest first appearance, then the reading position of that appearance,
-/// then canonical.
+/// Where a person is first named: the first chunk, in reading order, that
+/// carries any of their names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FirstAppearance {
+    canonical: String,
+    section: i64,
+    chunk_index: i64,
+    char_end: Option<i64>,
+}
+
+/// What a cached scan was computed from. Any alias write or reindex moves one
+/// of these, so a stale entry is never served.
+type Fingerprint = (i64, i64, i64, i64);
+
+type AppearanceCache = HashMap<String, (Fingerprint, std::sync::Arc<Vec<FirstAppearance>>)>;
+
+static FIRST_APPEARANCES: std::sync::LazyLock<std::sync::Mutex<AppearanceCache>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn appearance_fingerprint(conn: &Connection, book_id: &str) -> AppResult<Fingerprint> {
+    let (alias_count, alias_latest) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM book_person_aliases WHERE book_id = ?1 AND kind = 'name'",
+        params![book_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let (chunk_count, chunk_latest) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM book_chunks WHERE book_id = ?1",
+        params![book_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok((alias_count, alias_latest, chunk_count, chunk_latest))
+}
+
+/// Everyone the reader has met by `cutoff` — the same cutoff the AI's
+/// "unread pages" guard uses (`spoiler::cutoff_for_position`, narrowed to the
+/// visible chunk for EPUB) — ordered by first appearance, then canonical. A
+/// person counts as met only when the chunk that first names them is wholly
+/// inside what `cutoff` admits, so a name further down the current page or
+/// section never shows early.
 ///
 /// A person's names are the canonical plus all of their aliases; a chunk
 /// names them when any of those occurs in it under the exact rule
-/// `alias_occurs_in_book` uses (`find_unconsumed_match`, word boundaries and
-/// case-insensitivity included, so "Young" matches neither "younger" nor
-/// "Younger"). `description` rows are not names and are ignored, as are other
-/// books' rows.
+/// `alias_occurs_in_book` uses (`find_unconsumed_match`: word boundaries,
+/// case-insensitive, so "Young" matches neither "younger" nor "Younger").
+/// `description` rows are not names and are ignored, as are other books'.
 ///
-/// The chunks are read once, in `chunk_index` order, and every person is
-/// checked against each — never one SELECT per name, which at ~3000 chunks
-/// and ~100 names would be two orders of magnitude more I/O than this needs.
-pub fn people_through_section(
+/// The full-book scan runs once per book and is cached until the aliases or
+/// the index change; each call after that is a filter over the cached list.
+pub fn people_met(
     conn: &Connection,
     book_id: &str,
-    section_index: i64,
+    cutoff: super::retrieve::SpoilerCutoff,
 ) -> AppResult<Vec<PersonSoFar>> {
+    let fingerprint = appearance_fingerprint(conn, book_id)?;
+    // Keyed by database file too: tests run many databases in one process.
+    let cache_key = format!("{}\u{0}{book_id}", conn.path().unwrap_or_default());
+    let cached = FIRST_APPEARANCES.lock().ok().and_then(|cache| {
+        cache
+            .get(book_id)
+            .filter(|(at, _)| *at == fingerprint)
+            .map(|(_, list)| list.clone())
+    });
+    let appearances = match cached {
+        Some(list) => list,
+        None => {
+            let list = std::sync::Arc::new(first_appearances(conn, book_id)?);
+            if let Ok(mut cache) = FIRST_APPEARANCES.lock() {
+                cache.insert(cache_key, (fingerprint, list.clone()));
+            }
+            list
+        }
+    };
+    Ok(appearances
+        .iter()
+        .filter(|first| {
+            cutoff.allows_complete_chunk_at(first.section, first.chunk_index, first.char_end)
+        })
+        .map(|first| PersonSoFar {
+            canonical: first.canonical.clone(),
+            first_section: first.section,
+        })
+        .collect())
+}
+
+/// The scan behind `people_met`: chunks read once in `chunk_index` order,
+/// every person checked against each — never one SELECT per name.
+fn first_appearances(conn: &Connection, book_id: &str) -> AppResult<Vec<FirstAppearance>> {
     struct Progress {
         canonical: String,
-        /// `(lowercased name, its chars)` — lowered once here so the per-chunk
-        /// scan neither re-lowercases a name nor allocates for it.
+        /// `(lowercased name, its chars)`, lowered once rather than per chunk.
         names: Vec<(String, Vec<char>)>,
-        /// `(section_index, chunk_index)` of the chunk that first names them.
-        first: Option<(i64, i64)>,
-        mentions_in_section: i64,
+        /// `(section_index, chunk_index, char_end)` of the first naming chunk.
+        first: Option<(i64, i64, Option<i64>)>,
     }
 
     let mut groups: Vec<(String, Vec<String>)> = Vec::new();
@@ -194,76 +255,71 @@ pub fn people_through_section(
             let chars = lowered.chars().collect();
             names.push((lowered, chars));
         }
-        if names.is_empty() {
-            continue;
+        if !names.is_empty() {
+            people.push(Progress {
+                canonical,
+                names,
+                first: None,
+            });
         }
-        people.push(Progress {
-            canonical,
-            names,
-            first: None,
-            mentions_in_section: 0,
-        });
     }
     if people.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut statement = conn.prepare(
-        "SELECT section_index, chunk_index, text FROM book_chunks
+        "SELECT section_index, chunk_index, char_end, text FROM book_chunks
          WHERE book_id = ?1 ORDER BY chunk_index",
     )?;
     let mut rows = statement.query(params![book_id])?;
     while let Some(row) = rows.next()? {
         let section: i64 = row.get(0)?;
         let chunk_index: i64 = row.get(1)?;
-        let text: String = row.get(2)?;
+        let char_end: Option<i64> = row.get(2)?;
+        let text: String = row.get(3)?;
         let lowered = text.to_lowercase();
         let chars: Vec<char> = lowered.chars().collect();
-        // One all-false array shared by every name in this chunk: the
-        // matching never consumes anything, it only asks whether a name
-        // occurs at all.
+        // Nothing is ever consumed: the question is only whether a name occurs.
         let consumed = vec![false; chars.len()];
         for person in &mut people {
-            // The `contains` check is the in-memory equivalent of
-            // `chunks_containing`'s `LIKE` pre-filter; the boundary verdict
-            // is still `find_unconsumed_match`'s.
+            // Rows arrive in `chunk_index` order, which normally runs with the
+            // spine but is not promised to — hence the comparison, not "first seen".
+            if person.first.is_some_and(|(first_section, first_chunk, _)| {
+                (first_section, first_chunk) <= (section, chunk_index)
+            }) {
+                continue;
+            }
+            // `contains` is the in-memory version of `chunks_containing`'s
+            // LIKE pre-filter; the boundary verdict is `find_unconsumed_match`'s.
             let mentions = person.names.iter().any(|(name, needle)| {
                 lowered.contains(name.as_str())
                     && find_unconsumed_match(&chars, needle, &consumed).is_some()
             });
-            if !mentions {
-                continue;
-            }
-            // `min`, not "first seen": rows arrive in `chunk_index` order,
-            // which normally runs with the spine but is not promised to.
-            if person.first.is_none_or(|(first_section, first_chunk)| {
-                (section, chunk_index) < (first_section, first_chunk)
-            }) {
-                person.first = Some((section, chunk_index));
-            }
-            if section == section_index {
-                person.mentions_in_section += 1;
+            if mentions {
+                person.first = Some((section, chunk_index, char_end));
             }
         }
     }
 
-    let mut people: Vec<Progress> = people
+    let mut found: Vec<FirstAppearance> = people
         .into_iter()
-        .filter(|person| person.first.is_some_and(|(first, _)| first <= section_index))
+        .filter_map(|person| {
+            person
+                .first
+                .map(|(section, chunk_index, char_end)| FirstAppearance {
+                    canonical: person.canonical,
+                    section,
+                    chunk_index,
+                    char_end,
+                })
+        })
         .collect();
-    people.sort_by(|a, b| {
-        a.first
-            .cmp(&b.first)
+    found.sort_by(|a, b| {
+        (a.section, a.chunk_index)
+            .cmp(&(b.section, b.chunk_index))
             .then_with(|| a.canonical.cmp(&b.canonical))
     });
-    Ok(people
-        .into_iter()
-        .map(|person| PersonSoFar {
-            canonical: person.canonical,
-            first_section: person.first.map_or(0, |(first, _)| first),
-            mentions_in_section: person.mentions_in_section,
-        })
-        .collect())
+    Ok(found)
 }
 
 /// How many `book_chunks` a string appears in verbatim. Doubles as the
@@ -2034,6 +2090,7 @@ pub fn resolve_descriptions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::grounding::retrieve::SpoilerCutoff;
     use crate::db::Db;
 
     fn setup() -> (tempfile::TempDir, Db) {
@@ -3404,15 +3461,74 @@ mod tests {
     }
 
     fn people(db: &Db, book_id: &str, section: i64) -> Vec<PersonSoFar> {
-        people_through_section(&db.reader(), book_id, section).unwrap()
+        people_met(&db.reader(), book_id, SpoilerCutoff::Section(section)).unwrap()
     }
 
-    fn person(canonical: &str, first_section: i64, mentions_in_section: i64) -> PersonSoFar {
+    fn person(canonical: &str, first_section: i64) -> PersonSoFar {
         PersonSoFar {
             canonical: canonical.to_string(),
             first_section,
-            mentions_in_section,
         }
+    }
+
+    #[test]
+    fn people_so_far_hides_a_name_further_down_the_current_section() {
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Mr. Bennet", "Mr. Bennet", "auto", 1);
+        insert_alias(&db, "b1", "Wickham", "Wickham", "auto", 1);
+        insert_chunk_at(&db, "b1", 0, 5, "Mr. Bennet read his paper.");
+        insert_chunk_at(&db, "b1", 1, 5, "Then Wickham arrived.");
+        let at = |chunk_index| {
+            people_met(
+                &db.reader(),
+                "b1",
+                SpoilerCutoff::SectionPrefix {
+                    section: 5,
+                    chunk_index,
+                },
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            at(-1),
+            Vec::new(),
+            "position unknown inside the section: nobody from it"
+        );
+        assert_eq!(at(0), vec![person("Mr. Bennet", 5)]);
+        assert_eq!(at(1), vec![person("Mr. Bennet", 5), person("Wickham", 5)]);
+    }
+
+    #[test]
+    fn people_so_far_in_a_text_book_stop_at_the_read_cursor() {
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Jane", "Jane", "auto", 1);
+        insert_alias(&db, "b1", "Lydia", "Lydia", "auto", 1);
+        insert_chunk_at(&db, "b1", 0, 0, "Jane smiled.");
+        insert_chunk_at(&db, "b1", 1, 0, "Lydia ran off.");
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE book_chunks SET char_end = (chunk_index + 1) * 100 WHERE book_id = 'b1'",
+                [],
+            )
+            .unwrap();
+        let at = |offset| people_met(&db.reader(), "b1", SpoilerCutoff::Character(offset)).unwrap();
+        assert_eq!(at(150), vec![person("Jane", 0)]);
+        assert_eq!(at(200), vec![person("Jane", 0), person("Lydia", 0)]);
+    }
+
+    #[test]
+    fn people_so_far_cache_follows_a_new_alias() {
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Jane", "Jane", "auto", 1);
+        insert_chunk_at(&db, "b1", 0, 0, "Jane and Kitty talked.");
+        assert_eq!(people(&db, "b1", 0), vec![person("Jane", 0)]);
+        insert_alias(&db, "b1", "Kitty", "Kitty", "auto", 2);
+        assert_eq!(
+            people(&db, "b1", 0),
+            vec![person("Jane", 0), person("Kitty", 0)]
+        );
     }
 
     #[test]
@@ -3422,8 +3538,8 @@ mod tests {
         insert_chunk_at(&db, "b1", 0, 1, "The room was empty.");
         insert_chunk_at(&db, "b1", 1, 2, "Mr. Darcy entered.");
         assert_eq!(people(&db, "b1", 1), Vec::new());
-        assert_eq!(people(&db, "b1", 2), vec![person("Mr. Darcy", 2, 1)]);
-        assert_eq!(people(&db, "b1", 3), vec![person("Mr. Darcy", 2, 0)]);
+        assert_eq!(people(&db, "b1", 2), vec![person("Mr. Darcy", 2)]);
+        assert_eq!(people(&db, "b1", 3), vec![person("Mr. Darcy", 2)]);
     }
 
     #[test]
@@ -3431,11 +3547,17 @@ mod tests {
         let (_dir, db) = setup();
         insert_alias(&db, "b1", "Mr. Darcy", "Fitzwilliam", "auto", 1);
         insert_alias(&db, "b1", "Young", "Young", "auto", 1);
-        insert_chunk_at(&db, "b1", 0, 0, "Fitzwilliam was not yet named. The younger one, Young, smiled.");
+        insert_chunk_at(
+            &db,
+            "b1",
+            0,
+            0,
+            "Fitzwilliam was not yet named. The younger one, Young, smiled.",
+        );
         insert_chunk_at(&db, "b1", 1, 3, "Mr. Darcy bowed.");
         assert_eq!(
             people(&db, "b1", 0),
-            vec![person("Mr. Darcy", 0, 1), person("Young", 0, 1)]
+            vec![person("Mr. Darcy", 0), person("Young", 0)]
         );
     }
 
@@ -3444,7 +3566,7 @@ mod tests {
         let (_dir, db) = setup();
         insert_alias(&db, "b1", "Elizabeth Bennet", "Lizzy", "auto", 1);
         insert_chunk_at(&db, "b1", 0, 0, "Lizzy laughed at the whole business.");
-        assert_eq!(people(&db, "b1", 0), vec![person("Elizabeth Bennet", 0, 1)]);
+        assert_eq!(people(&db, "b1", 0), vec![person("Elizabeth Bennet", 0)]);
     }
 
     #[test]
@@ -3459,7 +3581,7 @@ mod tests {
         );
         insert_chunk_at(&db, "b1", 1, 1, "Young said nothing at all.");
         assert_eq!(people(&db, "b1", 0), Vec::new());
-        assert_eq!(people(&db, "b1", 1), vec![person("Young", 1, 1)]);
+        assert_eq!(people(&db, "b1", 1), vec![person("Young", 1)]);
     }
 
     #[test]
@@ -3467,7 +3589,7 @@ mod tests {
         let (_dir, db) = setup();
         insert_alias(&db, "b1", "Mr. Darcy", "Darcy", "auto", 1);
         insert_chunk_at(&db, "b1", 0, 0, "MR. DARCY bowed stiffly.");
-        assert_eq!(people(&db, "b1", 0), vec![person("Mr. Darcy", 0, 1)]);
+        assert_eq!(people(&db, "b1", 0), vec![person("Mr. Darcy", 0)]);
     }
 
     #[test]
@@ -3483,20 +3605,12 @@ mod tests {
         insert_chunk_at(&db, "b1", 4, 2, "Alice and Bob talked.");
         assert_eq!(
             people(&db, "b1", 1),
-            vec![
-                person("Carol", 0, 0),
-                person("Alice", 1, 1),
-                person("Bob", 1, 1),
-            ],
+            vec![person("Carol", 0), person("Alice", 1), person("Bob", 1),],
             "by first section, then by the chunk each first appears in"
         );
         assert_eq!(
             people(&db, "b1", 2),
-            vec![
-                person("Carol", 0, 0),
-                person("Alice", 1, 2),
-                person("Bob", 1, 1),
-            ],
+            vec![person("Carol", 0), person("Alice", 1), person("Bob", 1),],
             "two chunks in section 2 name Alice, one names Bob"
         );
     }
@@ -3504,7 +3618,14 @@ mod tests {
     #[test]
     fn people_so_far_description_rows_are_ignored() {
         let (_dir, db) = setup();
-        insert_description_alias(&db, "b1", "Mr. Collins", "那个总在拍马屁的牧师", "谁最讨人厌", 30);
+        insert_description_alias(
+            &db,
+            "b1",
+            "Mr. Collins",
+            "那个总在拍马屁的牧师",
+            "谁最讨人厌",
+            30,
+        );
         insert_chunk_at(&db, "b1", 0, 0, "那个总在拍马屁的牧师 was there.");
         assert_eq!(people(&db, "b1", 0), Vec::new());
     }
@@ -3517,8 +3638,8 @@ mod tests {
         insert_alias(&db, "b2", "Mr. Wickham", "Wickham", "auto", 1);
         insert_chunk_at(&db, "b1", 0, 0, "Mr. Darcy bowed.");
         insert_chunk_at(&db, "b2", 1, 0, "Mr. Wickham smiled.");
-        assert_eq!(people(&db, "b1", 0), vec![person("Mr. Darcy", 0, 1)]);
-        assert_eq!(people(&db, "b2", 0), vec![person("Mr. Wickham", 0, 1)]);
+        assert_eq!(people(&db, "b1", 0), vec![person("Mr. Darcy", 0)]);
+        assert_eq!(people(&db, "b2", 0), vec![person("Mr. Wickham", 0)]);
     }
 
     #[test]

@@ -5,7 +5,7 @@
 
 use tauri::{AppHandle, State};
 
-use crate::ai::grounding::aliases;
+use crate::ai::grounding::{aliases, spoiler};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
@@ -19,20 +19,29 @@ pub fn list_person_aliases(
     aliases::list_person_aliases(&db.reader(), &book_id)
 }
 
-/// The reader's 「本章」 card: everyone this book has named by
-/// `section_index` (the current EPUB spine section), never anyone who only
-/// appears later. A pure read — see `aliases::people_through_section` — but it
-/// scans every chunk of the book, so it runs off the main thread.
+/// The reader's 「本章」 card: the people met up to the reader's live
+/// position — `location` is the current CFI or text location, and
+/// `viewport_text` pins an EPUB position inside its section. See
+/// `aliases::people_met`. The first call per book scans the whole book, so it
+/// runs off the main thread.
 #[tauri::command]
 pub async fn list_people_so_far(
     book_id: String,
-    section_index: i64,
+    location: Option<String>,
+    viewport_text: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<Vec<aliases::PersonSoFar>> {
     crate::sync::validation::validate_entity_id(&book_id)?;
     let db = db.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        aliases::people_through_section(&db.reader(), &book_id, section_index)
+        let conn = db.reader();
+        let cutoff = spoiler::live_position_cutoff(
+            &conn,
+            &book_id,
+            location.as_deref(),
+            viewport_text.as_deref(),
+        )?;
+        aliases::people_met(&conn, &book_id, cutoff)
     })
     .await
     .map_err(|e| AppError::Other(format!("people so far: {e}")))?

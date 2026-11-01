@@ -83,7 +83,6 @@ export interface PersonSoFar {
   canonical: string;
   /** The spine section of their first mention. */
   firstSection: number;
-  mentionsInSection: number;
 }
 
 /**

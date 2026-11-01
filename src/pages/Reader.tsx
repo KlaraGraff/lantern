@@ -610,6 +610,12 @@ function ReaderSession({ bookId }: { bookId?: string }) {
       return undefined;
     }
   }, []);
+  // 「本章」's people list reads the same live position the AI's unread-pages
+  // guard does, so nobody shows before the page that names them.
+  const readPeoplePosition = useCallback(() => ({
+    location: currentCfiRef.current,
+    viewportText: getViewportText()?.slice(0, 2000),
+  }), [getViewportText]);
   // The reader's live selection, for the AI composer to attach on its own.
   // Without this a selected sentence reached the model only if the reader
   // explicitly quoted it; a plain selection fell through to the whole viewport,
@@ -3567,7 +3573,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
                 bookId,
                 chapterTitle: currentChapterTitle ?? undefined,
                 scope: currentScope,
-                currentSection: currentSectionIndex >= 0 ? currentSectionIndex : undefined,
+                readPosition: readPeoplePosition,
+                positionKey: `${currentSectionIndex}:${Math.floor(progress)}`,
                 onNavigate: (cfi) => { navigateToCfi(cfi); },
                 onOpenChat: (chatId) => {
                   setInitialChatId(chatId);
