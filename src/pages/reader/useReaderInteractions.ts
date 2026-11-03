@@ -281,7 +281,6 @@ export function useReaderInteractions({
 
     let activePointerId: number | null = null;
     let selectionSnapshot: ReaderSelectionSnapshot | null = null;
-    let pointerCaptureTarget: Element | null = null;
     let pointerStart: { x: number; y: number } | null = null;
     let pointerMoved = false;
     let selectionNormalizationUntil = 0;
@@ -362,20 +361,10 @@ export function useReaderInteractions({
         activePointerId === null
         || (pointerId !== undefined && pointerId !== activePointerId)
       ) return;
-      const completedPointerId = activePointerId;
       activePointerId = null;
-      const captureTarget = pointerCaptureTarget;
-      pointerCaptureTarget = null;
       const completedDrag = pointerMoved;
       pointerStart = null;
       pointerMoved = false;
-      try {
-        if (captureTarget?.hasPointerCapture(completedPointerId)) {
-          captureTarget.releasePointerCapture(completedPointerId);
-        }
-      } catch {
-        // WebKit can release capture before dispatching lostpointercapture.
-      }
       if (tripleClickSelectionHandled || longPressSelectionHandled) {
         tripleClickSelectionHandled = false;
         longPressSelectionHandled = false;
@@ -441,15 +430,15 @@ export function useReaderInteractions({
     doc.addEventListener("pointerdown", (event: PointerEvent) => {
       if (event.button !== 0) return;
       activePointerId = event.pointerId;
-      pointerCaptureTarget = event.target as Element | null;
       pointerStart = { x: event.clientX, y: event.clientY };
       pointerMoved = false;
       tripleClickOwnsClick = false;
-      try {
-        pointerCaptureTarget?.setPointerCapture(event.pointerId);
-      } catch {
-        // Some iframe surfaces reject capture; document/window listeners remain active.
-      }
+      // No setPointerCapture here. Chromium (the Windows WebView2) confines a
+      // drag selection to the captured element's subtree, and the press lands
+      // on a single span: one PDF text-layer line, or one EPUB paragraph. A
+      // capture there meant a drag could never leave the line it began on
+      // (issue #43). The mouse drag already stays with this frame, and the
+      // content/host pointerup and blur listeners below close the gesture.
       cancelPendingSelectionMenu();
       cancelLongPress();
       // Not while text is selected: the finger is most likely on a selection
@@ -516,9 +505,6 @@ export function useReaderInteractions({
       cancelLongPress();
       swipe.cancel(event.pointerId);
       finalizePointerSelection(event.pointerId, false);
-    });
-    doc.addEventListener("lostpointercapture", (event: PointerEvent) => {
-      finalizePointerSelection(event.pointerId);
     });
     const contentWindow = doc.defaultView;
     const handleContentPointerUp = (event: PointerEvent) => {
