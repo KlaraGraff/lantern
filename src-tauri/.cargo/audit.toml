@@ -6,13 +6,14 @@
 [advisories]
 ignore = [
     # zip < 9: `ZipArchive::extract` / `ZipStreamReader::extract` mishandle
-    # symlinks and Unix permission bits. Lantern's own zip is on 9.x; the old
-    # copies come from crates with no fixed release yet:
-    #   - epub 2.1.5 (zip 3): only opens entries with `by_name`, never extracts.
-    #   - tauri-plugin-updater (zip 4, Windows only): extracts the update
-    #     bundle, but only after its minisign signature has been verified
-    #     against our pubkey, so the archive is our own release artifact.
+    # symlinks, Unix permission bits (0367-0369) and symlink entries with a
+    # large declared size (0429). Lantern's own zip and epub 2.1.6's are on
+    # 9.x; the one old copy left is pinned tauri-plugin-updater 2.10.1 (zip 4,
+    # Windows only). It extracts the update bundle only after its minisign
+    # signature has been verified against our pubkey, so the archive is our
+    # own release artifact. updater 2.14.1 moves to zip 9; drop these then.
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
 ]
