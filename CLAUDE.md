@@ -3,7 +3,7 @@
 > Shared conventions live in [`AGENTS.md`](AGENTS.md) — read it first. It is the repo-wide guide for every assistant (Claude Code, Codex, others). This file only holds Claude-specific extras.
 >
 > Two things in `AGENTS.md` matter most and are easy to get wrong:
-> - **One clone.** Work in `~/vibecoding/Lantern`. Other clones of this repo exist on this machine; they are stale. Do not work in them.
+> - **One clone.** Work in `/Users/OA/Creation/Lantern`. Other clones of this repo exist on this machine; they are stale. Do not work in them.
 > - **Commit straight to `main`.** No PR unless the change needs CI to gate it or the user asks. If you do open a PR, merge it in the same turn once CI is green.
 
 ## Stack
