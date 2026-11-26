@@ -27,7 +27,7 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
 
 ## Working Copy
 
-- Canonical clone: `~/vibecoding/Lantern`. Other clones on this machine are stale — if running elsewhere, say so and stop.
+- Canonical clone: `/Users/OA/Creation/Lantern`. Other clones on this machine are stale — if running elsewhere, say so and stop.
 - Start every session with `git fetch origin && git status`; another agent may have moved `main`.
 - Working-tree changes you did not make are another agent's in-flight work: inspect and preserve them; never revert, stash, or commit them as your own.
 - **Unrelated-change triage:** do not stop at a dirty worktree. First list each changed or untracked path, summarize its diff and overlap with the task, then recommend the safer path: continue with only owned files, use an isolated worktree for a release, or pause only when the changes make correctness impossible to establish. State that recommendation before asking for input. For release work, never include unowned changes; when a clean build is required, prefer an isolated worktree over asking the user to clean or classify another agent's work.
