@@ -44,7 +44,7 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
 | Task | Model | Reasoning effort |
 | --- | --- | --- |
 | Read-only code search, call-chain summaries, information gathering, existing test execution | `gpt-6.1-sol` minimum | `low` minimum |
-| Implementation, bug fixes, refactoring, optimization, test changes | `gpt-6.1-sol` minimum | `medium` minimum |
+| Implementation, bug fixes, refactoring, optimization, test changes | `gpt-6.1-sol` minimum | `high` minimum |
 | Review, design, tradeoff analysis, complex diagnosis or high-risk implementation | `gpt-6.1-sol` | `high` minimum |
 
 - Use `xhigh` only when the task's risk or lack of machine-verifiable acceptance justifies it. Enable `gpt-6-astra` only when the user explicitly requests it or when a specific task cannot progress with `gpt-6.1-sol`; do not make Astra the default. Escalate an individual task when needed instead of assigning every subagent the most expensive configuration. Keep cross-source synthesis and final judgment in the main conversation.
