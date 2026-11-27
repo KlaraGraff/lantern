@@ -42,6 +42,37 @@ fn detect_import_format_accepts_utf16_txt_bom() {
     assert_eq!(decode_txt(&fs::read(&path).unwrap()).unwrap(), "Hi");
 }
 
+/// FB2 detection used to decode the 8 KiB header as UTF-8 first. A
+/// windows-1251 book (the usual encoding for Russian FB2) or a UTF-8 one
+/// whose 8 KiB cut lands inside a multi-byte character failed that decode
+/// and was rejected as an unsupported format.
+#[test]
+fn detect_import_format_accepts_fb2_whose_header_is_not_utf8() {
+    let dir = TempDir::new().unwrap();
+
+    let cp1251 = dir.path().join("cp1251.fb2");
+    let mut bytes =
+        b"<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n<FictionBook><description><title-info><book-title>"
+            .to_vec();
+    // "Война и мир" in windows-1251.
+    bytes.extend_from_slice(&[
+        0xc2, 0xee, 0xe9, 0xed, 0xe0, b' ', 0xe8, b' ', 0xec, 0xe8, 0xf0,
+    ]);
+    bytes.extend_from_slice(b"</book-title></title-info></description></FictionBook>");
+    fs::write(&cp1251, &bytes).unwrap();
+    assert_eq!(detect_import_format(&cp1251).unwrap(), ImportFormat::Fb2);
+
+    let split = dir.path().join("split.fb2");
+    let mut bytes = b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<FictionBook><body><p>".to_vec();
+    // Fill so the 8 KiB header ends after the first byte of "я" (0xD1 0x8F).
+    while bytes.len() < 8 * 1024 - 1 {
+        bytes.push(b'a');
+    }
+    bytes.extend_from_slice("я</p></body></FictionBook>".as_bytes());
+    fs::write(&split, &bytes).unwrap();
+    assert_eq!(detect_import_format(&split).unwrap(), ImportFormat::Fb2);
+}
+
 #[test]
 fn text_import_copies_source_and_defers_preparation() {
     let (dir, db) = setup();
