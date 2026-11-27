@@ -221,7 +221,6 @@ function BookHistory({
   labels: ReadingStatsLabels;
   onOpenBook?: (bookId: string) => void;
 }) {
-  const largest = Math.max(1, ...books.map((book) => book.activeSeconds));
   return (
     <section aria-labelledby="reading-history-heading">
       <div className="mb-3">
@@ -229,7 +228,9 @@ function BookHistory({
         <p className="mt-1 text-[10px] text-text-muted">{labels.historyDescription}</p>
       </div>
       <div className="overflow-hidden rounded-xl border border-border bg-bg-surface">
-        {books.map((book) => (
+        {books.map((book) => {
+          const progressPercent = Math.round(Math.max(0, Math.min(1, book.progress)) * 100);
+          return (
           <button
             key={book.bookId}
             type="button"
@@ -246,11 +247,11 @@ function BookHistory({
               <span className="mt-2 block h-1 overflow-hidden rounded-full bg-bg-input">
                 <span
                   className="block h-full rounded-full bg-accent/65"
-                  style={{ width: `${Math.max(3, Math.round((book.activeSeconds / largest) * 100))}%` }}
+                  style={{ width: `${Math.max(3, progressPercent)}%` }}
                 />
               </span>
               <span className="mt-1 block text-[9px] text-text-muted">
-                {labels.progressLabel} {Math.round(Math.max(0, Math.min(1, book.progress)) * 100)}%
+                {labels.progressLabel} {progressPercent}%
               </span>
             </span>
             <span className="text-right">
@@ -258,7 +259,8 @@ function BookHistory({
               <span className="mt-1 block text-[9px] text-text-muted">{labels.sessionCountLabel(book.sessionCount)}</span>
             </span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
