@@ -208,11 +208,106 @@ pub(super) fn markdown_to_text(markdown: &str) -> String {
     text
 }
 
+/// One paragraph per block element, with the inline markup inside it (`<em>`,
+/// `<a>`, a source line break inside `<p>`) read as running text. The text
+/// pipeline treats every line of an HTML book as its own paragraph, so a line
+/// break may only ever come from a block boundary — or from `<pre>`, which
+/// keeps its own lines.
 pub(super) fn html_to_text(html: &str) -> String {
-    let cleaned = ammonia::clean(html);
-    scraper::Html::parse_fragment(&cleaned)
-        .root_element()
-        .text()
+    use scraper::node::Node;
+
+    const BLOCKS: &[&str] = &[
+        "address",
+        "article",
+        "aside",
+        "blockquote",
+        "br",
+        "dd",
+        "details",
+        "div",
+        "dl",
+        "dt",
+        "figcaption",
+        "figure",
+        "footer",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "hr",
+        "li",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "summary",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    ];
+
+    fn walk(node: ego_tree::NodeRef<'_, Node>, in_pre: bool, out: &mut String) {
+        match node.value() {
+            Node::Text(text) if in_pre => {
+                out.push_str(&text.replace(['\n', '\r'], "\u{0}"));
+            }
+            // Source line breaks inside running text are only whitespace;
+            // the runs of spaces this leaves are collapsed below.
+            Node::Text(text) => {
+                out.extend(
+                    text.chars()
+                        .map(|c| if c.is_whitespace() { ' ' } else { c }),
+                )
+            }
+            Node::Element(element) => {
+                let name = element.name();
+                let block = BLOCKS.contains(&name);
+                if block {
+                    out.push('\n');
+                }
+                for child in node.children() {
+                    walk(child, in_pre || name == "pre", out);
+                }
+                if block {
+                    out.push('\n');
+                }
+            }
+            _ => {
+                for child in node.children() {
+                    walk(child, in_pre, out);
+                }
+            }
+        }
+    }
+
+    // The document's `<title>` is metadata, not its first line: drop it with
+    // its text, as ammonia already does for `<script>` and `<style>`.
+    let cleaned = ammonia::Builder::default()
+        .add_clean_content_tags(["title"])
+        .clean(html)
+        .to_string();
+    let fragment = scraper::Html::parse_fragment(&cleaned);
+    let mut text = String::new();
+    walk(fragment.tree.root(), false, &mut text);
+    // `<pre>` line breaks were parked as NUL so that the block split below
+    // cannot see them; they come back as lines of the same block.
+    text.split('\n')
+        .map(|block| {
+            block
+                .split('\u{0}')
+                .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|block| !block.is_empty())
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n\n")
 }
