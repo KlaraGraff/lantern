@@ -32,7 +32,7 @@
     "@tauri-apps/plugin-process": "2.3.1",
     "@tauri-apps/plugin-updater": "2.14.1",
     "approx-string-match": "^2.0.0",
-    "i18next": "^25.10.5",
+    "i18next": "^26.7.2",
     "lucide-react": "^0.577.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
