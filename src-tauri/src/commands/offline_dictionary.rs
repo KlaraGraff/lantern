@@ -35,7 +35,14 @@ const MDX_DIR: &str = "mdx";
 
 /// Pinned to one commit so the size and hash below stay a real contract: the
 /// file at a moving branch could change under a released build.
-const ECDICT_URL: &str = "https://raw.githubusercontent.com/skywind3000/ECDICT/39cfb9672c0906b63569e0453c2e6abfb9ab182a/ecdict.csv";
+/// Where the pinned ECDICT CSV is fetched from, in order. The second is a
+/// byte-identical copy attached to a release of this repository, for networks
+/// that cannot reach raw.githubusercontent.com; size and SHA-256 are checked
+/// the same way whichever answers, and a partial file resumes from either.
+const ECDICT_URLS: [&str; 2] = [
+    "https://raw.githubusercontent.com/skywind3000/ECDICT/39cfb9672c0906b63569e0453c2e6abfb9ab182a/ecdict.csv",
+    "https://github.com/KlaraGraff/lantern/releases/download/ecdict-39cfb96/ecdict.csv",
+];
 const ECDICT_SIZE: u64 = 66_009_548;
 const ECDICT_SHA256: &str = "d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc";
 /// Shown on the card and in settings: it is a reference, not one of ours.
@@ -659,6 +666,7 @@ fn partial_csv(root: &Path) -> PathBuf {
     root.join(ECDICT_PARTIAL)
 }
 
+#[derive(Clone, Copy)]
 struct Download<'a> {
     url: &'a str,
     size: u64,
@@ -776,27 +784,68 @@ async fn fetch_to_partial(
     Ok(())
 }
 
+/// Tries each address in turn until one delivers the whole, verified file.
+///
+/// A failure that is only a dropped or unreachable connection stays
+/// retryable when every address fails that way, so the worker keeps waiting
+/// for the network; the partial file is kept for the next address or attempt.
+async fn fetch_from_mirrors(
+    urls: &[&str],
+    file: &Download<'_>,
+    partial: &Path,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64),
+) -> AppResult<()> {
+    let mut retryable = false;
+    let mut last = error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED");
+    for url in urls {
+        let download = Download { url, ..*file };
+        match fetch_to_partial(&download, partial, cancel, &mut progress).await {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                let code = err.to_string();
+                if code == "OFFLINE_DICTIONARY_CANCELLED" {
+                    let _ = fs::remove_file(partial);
+                    return Err(err);
+                }
+                if is_retryable(&code) {
+                    retryable = true;
+                } else {
+                    // A wrong file is not worth resuming from another address.
+                    let _ = fs::remove_file(partial);
+                }
+                log::info!("offline dictionary download from {url} failed: {code}");
+                last = err;
+            }
+        }
+    }
+    Err(if retryable {
+        error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED")
+    } else {
+        last
+    })
+}
+
 async fn download_once<R: Runtime>(app: &AppHandle<R>, root: &Path) -> AppResult<()> {
     fs::create_dir_all(root).map_err(|_| error("OFFLINE_DICTIONARY_STORAGE_FAILED"))?;
     let partial = partial_csv(root);
-    let download = Download {
-        url: ECDICT_URL,
+    let ecdict = Download {
+        url: ECDICT_URLS[0],
         size: ECDICT_SIZE,
         sha256: ECDICT_SHA256,
         idle: DOWNLOAD_IDLE_TIMEOUT,
     };
-    let fetched = fetch_to_partial(&download, &partial, cancel_requested(), |downloaded| {
-        set_transient(Transient::Downloading(downloaded));
-        emit_status(app);
-    })
-    .await;
-    if let Err(err) = fetched {
-        // Only a dropped connection leaves something worth resuming.
-        if !is_retryable(&err.to_string()) {
-            let _ = fs::remove_file(&partial);
-        }
-        return Err(err);
-    }
+    fetch_from_mirrors(
+        &ECDICT_URLS,
+        &ecdict,
+        &partial,
+        cancel_requested(),
+        |downloaded| {
+            set_transient(Transient::Downloading(downloaded));
+            emit_status(app);
+        },
+    )
+    .await?;
 
     set_transient(Transient::Installing);
     emit_status(app);
@@ -1370,5 +1419,39 @@ empty,,,,,,,,0,0,,,\n";
             result.unwrap_err().to_string(),
             "OFFLINE_DICTIONARY_CANCELLED"
         );
+    }
+    #[tokio::test]
+    async fn an_unreachable_first_address_falls_through_to_the_mirror() {
+        let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_url = format!("http://{}/ecdict.csv", dead.local_addr().unwrap());
+        drop(dead);
+        let (mirror, _) = serve(BODY, BODY.len(), false).await;
+        let dir = tempfile::tempdir().unwrap();
+        let partial = dir.path().join(ECDICT_PARTIAL);
+        let cancel = AtomicBool::new(false);
+
+        fetch_from_mirrors(
+            &[&dead_url, &mirror],
+            &body_download(&dead_url),
+            &partial,
+            &cancel,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(fs::read(&partial).unwrap(), BODY);
+
+        // Every address down is still only a dropped connection: retried later.
+        let _ = fs::remove_file(&partial);
+        let failed = fetch_from_mirrors(
+            &[&dead_url],
+            &body_download(&dead_url),
+            &partial,
+            &cancel,
+            |_| {},
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(failed.to_string(), "OFFLINE_DICTIONARY_DOWNLOAD_FAILED");
     }
 }
