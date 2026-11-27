@@ -2864,3 +2864,36 @@ fn delete_book_removes_the_converted_epub_artifact() {
     );
     let _ = dir;
 }
+
+/// A page turn far from the end must not pay for the auto-finish coverage
+/// queries (a full scan of every dwell row the reader ever recorded). With
+/// the dwell table gone, a save at 50% must still succeed because it never
+/// touches it; at 97% the same save reaches the queries and fails.
+#[test]
+fn progress_save_below_finish_floor_skips_coverage_queries() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    insert_done_book_difficulty(&db, "b1", 20_000);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute("DROP TABLE reading_screen_dwells", [])
+        .unwrap();
+
+    let finished = do_update_reading_progress("b1", 50, Some("epubcfi(/6/8!)"), &db, &sync)
+        .expect("a mid-book save must not touch reading_screen_dwells");
+    assert!(!finished);
+    let progress: i32 = db
+        .reader()
+        .query_row("SELECT progress FROM books WHERE id = 'b1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(progress, 50);
+
+    assert!(
+        do_update_reading_progress("b1", 97, Some("epubcfi(/6/9!)"), &db, &sync).is_err(),
+        "at the finish floor the coverage check still runs"
+    );
+}
