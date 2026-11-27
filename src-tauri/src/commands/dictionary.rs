@@ -173,31 +173,82 @@ pub struct DictionaryGloss {
     pub first_sense: String,
 }
 
+/// The same `dictionary_source` order as `dictionary_lookup_word`, so saving a
+/// word offline (or with the local dictionaries asked first) stores what the
+/// reader's own dictionaries say instead of nothing. Only Youdao's answers are
+/// cached here: local ones are a quick read of a file that can be removed.
 #[tauri::command]
-pub async fn dictionary_gloss(word: String) -> AppResult<DictionaryGloss> {
+pub async fn dictionary_gloss(
+    word: String,
+    db: tauri::State<'_, crate::db::Db>,
+) -> AppResult<DictionaryGloss> {
     let query = normalize_query(&word)?;
+    let offline = crate::commands::offline_dictionary::LocalLookup::for_db(&db)?;
+
+    if offline.local_first() {
+        if let Some(entry) = offline.lookup(&query).await {
+            return Ok(gloss_from_entry(&entry));
+        }
+    }
 
     let cached = cache().lock().ok().and_then(|map| map.get(&query).cloned());
     let explain = match cached {
         Some(hit) => hit,
-        None => {
-            let fetched = fetch_explain(&query).await?;
-            if let Ok(mut map) = cache().lock() {
-                // Plain clear rather than an LRU: the cap bounds a session, and
-                // a rebuild costs one request per word actually revisited.
-                if map.len() >= MAX_CACHE_ENTRIES {
-                    map.clear();
+        None => match fetch_explain(&query).await {
+            Ok(fetched) => {
+                if let Ok(mut map) = cache().lock() {
+                    // Plain clear rather than an LRU: the cap bounds a session,
+                    // and a rebuild costs one request per word actually revisited.
+                    if map.len() >= MAX_CACHE_ENTRIES {
+                        map.clear();
+                    }
+                    map.insert(query, fetched.clone());
                 }
-                map.insert(query, fetched.clone());
+                fetched
             }
-            fetched
-        }
+            Err(error) => {
+                if !offline.local_first() {
+                    if let Some(entry) = offline.lookup(&query).await {
+                        return Ok(gloss_from_entry(&entry));
+                    }
+                }
+                return Err(error);
+            }
+        },
     };
 
     Ok(DictionaryGloss {
         first_sense: first_sense(&explain),
         explain,
     })
+}
+
+/// A local entry in the shape `suggest` answers with — groups joined by `;`,
+/// senses by `；` — so `first_sense` and every caller read it the same way.
+fn gloss_from_entry(entry: &DictionaryEntry) -> DictionaryGloss {
+    let explain = match &entry.fallback_summary {
+        Some(summary) if entry.groups.is_empty() => summary.clone(),
+        _ => entry
+            .groups
+            .iter()
+            .filter(|group| !group.senses.is_empty())
+            .map(|group| {
+                let senses = group.senses.join("；");
+                // A domain tag (`[网络]`) is not a part of speech: `first_sense`
+                // would keep it as part of the sense.
+                if group.pos.is_empty() || group.pos.starts_with('[') {
+                    senses
+                } else {
+                    format!("{} {senses}", group.pos)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("; "),
+    };
+    DictionaryGloss {
+        first_sense: first_sense(&explain),
+        explain,
+    }
 }
 
 // --- Single-click dictionary layer -----------------------------------------
@@ -701,6 +752,29 @@ mod tests {
     fn first_sense_of_nothing_is_empty() {
         assert_eq!(first_sense(""), "");
         assert_eq!(first_sense("  ;  ; "), "");
+    }
+
+    #[test]
+    fn a_local_entry_reads_like_a_suggest_gloss() {
+        let entry = DictionaryEntry {
+            word: "bank".into(),
+            phonetic: None,
+            groups: vec![
+                DictionaryGroup {
+                    pos: "n.".into(),
+                    senses: vec!["银行".into(), "堤".into()],
+                },
+                DictionaryGroup {
+                    pos: "[医]".into(),
+                    senses: vec!["库".into()],
+                },
+            ],
+            fallback_summary: None,
+            source: Some("ECDICT".into()),
+        };
+        let gloss = gloss_from_entry(&entry);
+        assert_eq!(gloss.explain, "n. 银行；堤; 库");
+        assert_eq!(gloss.first_sense, "银行");
     }
 
     #[test]
