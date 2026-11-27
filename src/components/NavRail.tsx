@@ -31,10 +31,14 @@ const WORKSPACES: readonly Workspace[] = [
 ];
 
 /**
- * The library window's navigation on a desktop: 64px of icons that say which
+ * The library window's navigation on a desktop: 76px of icons that say which
  * workspace you are in (design v2 §5). It replaced the text `Sidebar`, which
  * now lives on only as the phone drawer. The shelf's own filters moved into
  * the shelf as chips (`ShelfChips`); search and commands are ⌘K.
+ *
+ * 76px rather than the canvas's 64: macOS 26 draws its traffic lights about
+ * 60px wide from an 8px inset, so a 64px rail left the green light sitting on
+ * the rail's border. At 76 the three lights sit centred inside the rail.
  */
 export default function NavRail({ activeFilter, onFilterChange, dueForReviewCount, userName, onOpenSettings }: NavRailProps) {
   const { t } = useTranslation();
@@ -45,12 +49,12 @@ export default function NavRail({ activeFilter, onFilterChange, dueForReviewCoun
   return (
     <nav
       aria-label={t("nav.label")}
-      className="relative flex h-full w-16 shrink-0 select-none flex-col items-center gap-1 border-r border-border bg-bg-muted pb-3.5"
+      className="relative flex h-full w-[76px] shrink-0 select-none flex-col items-center gap-1 border-r border-border bg-bg-muted pb-3.5"
     >
       {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />}
       {/* Under the traffic lights on macOS, where they take the whole width of
           the rail; at the window's own top edge everywhere else. */}
-      <div className={`${platform.hasTitleBarInset ? "pt-titlebar" : "pt-3.5"} mb-3`}>
+      <div className={`${platform.hasTitleBarInset ? "pt-[calc(var(--spacing-titlebar)+6px)]" : "pt-3.5"} mb-3`}>
         <div className="size-7 overflow-hidden rounded-lg border border-border">
           <LanternLogo size={28} className="block object-cover" />
         </div>
@@ -68,7 +72,7 @@ export default function NavRail({ activeFilter, onFilterChange, dueForReviewCoun
             aria-label={badge !== null ? `${label} · ${t("sidebar.dueForReviewBadge", { count: badge })}` : undefined}
             title={badge !== null ? t("sidebar.dueForReviewBadge", { count: badge }) : undefined}
             onClick={() => onFilterChange(filter)}
-            className={`relative flex h-12 w-[52px] cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[9px] text-[10px] font-semibold transition-colors duration-[var(--motion-instant)] ${
+            className={`relative flex h-12 w-[60px] cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[9px] text-[10px] font-semibold transition-colors duration-[var(--motion-instant)] ${
               current
                 ? "bg-bg-surface text-accent-text shadow-sm"
                 : "text-text-secondary hover:bg-bg-surface/70 hover:text-text-primary"
@@ -77,7 +81,7 @@ export default function NavRail({ activeFilter, onFilterChange, dueForReviewCoun
             <Icon size={18} strokeWidth={2} aria-hidden="true" />
             <span className="max-w-full truncate px-0.5">{label}</span>
             {badge !== null && (
-              <span aria-hidden="true" className="absolute right-[9px] top-[7px] size-1.5 rounded-full bg-accent" />
+              <span aria-hidden="true" className="absolute right-[13px] top-[7px] size-1.5 rounded-full bg-accent" />
             )}
           </button>
         );
@@ -90,7 +94,7 @@ export default function NavRail({ activeFilter, onFilterChange, dueForReviewCoun
         onClick={openCommandPalette}
         aria-label={t("nav.search")}
         title={t("nav.search")}
-        className="flex h-11 w-[52px] cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[9px] text-[10px] text-text-secondary transition-colors duration-[var(--motion-instant)] hover:bg-bg-surface/70 hover:text-text-primary"
+        className="flex h-11 w-[60px] cursor-pointer flex-col items-center justify-center gap-[3px] rounded-[9px] text-[10px] text-text-secondary transition-colors duration-[var(--motion-instant)] hover:bg-bg-surface/70 hover:text-text-primary"
       >
         <Search size={18} aria-hidden="true" />
         <span>{platform.id === "macos" ? "⌘K" : "Ctrl K"}</span>
