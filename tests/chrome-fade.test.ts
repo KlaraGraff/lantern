@@ -27,3 +27,9 @@ test("a turn taken while the bar is held does not count", () => {
 test("an idle wake keeps the same state object", () => {
   assert.equal(chromeFade(CHROME_SHOWN, "wake", false), CHROME_SHOWN);
 });
+
+test("turns after the bar has faded keep the same state object", () => {
+  const faded = chromeFade(chromeFade(CHROME_SHOWN, "turn", false), "turn", false);
+  assert.equal(faded.faded, true);
+  assert.equal(chromeFade(faded, "turn", false), faded);
+});
