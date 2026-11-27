@@ -274,18 +274,46 @@ pub async fn import_custom_fonts(
         .add_filter("Font files", ALLOWED_EXTENSIONS)
         .blocking_pick_files()
         .unwrap_or_default();
-    let mut imported = Vec::new();
-    for path in selected {
-        let path = path
-            .into_path()
-            .map_err(|_| AppError::Other("CUSTOM_FONT_PATH_INVALID".to_string()))?;
-        imported.push(import_path(&path, &db, &sync)?);
-    }
+    let paths = selected
+        .into_iter()
+        .map(|path| {
+            path.into_path()
+                .map_err(|_| AppError::Other("CUSTOM_FONT_PATH_INVALID".to_string()))
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+    let (imported, failure) = import_paths(&paths, &db, &sync);
     if !imported.is_empty() {
         let fonts = read_custom_fonts(&db)?;
         let _ = app.emit("custom-fonts-changed", fonts);
     }
-    Ok(imported)
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(imported),
+    }
+}
+
+/// Import every picked file, carrying on past one that fails. Stopping at
+/// the first bad file used to skip the good files after it, and the ones
+/// before it were already stored but never announced, so the list did not
+/// show them until settings was reopened. Returns what was imported and
+/// the first failure, if any, which the command still reports.
+fn import_paths(
+    paths: &[PathBuf],
+    db: &Db,
+    sync: &SyncWriter,
+) -> (Vec<CustomFont>, Option<AppError>) {
+    let mut imported = Vec::new();
+    let mut failure = None;
+    for path in paths {
+        match import_path(path, db, sync) {
+            Ok(font) => imported.push(font),
+            Err(error) => {
+                log::warn!("custom font import failed for {}: {error}", path.display());
+                failure.get_or_insert(error);
+            }
+        }
+    }
+    (imported, failure)
 }
 
 #[tauri::command]
@@ -471,6 +499,30 @@ mod tests {
             parsed["layoutAffectingMarkers"], true,
             "deleting a font must not reset the marker layout opt-in: {value}"
         );
+    }
+
+    #[test]
+    fn one_bad_file_does_not_stop_the_rest_of_a_font_import() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".to_string());
+        let good = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../public/foliate-js/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf");
+        let bad = dir.path().join("broken.ttf");
+        fs::write(&bad, b"this is not an sfnt font").unwrap();
+
+        let (imported, failure) = import_paths(&[bad, good], &db, &sync);
+
+        assert!(matches!(
+            failure,
+            Some(AppError::Other(code)) if code == "CUSTOM_FONT_FILE_INVALID"
+        ));
+        assert_eq!(
+            imported.len(),
+            1,
+            "the good font after the bad one is imported"
+        );
+        assert_eq!(read_custom_fonts(&db).unwrap().len(), 1);
     }
 
     #[test]
