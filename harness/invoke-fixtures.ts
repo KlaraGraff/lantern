@@ -1234,6 +1234,24 @@ export const FIXTURES: Record<string, Fixture> = {
     LIBRARY_BACKUP_STATE.auto = Boolean(a.enabled);
     return { ...LIBRARY_BACKUP_STATE };
   },
+  // 从备份恢复：选好文件夹后列出最近三天的数据快照（`RestorePreview`）。
+  library_restore_choose: () => ({
+    dir: LIBRARY_BACKUP_STATE.dir ?? "/Volumes/NAS/Lantern 备份",
+    versions: [0, 1, 2].map((daysAgo) => {
+      const at = Date.now() - daysAgo * 24 * 60 * 60 * 1000 - 60 * 60 * 1000;
+      const date = new Date(at).toISOString().slice(0, 10);
+      return {
+        name: `lantern-data-${date}.db`,
+        date,
+        saved_at: at,
+        books: 128,
+        highlights: 412 - daysAgo * 6,
+        notes: 57 - daysAgo,
+        vocab: 936 - daysAgo * 11,
+      };
+    }),
+  }),
+  library_restore_apply: null,
   // 形状和 `mcp_config_snippet` 一样：serde 的 pretty JSON，两个空格。
   mcp_config_snippet: JSON.stringify(
     { mcpServers: { lantern: { command: MCP_BINARY_PATH, args: ["mcp"] } } },
