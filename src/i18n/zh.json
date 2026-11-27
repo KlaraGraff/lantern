@@ -258,6 +258,7 @@
   "reader.side.chapterPercent": "本章 {{progress}}%",
   "reader.side.conversation": "对话",
   "reader.side.answerWaiting": "回答还在生成，点开对话",
+  "reader.side.foldedCards": "翻过去的句子，解释收在这里，点开再看",
   "reader.side.chapter": "本章",
   "reader.chapter.words": "生词",
   "reader.chapter.marks": "划线与笔记",

@@ -24,6 +24,36 @@ function sentenceLanguage(range: Range, doc: Document) {
     ?? undefined;
 }
 
+/**
+ * Where a sentence (any CFI range) sits relative to the page on screen.
+ *
+ * `"other-chapter"` when the renderer has sections on screen but none of them
+ * is this sentence's — the ordinary state of affairs for the first sentence of
+ * the next chapter, and the one case that must not be confused with `null`.
+ * `null` when the question cannot be answered at all: nothing rendered yet, or
+ * a visible range measured in a document that has since been replaced.
+ */
+export function placeOnPage(currentView: FoliateView, sentenceId: string): SentenceLocation {
+  try {
+    const resolved = currentView.resolveCFI(sentenceId);
+    const contents = currentView.renderer?.getContents?.() as
+      { index?: number; doc?: Document }[] | undefined;
+    if (!contents || contents.length === 0) return null;
+    const loaded = contents.find((content) => content.index === resolved.index);
+    const doc = loaded?.doc;
+    if (!doc) return "other-chapter";
+    const page = currentView.lastLocation?.range as Range | undefined;
+    if (!page?.startContainer || page.startContainer.ownerDocument !== doc) return null;
+    const target = resolved.anchor(doc);
+    return {
+      startVsVisibleEnd: target.compareBoundaryPoints(Range.END_TO_START, page),
+      endVsVisibleStart: target.compareBoundaryPoints(Range.START_TO_END, page),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function createFoliateContinuousSource(
   viewRef: { current: FoliateView | null },
   currentCfiRef: { current: string | null },
@@ -67,36 +97,6 @@ export function createFoliateContinuousSource(
       const { reason } = (event as CustomEvent<{ reason?: unknown }>).detail ?? {};
       if (isReaderRelocation(reason)) readerTurnedAway = true;
     });
-  };
-
-  /**
-   * Where a sentence sits relative to the page on screen.
-   *
-   * `"other-chapter"` when the renderer has sections on screen but none of them
-   * is this sentence's — the ordinary state of affairs for the first sentence of
-   * the next chapter, and the one case that must not be confused with `null`.
-   * `null` when the question cannot be answered at all: nothing rendered yet, or
-   * a visible range measured in a document that has since been replaced.
-   */
-  const placeOnPage = (currentView: FoliateView, sentenceId: string): SentenceLocation => {
-    try {
-      const resolved = currentView.resolveCFI(sentenceId);
-      const contents = currentView.renderer?.getContents?.() as
-        { index?: number; doc?: Document }[] | undefined;
-      if (!contents || contents.length === 0) return null;
-      const loaded = contents.find((content) => content.index === resolved.index);
-      const doc = loaded?.doc;
-      if (!doc) return "other-chapter";
-      const page = currentView.lastLocation?.range as Range | undefined;
-      if (!page?.startContainer || page.startContainer.ownerDocument !== doc) return null;
-      const target = resolved.anchor(doc);
-      return {
-        startVsVisibleEnd: target.compareBoundaryPoints(Range.END_TO_START, page),
-        endVsVisibleStart: target.compareBoundaryPoints(Range.START_TO_END, page),
-      };
-    } catch {
-      return null;
-    }
   };
 
   const sections = () => (view().book?.sections ?? []) as ReadAloudSection[];

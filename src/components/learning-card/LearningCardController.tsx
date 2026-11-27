@@ -67,6 +67,15 @@ interface LearningCardControllerProps {
   getTextRect?: () => SerializableRect | null;
   stackIndex?: number;
   elevated?: boolean;
+  /**
+   * Folded into the reader's bookmark ear because a page turn took its
+   * sentence away. The card stays mounted, so an answer being written keeps
+   * arriving, but it is hidden and out of reach until it is unfolded. A sheet
+   * on a coarse pointer does not fold.
+   */
+  folded?: boolean;
+  /** Told whenever the answer starts or finishes being written. */
+  onLoadingChange?: (loading: boolean) => void;
   onClose: () => void;
   onFocus?: () => void;
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -99,6 +108,8 @@ export default function LearningCardController({
   getTextRect,
   stackIndex = 0,
   elevated = false,
+  folded = false,
+  onLoadingChange,
   onClose,
   onFocus,
   onLookupWord,
@@ -125,6 +136,9 @@ export default function LearningCardController({
     modules: {},
   });
   const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    onLoadingChange?.(loading);
+  }, [loading, onLoadingChange]);
   const [thinking, setThinking] = useState(false);
   const [reasoning, setReasoning] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -656,9 +670,17 @@ export default function LearningCardController({
     <div
       ref={wrapperRef}
       tabIndex={-1}
-      className={elevated ? "fixed z-[61] outline-none" : "fixed z-[60] outline-none"}
+      // Folding goes toward the ear on the right edge: a short fade and a few
+      // pixels' drift, and the same way back.
+      className={[
+        "fixed outline-none transition-[opacity,translate,visibility] duration-[var(--motion-fast)] ease-[var(--ease-out-soft)] motion-reduce:transition-none",
+        elevated ? "z-[61]" : "z-[60]",
+        folded ? "invisible pointer-events-none translate-x-3 opacity-0" : "",
+      ].join(" ")}
       style={{ left: position.left, top: position.top }}
       onPointerDown={onFocus}
+      inert={folded}
+      aria-hidden={folded || undefined}
     >
       {view}
     </div>
