@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
 import Toggle from "../ui/Toggle";
 import { platform } from "../../services/platform";
+import RestoreBackupDialog, { type RestorePreview } from "./RestoreBackupDialog";
+import { restoreErrorKey } from "./restore-backup";
 
 export interface LibraryBackupStatus {
   dir: string | null;
@@ -34,6 +37,10 @@ export default function LibraryBackupSection() {
   const { t, i18n } = useTranslation();
   const [status, setStatus] = useState<LibraryBackupStatus | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreRowError, setRestoreRowError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -66,6 +73,35 @@ export default function LibraryBackupSection() {
   const stop = () => act(() => invoke<void>("library_backup_cancel"));
   const setAuto = (enabled: boolean) =>
     act(() => invoke<LibraryBackupStatus>("library_backup_set_auto", { enabled }));
+
+  const chooseRestore = async () => {
+    setRestoreRowError(null);
+    try {
+      const preview = await invoke<RestorePreview | null>("library_restore_choose");
+      if (preview) {
+        setRestoreError(null);
+        setRestorePreview(preview);
+      }
+    } catch (err) {
+      setRestoreRowError(t(restoreErrorKey(err)));
+    }
+  };
+  const confirmRestore = async (name: string) => {
+    setRestoreError(null);
+    setRestoreBusy(true);
+    try {
+      await invoke("library_restore_apply", { name });
+    } catch (err) {
+      setRestoreBusy(false);
+      setRestoreError(t(restoreErrorKey(err)));
+      return;
+    }
+    try {
+      await relaunch();
+    } catch {
+      setRestoreError(t("settings.libraryBackup.restore.relaunchFailed"));
+    }
+  };
 
   const hasDir = Boolean(status?.dir);
   const running = status?.running ?? false;
@@ -171,11 +207,42 @@ export default function LibraryBackupSection() {
           disabled={!hasDir}
         />
       </div>
-      <p className="text-[12px] text-text-muted leading-[1.5]">{t(platform.hasFolderSync ? "settings.libraryBackup.scopeNote" : "settings.libraryBackup.scopeNoteNoSync")}</p>
+      <div className="h-px bg-border-light" />
+      <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
+            {t("settings.libraryBackup.restoreTitle")}
+          </p>
+          <p className="text-[12px] text-text-muted mt-0.5 leading-[1.45]">{t("settings.libraryBackup.restoreHint")}</p>
+          {restoreRowError && (
+            <p role="alert" className="text-[12px] text-danger-text mt-0.5 leading-[1.45]">{restoreRowError}</p>
+          )}
+        </div>
+        <Button
+          variant="secondary"
+          size="md"
+          className="shrink-0 touch:h-11"
+          onClick={() => void chooseRestore()}
+          disabled={!status || running}
+        >
+          {t("settings.libraryBackup.restoreButton")}
+        </Button>
+      </div>
+      <div className="h-px bg-border-light" />
+      <p className="text-[12px] text-text-muted leading-[1.5] mt-3">{t(platform.hasFolderSync ? "settings.libraryBackup.scopeNote" : "settings.libraryBackup.scopeNoteNoSync")}</p>
       {errorKey && (
         <div className="bg-danger-bg border border-danger-border rounded-lg px-3.5 py-2 mt-3">
           <span className="text-[12px] text-danger-text leading-[1.45]">{t(errorKey)}</span>
         </div>
+      )}
+      {restorePreview && (
+        <RestoreBackupDialog
+          preview={restorePreview}
+          busy={restoreBusy}
+          error={restoreError}
+          onCancel={() => setRestorePreview(null)}
+          onConfirm={(name) => void confirmRestore(name)}
+        />
       )}
     </div>
   );

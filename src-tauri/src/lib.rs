@@ -15,6 +15,7 @@ mod mcp;
 mod panic_hook;
 mod pdfium;
 mod reset;
+mod restore;
 mod secrets;
 mod sync;
 mod word_frequency;
@@ -557,6 +558,8 @@ pub fn run() {
             // 重置全部数据 finishes here, before anything below opens a file
             // in this directory. See `reset` for why it cannot run in-session.
             reset::apply_pending_at_launch(&local_dir);
+            // 从备份恢复 swaps its snapshot in here, for the same reason.
+            restore::apply_pending_at_launch(&local_dir);
             // The `$APPDATA/**` scopes in tauri.conf.json and the default
             // capability are resolved from the bundle identifier, which never
             // carries the `-dev` suffix the debug data dir above uses. Without
@@ -815,6 +818,10 @@ pub fn run() {
             commands::library_backup::library_backup_cancel,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::library_backup::library_backup_set_auto,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_restore_choose,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::library_restore_apply,
             commands::books::import_book_from_dialog,
             commands::books::list_books,
             commands::books::move_book,

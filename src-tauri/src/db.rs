@@ -14,6 +14,12 @@ pub fn library_exists_in(dir: &Path) -> bool {
     dir.join(DB_FILE_NAME).is_file()
 }
 
+/// The schema version this build migrates a database up to. A database
+/// stamped with a higher one was written by a newer Lantern.
+pub fn latest_schema_version() -> i64 {
+    MIGRATIONS.last().map_or(0, |(version, _)| *version)
+}
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/001_init.sql")),
     (2, include_str!("../migrations/002_vocab.sql")),
