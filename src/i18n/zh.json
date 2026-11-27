@@ -437,6 +437,7 @@
   "vocab.reviewNoContext": "这个旧词条没有可用的已保存语境，因此从单词正面开始复习。",
   "vocab.reviewSaveFailed": "复习结果保存失败。当前卡片仍然保留，请重试。",
   "vocab.reviewComplete": "今天的复习完成了",
+  "vocab.reviewLoadFailed": "没能加载要复习的词。",
   "vocab.reviewCompleteSub": "当前没有更多到期词汇。",
   "vocab.reviewJustLook": "只看，不测",
   "vocab.savedTab": "已收藏",
