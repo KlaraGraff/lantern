@@ -58,3 +58,33 @@ test("dismissing the zone guide with a key does not also leave the book", () => 
   assert.match(handler, /event\.preventDefault\(\)/);
   assert.match(handler, /event\.stopPropagation\(\)/);
 });
+
+const highlightToolbar = readFileSync(
+  path.join(import.meta.dirname, "../src/components/HighlightToolbar.tsx"),
+  "utf8",
+);
+
+test("closing the highlight toolbar with Escape claims the keypress", () => {
+  // The toolbar listens on `document`; the reader's Esc dispatcher listens on
+  // `window` and skips presses that are already `defaultPrevented`. Without the
+  // claim, one Esc closed the toolbar and also put the notes card away (or
+  // armed "press again to leave").
+  const start = highlightToolbar.indexOf("const handleEscape = (e: KeyboardEvent) => {");
+  const end = highlightToolbar.indexOf('document.addEventListener("keydown", handleEscape)');
+  assert.ok(start >= 0 && end > start, "no Escape handler found in HighlightToolbar");
+  const handler = highlightToolbar.slice(start, end);
+  assert.match(handler, /onClose\(\)/);
+  assert.match(handler, /e\.preventDefault\(\)/);
+  // A layer above that already answered this Esc keeps the toolbar open.
+  assert.match(handler, /e\.defaultPrevented/);
+});
+
+const readerPage = readFileSync(
+  path.join(import.meta.dirname, "../src/pages/Reader.tsx"),
+  "utf8",
+);
+
+test("the reader's Esc dispatcher leaves claimed presses alone", () => {
+  // The premise the toolbar relies on.
+  assert.match(readerPage, /event\.key !== "Escape" \|\| event\.defaultPrevented/);
+});
