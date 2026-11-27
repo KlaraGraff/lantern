@@ -253,7 +253,10 @@ impl ConnMutex {
     }
 
     pub fn lock(&self) -> LockResult<MutexGuard<'_, Connection>> {
-        Ok(self.0.lock().unwrap_or_else(|poisoned| self.recover(poisoned.into_inner())))
+        Ok(self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| self.recover(poisoned.into_inner())))
     }
 
     pub fn try_lock(&self) -> TryLockResult<MutexGuard<'_, Connection>> {
@@ -904,7 +907,8 @@ mod tests {
                 .unwrap();
             assert_eq!(rows, 0);
             let tx = conn.unchecked_transaction().unwrap();
-            tx.execute("INSERT INTO poison_probe VALUES (2)", []).unwrap();
+            tx.execute("INSERT INTO poison_probe VALUES (2)", [])
+                .unwrap();
             tx.commit().unwrap();
         }
         let rows: i64 = db
