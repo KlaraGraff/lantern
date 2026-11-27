@@ -608,9 +608,9 @@ export default function ReaderNotesPanel({
           color={toolbarTarget.color}
           note={toolbarNoteContent?.content ?? null}
           onChangeColor={(color) => updateColor(toolbarTarget.id, color)}
-          onSaveNote={(value) => {
+          onSaveNote={async (value) => {
             const body = value.trim();
-            void (async () => {
+            try {
               if (!body && toolbarNoteContent) await invoke("delete_note", { id: toolbarNoteContent.id });
               else if (body) {
                 await invoke("save_note", {
@@ -624,9 +624,13 @@ export default function ReaderNotesPanel({
                   content: body,
                 });
               }
-              await refreshNotes();
-              notifyNotesChanged(bookId);
-            })();
+            } catch (error) {
+              console.error("Failed to save highlight note:", error);
+              return false;
+            }
+            await refreshNotes();
+            notifyNotesChanged(bookId);
+            return true;
           }}
           onDeleteNote={() => {
             void (async () => {
