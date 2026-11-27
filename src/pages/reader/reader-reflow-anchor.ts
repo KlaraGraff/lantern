@@ -69,3 +69,25 @@ export function movedDuringReflow(
   if (!before || !after) return false;
   return cfiStart(before) !== cfiStart(after);
 }
+
+/** The anchor a reflow restored to, and where that restore actually settled. */
+export interface ReflowHold {
+  anchor: string;
+  settled: string;
+}
+
+/**
+ * The location a reflow should hold.
+ *
+ * Restoring lands on the page that *contains* the anchor, which usually starts
+ * earlier than the anchor does. Taking that settled page as the next anchor
+ * walks the reader backwards one page per reflow, so while they have not moved
+ * off the settled page the original anchor stays in force.
+ */
+export function reflowAnchor(
+  held: ReflowHold | null,
+  before: string | null | undefined,
+): string | null {
+  if (!before) return null;
+  return held && !movedDuringReflow(held.settled, before) ? held.anchor : before;
+}
