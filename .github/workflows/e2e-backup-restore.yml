@@ -1,0 +1,52 @@
+name: E2E backup and restore
+
+# Manual, plus PRs that touch backup/reset/restore. Builds a debug app on a macOS runner and runs
+# scripts/e2e-backup-restore.sh — a public-domain book with a highlight, a
+# note, a word and reading progress goes through 备份 → 重置全部数据 → 从备份恢复,
+# with the reset and the restore applied by the app's own relaunch.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/e2e-backup-restore.yml
+      - scripts/e2e-backup-restore.sh
+      - src-tauri/src/commands/library_backup.rs
+      - src-tauri/src/restore.rs
+      - src-tauri/src/reset.rs
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Build debug app
+        run: npx tauri build --debug --no-bundle
+
+      - name: Fetch a public-domain book
+        run: |
+          curl -fsSL --retry 3 -A "Mozilla/5.0" -o "$RUNNER_TEMP/pride.epub" \
+            "https://standardebooks.org/ebooks/jane-austen/pride-and-prejudice/downloads/jane-austen_pride-and-prejudice.epub?source=download"
+          file "$RUNNER_TEMP/pride.epub" | grep -q EPUB
+
+      - name: Backup → reset → restore
+        run: scripts/e2e-backup-restore.sh src-tauri/target/debug/lantern "$RUNNER_TEMP/pride.epub"
