@@ -64,8 +64,12 @@ export default function HighlightToolbar({
         onClose();
       }
     };
+    // Claimed, so the reader's own Esc dispatcher (which skips handled
+    // presses) does not also close the card behind or leave the book.
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      onClose();
     };
     document.addEventListener("pointerdown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
