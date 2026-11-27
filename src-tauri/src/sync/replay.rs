@@ -422,7 +422,7 @@ impl ReplayEngine {
         // Failures are non-fatal — the next tick will retry and the log
         // simply grows in the meantime.
         if snapshot::should_compact(&self.shared_dir, &self.self_device) {
-            match snapshot::compact_own_log(&self.shared_dir, &self.own_log) {
+            match snapshot::compact_own_log(&self.shared_dir, &self.own_log, db) {
                 Ok(report) if report.snapshot_written => ::log::info!(
                     "sync: compacted own log — {} events folded, {} bytes freed",
                     report.events_folded,

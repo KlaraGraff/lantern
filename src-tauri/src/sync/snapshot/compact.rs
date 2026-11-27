@@ -217,18 +217,48 @@ fn count_lines_bounded(path: &Path, stop_after: usize) -> std::io::Result<usize>
     }
 }
 
-/// Compact the device's own log: fold the existing snapshot + every
-/// event currently in the log into a fresh snapshot, then truncate
-/// the log to events past the new watermark (typically empty).
+/// Compact the device's own log: fold this device's local view, the
+/// existing snapshot and every event currently in the log into a fresh
+/// snapshot, then truncate the log to events past the new watermark
+/// (typically empty).
 ///
-/// Concurrency: the entire read-fold-write-truncate sequence runs
-/// inside `EventLog::with_locked_log`, so concurrent `append`s from
+/// The fold starts from `db`'s synced tables (the same dump
+/// `Snapshot::from_legacy_db` publishes, minus cover blobs). Own events
+/// routinely touch rows another device created: reading progress on a
+/// peer's book, a highlight in it, a recolour of a peer's highlight.
+/// Folding them into an empty database dropped the updates (the target
+/// row is not there, so the `UPDATE` matched nothing) and failed the
+/// whole compaction on inserts (the parent row is not there, so the
+/// foreign key rejects them). Either way the edit could only reach a
+/// device that catches up later through the log, and the log is what
+/// compaction truncates. Seeding with the local view gives every event
+/// its target; the prior snapshot and the log events are still folded
+/// on top, so an event the local database somehow lacks is not lost
+/// either. All three are merged with the same last-writer-wins rules
+/// peers use, so the order does not matter.
+///
+/// The local dump is read before the log lock is taken and the reader
+/// connection is released straight away, so neither frontend reads nor
+/// writers wait on the iCloud write below. A local write that lands
+/// after the dump appends its event after the new watermark, so peers
+/// still replay it from the log.
+///
+/// Concurrency: the read-fold-write-truncate sequence runs inside
+/// `EventLog::with_locked_log`, so concurrent `append`s from
 /// `SyncWriter` block until compaction finishes. Compaction is rare
 /// (every few minutes/days at most) so the brief stall is fine.
 ///
 /// Idempotent: running compaction twice on an unchanged log is a
 /// no-op the second time (log is already empty after the first run).
-pub fn compact_own_log(shared_dir: &Path, log_handle: &EventLog) -> AppResult<CompactReport> {
+pub fn compact_own_log(
+    shared_dir: &Path,
+    log_handle: &EventLog,
+    db: &Db,
+) -> AppResult<CompactReport> {
+    let local_state = {
+        let conn = db.reader();
+        dump_state(&conn)?
+    };
     let device = log_handle.device().to_string();
     let snap_path = shared_dir
         .join("logs")
@@ -246,21 +276,38 @@ pub fn compact_own_log(shared_dir: &Path, log_handle: &EventLog) -> AppResult<Co
             return Ok(CompactReport::default());
         }
 
-        // Fold the prior snapshot (if any) + every log event into a
-        // fresh in-memory DB, then dump as the new snapshot. Same
-        // engine merge::apply_event uses for peer events — guarantees
-        // the snapshot reflects the same state a peer would compute.
+        // Fold the local view + the prior snapshot (if any) + every log
+        // event into a fresh in-memory DB, then dump as the new
+        // snapshot. Same engine peers use for snapshots and events —
+        // guarantees the snapshot reflects the same state a peer would
+        // compute.
         let prior = if snap_path.exists() {
             Some(Snapshot::read_from(&snap_path)?)
         } else {
             None
         };
 
+        let local = Snapshot {
+            v: SNAPSHOT_SCHEMA_VERSION,
+            device: device.clone(),
+            id: Ulid::new().to_string(),
+            generated_at: chrono::Utc::now().timestamp_millis(),
+            truncated_before: None,
+            state: local_state,
+        };
+
         let mut conn = Connection::open_in_memory()?;
         Db::run_migrations_on(&conn)?;
         {
             let tx = conn.transaction()?;
+            local.apply_peer(&tx, &device)?;
             if let Some(s) = &prior {
+                // `apply_peer` records a replay watermark for `device`
+                // and skips any later snapshot whose id sits below it.
+                // Both snapshots are folded here under the same device
+                // key, so the seed's fresh id would hide the prior one.
+                // Watermarks mean nothing in this scratch database.
+                tx.execute("DELETE FROM _replay_state", [])?;
                 s.apply_peer(&tx, &device)?;
             }
             for ev in events {
