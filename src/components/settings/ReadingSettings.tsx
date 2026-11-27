@@ -52,6 +52,7 @@ import ReaderBackgroundSettings from "./ReaderBackgroundSettings";
 import Button from "../ui/Button";
 import ConfirmDialog from "./ConfirmDialog";
 import { buildReadingDefaultSettings } from "./reading-defaults";
+import { acceptedNumberDraft } from "./number-draft";
 import { createDefaultReaderSettings } from "../../pages/reader/useReaderSettingsSync";
 import {
   addPendingWrites,
@@ -112,10 +113,11 @@ const READER_THEME_OPTIONS: {
 
 const CUSTOM_THEME_PRESETS = ["#F4E6C7", "#DDE8D8", "#DDE7F1", "#E7DDEC", "#D8D9DC"] as const;
 
-// The input keeps no draft of its own: each keystroke goes straight into the
-// caller's state, and nothing is written until `onBlur` (Enter blurs too). That
-// is why the caller has to know when one of these has focus — see
-// `reading-rehydration.ts`.
+// A keystroke that leaves a valid value goes straight into the caller's state;
+// one that does not ("2" on the way to "24", an emptied field) stays as a draft
+// on screen only, and is dropped at blur. Nothing is written until `onBlur`
+// (Enter blurs too), which is why the caller has to know when one of these has
+// focus — see `reading-rehydration.ts`.
 function NumberInput({ value, onChange, onFocus, onBlur, suffix, min, max }: {
   value: number;
   onChange: (v: number) => void;
@@ -125,19 +127,22 @@ function NumberInput({ value, onChange, onFocus, onBlur, suffix, min, max }: {
   min?: number;
   max?: number;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <div className="flex items-center gap-1 shrink-0 w-[90px] justify-end">
       <input
         type="number"
-        value={value}
+        value={draft ?? value}
         onChange={(e) => {
-          const v = Number(e.target.value);
-          if (min !== undefined && v < min) return;
-          if (max !== undefined && v > max) return;
-          onChange(v);
+          setDraft(e.target.value);
+          const v = acceptedNumberDraft(e.target.value, min, max);
+          if (v !== null) onChange(v);
         }}
         onFocus={onFocus}
-        onBlur={onBlur}
+        onBlur={() => {
+          setDraft(null);
+          onBlur();
+        }}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         className="field-soft w-[64px] h-8 bg-white dark:bg-bg-surface rounded-[10px] px-2 text-[13px] font-medium text-text-secondary text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
