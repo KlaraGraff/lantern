@@ -99,6 +99,12 @@ pinyin = { version = "0.11", default-features = false, features = ["plain"] }
 # manual `fs::remove_file` is easiest to forget. That omission is what
 # 0c34177 had to fix in the font importer.
 tempfile = "3"
+# Reads user-imported MDict (.mdx) dictionaries for offline lookup. Pure Rust,
+# `forbid(unsafe_code)`, MIT; `lzo` covers the older dictionaries that use it.
+mdictlib = { version = "=0.2.8", features = ["lzo"] }
+# Already in the tree through `scraper`; named here only so the MDict HTML
+# walk can spell its node type.
+ego-tree = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

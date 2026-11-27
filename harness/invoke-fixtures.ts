@@ -372,6 +372,27 @@ function profileView(): Record<string, unknown> {
  */
 const harnessRegeneratedCards = new Map<string, string>();
 
+function offlineDictionaryStatus(override?: string) {
+  const params = new URLSearchParams(location.search);
+  const state = override ?? params.get("offlineDict") ?? "not_downloaded";
+  const size = 66_009_548;
+  return {
+    ecdict: {
+      state,
+      downloadSize: size,
+      downloadedBytes: state === "downloading" ? Math.round(size * 0.42) : 0,
+      installedBytes: state === "installed" ? 62_013_440 : null,
+      errorCode: null,
+    },
+    imported: params.get("mdx") === "1"
+      ? [
+          { id: "harness-mdx-1", title: "牛津高阶英汉双解词典（第 10 版）", entries: 185_324, bytes: 162_529_280, importedAt: 1 },
+          { id: "harness-mdx-2", title: "柯林斯 COBUILD 英汉双解", entries: 47_310, bytes: 38_797_312, importedAt: 2 },
+        ]
+      : [],
+  };
+}
+
 export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
    * Boot / shell
@@ -1126,6 +1147,10 @@ export const FIXTURES: Record<string, Fixture> = {
     // 有道查不到时后端是报错，不是返回空条目 —— 前端的 not-found 卡走的是
     // catch 那一支，所以这里也得抛。
     if (key === DICTIONARY_MISS) throw new Error("harness: 词典里没有这个词");
+    // `?offline=1`：模拟断网且没下离线词典，查词卡走「要不要下载」那一支。
+    if (new URLSearchParams(location.search).get("offline") === "1") {
+      throw new Error("DICTIONARY_OFFLINE_MISSING");
+    }
     const entry = DICTIONARY_ENTRIES[key] ?? GENERIC_DICTIONARY_ENTRY;
     return {
       word,
@@ -1216,6 +1241,13 @@ export const FIXTURES: Record<string, Fixture> = {
     2,
   ),
   enhanced_font_status: { installed: false, enabled: false, downloading: false, bytes: 0 },
+  // `?offlineDict=installed|waiting|downloading` 和 `?mdx=1` 切换设置页离线
+  // 词典那几行的状态；默认是还没下载、也没导入词典。
+  offline_dictionary_status: () => offlineDictionaryStatus(),
+  offline_dictionary_download: () => offlineDictionaryStatus("waiting"),
+  offline_dictionary_cancel: () => offlineDictionaryStatus("not_downloaded"),
+  offline_dictionary_remove_ecdict: () => offlineDictionaryStatus("not_downloaded"),
+  offline_dictionary_remove_mdx: () => offlineDictionaryStatus(),
   list_custom_fonts: [],
   // The native picker, cancelled: nothing to copy, nothing changes.
   import_reader_background: null,

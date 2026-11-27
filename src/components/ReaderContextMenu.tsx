@@ -20,6 +20,11 @@ import {
   type SerializableRect,
 } from "./reader-interaction";
 import DictionaryCard, { type DictionaryEntry } from "./DictionaryCard";
+import {
+  OFFLINE_PROMPT_DISMISSED_KEY,
+  dictionaryFailureOf,
+  type DictionaryFailure,
+} from "./dictionary-failure";
 import { anchorTransformOrigin } from "./motion";
 import { readSafeInsetBottom, readSafeInsetTop } from "../utils/safe-inset";
 import {
@@ -127,7 +132,7 @@ export default function ReaderContextMenu({
   // Every standalone component that needs a setting reads it this way — the
   // reader's own `useReaderSettingsSync` is out of reach from a component
   // this self-contained, and a generic key-value fetch here is cheap.
-  const { settings: dictionarySettings } = useSettings();
+  const { settings: dictionarySettings, save: saveDictionarySetting } = useSettings();
   const isNarrow = useIsNarrow();
   const dictionaryEnabled = dictionarySettings.dictionary_lookup_enabled !== "false";
   // The card's closing line tells the reader to double-click. It may only say
@@ -140,6 +145,10 @@ export default function ReaderContextMenu({
     isNarrow || dictionarySettings.double_click_quick_lookup !== "false";
   const [dictionaryEntry, setDictionaryEntry] = useState<DictionaryEntry | null>(null);
   const [dictionaryLoading, setDictionaryLoading] = useState(false);
+  const [dictionaryFailure, setDictionaryFailure] = useState<DictionaryFailure>(null);
+  const [offlineQueued, setOfflineQueued] = useState(false);
+  const offlinePromptDismissed =
+    dictionarySettings[OFFLINE_PROMPT_DISMISSED_KEY] === "true";
   // Single click already opens this menu after the double-click grace period
   // (`cancelPendingWordClick` in useReaderInteractions.ts) has passed, so no
   // new gesture is introduced — this is one more row on a toolbar that was
@@ -148,6 +157,8 @@ export default function ReaderContextMenu({
 
   useEffect(() => {
     setDictionaryEntry(null);
+    setDictionaryFailure(null);
+    setOfflineQueued(false);
     setDictionaryLoading(Boolean(dictionaryQuery));
     if (!dictionaryQuery) return;
     let cancelled = false;
@@ -155,11 +166,13 @@ export default function ReaderContextMenu({
       .then((entry) => {
         if (!cancelled) setDictionaryEntry(entry);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // A genuine not-found, or a failure with no usable fallback. The card
         // stays and says so: collapsing it here would move the whole menu a
         // second time, which is the jump the skeleton exists to avoid.
-        if (!cancelled) setDictionaryEntry(null);
+        if (cancelled) return;
+        setDictionaryEntry(null);
+        setDictionaryFailure(dictionaryFailureOf(error));
       })
       .finally(() => {
         if (!cancelled) setDictionaryLoading(false);
@@ -411,6 +424,21 @@ export default function ReaderContextMenu({
           entry={dictionaryEntry}
           showSpeak={speakInCard}
           showAiHint={doubleClickLooksUp}
+          failure={dictionaryFailure}
+          offlineOffer={
+            dictionaryFailure === "offline_missing" && !offlinePromptDismissed
+              ? {
+                  queued: offlineQueued,
+                  onDownload: () => {
+                    setOfflineQueued(true);
+                    void invoke("offline_dictionary_download").catch(() => setOfflineQueued(false));
+                  },
+                  onDismiss: () => {
+                    void saveDictionarySetting(OFFLINE_PROMPT_DISMISSED_KEY, "true").catch(() => {});
+                  },
+                }
+              : null
+          }
         />
       ) : null}
       {onNote ? (
