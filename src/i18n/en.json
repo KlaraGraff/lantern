@@ -2323,6 +2323,7 @@
   "readingStats.emptyTitle": "Your reading history starts here",
   "readingStats.emptyDescription": "Lantern records your reading time locally. It pauses after five minutes without activity and never guesses older history.",
   "readingStats.emptyRule": "Sessions shorter than 30 seconds are discarded.",
+  "readingStats.noHistoryInView": "No reading in this period. Choose another range or book above.",
   "readingStats.privacyButton": "How reading history works",
   "readingStats.privacyTitle": "Reading history and privacy",
   "readingStats.privacyDescription": "The facts are calculated on this device from your reading sessions.",
