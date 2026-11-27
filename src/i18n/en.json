@@ -827,6 +827,7 @@
   "settings.general.subtitle": "Appearance, name and app options",
   "settings.general.displayName": "Display Name",
   "settings.general.displayNameHint": "Shown in the library sidebar and kept on this device.",
+  "settings.general.displayNameDefault": "Reader",
   "settings.general.languageHint": "Interface language",
   "settings.general.themeHint": "Choose your preferred color scheme",
   "settings.general.lookupHistoryRetention": "Lookup history retention",
