@@ -19,6 +19,9 @@ export const CHROME_SHOWN: ChromeFade = { turns: 0, faded: false };
  */
 export function chromeFade(state: ChromeFade, event: "turn" | "wake", held: boolean): ChromeFade {
   if (event === "wake" || held) return state.turns === 0 && !state.faded ? state : CHROME_SHOWN;
+  // Already faded: further turns change nothing, so hand back the same object
+  // and let React skip re-rendering the whole reader on every page turn.
+  if (state.faded) return state;
   const turns = state.turns + 1;
   return { turns, faded: turns >= CHROME_FADE_TURNS };
 }
