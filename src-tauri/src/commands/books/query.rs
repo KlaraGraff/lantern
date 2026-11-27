@@ -165,6 +165,10 @@ pub(crate) fn query_books_sorted(
     limit: usize,
     manual: bool,
 ) -> AppResult<BookPage> {
+    // `limit` arrives straight from the command. Zero used to panic on
+    // `books[limit - 1]` once a row came back, and a huge value overflowed
+    // `limit + 1` below.
+    let limit = limit.clamp(1, MAX_PAGE_SIZE);
     let conn = db.reader();
 
     let use_collection = collection_id.is_some();
@@ -441,6 +445,8 @@ pub(crate) fn query_book_exists(db: &Db, id: &str) -> AppResult<bool> {
 }
 
 const DEFAULT_PAGE_SIZE: usize = 20;
+/// Largest page `list_books` returns; covers carry inline data URIs.
+const MAX_PAGE_SIZE: usize = 500;
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri exposes these as separate named command inputs.

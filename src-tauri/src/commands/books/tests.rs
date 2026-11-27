@@ -1385,6 +1385,20 @@ fn pagination_returns_first_page() {
 }
 
 #[test]
+fn pagination_survives_zero_and_huge_limits() {
+    let (_dir, db) = setup();
+    for i in 0..3 {
+        insert_book_with_ts(&db, &format!("b{i}"), "reading", 1000 + i);
+    }
+    let page = query_books(&db, None, None, None, None, 0).unwrap();
+    assert_eq!(page.books.len(), 1);
+    assert!(page.next_cursor.is_some());
+    let page = query_books(&db, None, None, None, None, usize::MAX).unwrap();
+    assert_eq!(page.books.len(), 3);
+    assert!(page.next_cursor.is_none());
+}
+
+#[test]
 fn pagination_cursor_returns_next_page() {
     let (_dir, db) = setup();
     for i in 0..5 {
