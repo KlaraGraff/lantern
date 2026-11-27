@@ -187,6 +187,7 @@
   "home.importError": "Couldn't import book",
   "book.preparing": "Preparing for reading",
   "book.preparationFailed": "Preparation failed. Click to retry.",
+  "reader.escapeAgainToLeave": "Press Esc again to return to the shelf",
   "reader.pageOf": "Page {{current}} of {{total}}",
   "reader.pageRangeOf": "Pages {{current}}–{{end}} of {{total}}",
   "reader.chapterPageOf": "Current content: page {{current}}/{{total}}",

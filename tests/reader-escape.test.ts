@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { escapeStep } from "../src/pages/reader/reader-escape.ts";
+import { confirmsLeave, escapeStep, LEAVE_CONFIRM_WINDOW_MS } from "../src/pages/reader/reader-escape.ts";
 import { INITIAL_SIDES, type ReaderSides } from "../src/pages/reader/reader-sides.ts";
 
 const wide = { overlayOpen: false, narrow: false, narrowPanelOpen: false };
@@ -29,4 +29,11 @@ test("on a phone, Esc closes the full-screen panel before it leaves", () => {
   const narrow = { overlayOpen: false, narrow: true, sides: sides("float", "closed") };
   assert.equal(escapeStep({ ...narrow, narrowPanelOpen: true }), "panels");
   assert.equal(escapeStep({ ...narrow, narrowPanelOpen: false }), "leave");
+});
+
+test("leaving takes a second Esc inside the window", () => {
+  assert.equal(confirmsLeave(null, 1_000), false);
+  assert.equal(confirmsLeave(1_000, 1_400), true);
+  assert.equal(confirmsLeave(1_000, 1_000 + LEAVE_CONFIRM_WINDOW_MS), false);
+  assert.equal(confirmsLeave(5_000, 1_000), false);
 });

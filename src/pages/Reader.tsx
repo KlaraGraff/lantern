@@ -128,7 +128,7 @@ import ReaderRightSide from "./reader/ReaderRightSide";
 import { spineSegments } from "./reader/reader-spine";
 import ReaderLeftSide from "./reader/ReaderLeftSide";
 import ReaderBookmarkEar from "./reader/ReaderBookmarkEar";
-import { escapeStep } from "./reader/reader-escape";
+import { confirmsLeave, escapeStep } from "./reader/reader-escape";
 import { useChromeFade } from "./reader/useChromeFade";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
 import type { TapZone } from "./reader/tap-zones";
@@ -994,6 +994,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     settingsOpen || exportOpen || contextMenu || translation || customAction || footnote
     || learningCards.length > 0 || diagnosticsPanelOpen || chromeOpen,
   );
+  const leaveArmedAtRef = useRef<number | null>(null);
   const handleEscape = useCallback((): boolean => {
     if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return false;
     const step = escapeStep({
@@ -1009,12 +1010,22 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     } else if (step === "left" || step === "right") {
       dismissFloating(step);
     } else if (step === "leave" && !isStandaloneWindow) {
-      leaveReader();
+      const now = Date.now();
+      if (confirmsLeave(leaveArmedAtRef.current, now)) {
+        leaveArmedAtRef.current = null;
+        setReaderToast(null);
+        leaveReader();
+      } else {
+        leaveArmedAtRef.current = now;
+        setReaderToast(t("reader.escapeAgainToLeave"));
+      }
+      return true;
     } else {
       return false;
     }
+    leaveArmedAtRef.current = null;
     return true;
-  }, [escapeOverlayOpen, isNarrow, tocOpen, searchOpen, sidePanel, sides, setTocOpen, setSearchOpen, setSidePanel, dismissFloating, leaveReader]);
+  }, [escapeOverlayOpen, isNarrow, tocOpen, searchOpen, sidePanel, sides, setTocOpen, setSearchOpen, setSidePanel, dismissFloating, leaveReader, t]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.repeat) return;

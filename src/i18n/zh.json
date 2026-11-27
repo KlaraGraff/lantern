@@ -187,6 +187,7 @@
   "home.importError": "无法导入书籍",
   "book.preparing": "正在准备阅读内容",
   "book.preparationFailed": "准备失败，点击重试。",
+  "reader.escapeAgainToLeave": "再按一次 Esc 返回书架",
   "reader.pageOf": "第 {{current}} 页，共 {{total}} 页",
   "reader.pageRangeOf": "第 {{current}}–{{end}} 页，共 {{total}} 页",
   "reader.chapterPageOf": "当前内容 {{current}}/{{total}} 页",
