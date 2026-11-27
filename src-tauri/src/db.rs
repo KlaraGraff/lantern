@@ -194,7 +194,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
 fn register_sqlite_vec() {
     type SqliteExtensionInit = unsafe extern "C" fn(
         *mut rusqlite::ffi::sqlite3,
-        *mut *const i8,
+        *mut *mut std::ffi::c_char,
         *const rusqlite::ffi::sqlite3_api_routines,
     ) -> i32;
     static REGISTER: Once = Once::new();

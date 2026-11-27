@@ -44,7 +44,7 @@ import {
   getFootnoteCSS,
   getReaderCSS,
 } from "./reader-theme";
-import { movedDuringReflow } from "./reader-reflow-anchor";
+import { movedDuringReflow, reflowAnchor, type ReflowHold } from "./reader-reflow-anchor";
 import {
   FOOTNOTE_CONTENT_WIDTH,
   FOOTNOTE_POPOVER_MAX_HEIGHT,
@@ -380,6 +380,8 @@ export function useFoliateView({
   // Size the reader stylesheet was last written with. Tracked because the
   // narrow-viewport shrink can change it on resize alone.
   const appliedFontSizeRef = useRef(readerSettings.fontSize);
+  // The location repeated reflows hold to (see the resize handler below).
+  const reflowAnchorRef = useRef<ReflowHold | null>(null);
   // Which passive-vocab presentation the loaded documents were installed with.
   const appliedNarrowViewportRef = useRef(
     isNarrowPassiveVocabViewport(typeof window === "undefined" ? 0 : window.innerWidth),
@@ -1078,7 +1080,12 @@ export function useFoliateView({
         // somewhere else. Hold the location across the relayout: `relocate`
         // fires synchronously from inside applyReflowLayout, so the reading
         // either side of it is a genuine before/after pair.
-        const anchorBefore = currentCfiRef.current;
+        //
+        // The anchor is the page the reader last turned to, not whatever the
+        // previous reflow settled on: restoring lands on the page that
+        // *contains* the anchor, which starts earlier, and re-anchoring to that
+        // on every reflow walks the reader backwards a page at a time.
+        const anchor = reflowAnchor(reflowAnchorRef.current, currentCfiRef.current);
         applyReflowLayout(
           view,
           readerSettingsRef.current,
@@ -1086,8 +1093,16 @@ export function useFoliateView({
           viewer.clientHeight,
         );
         recordReflowTiming(performance.now() - started);
-        if (anchorBefore && movedDuringReflow(anchorBefore, currentCfiRef.current)) {
-          void view.goTo?.(anchorBefore, { history: false });
+        if (anchor) {
+          const hold = { anchor, settled: currentCfiRef.current ?? anchor };
+          reflowAnchorRef.current = hold;
+          if (movedDuringReflow(anchor, currentCfiRef.current)) {
+            void Promise.resolve(view.goTo?.(anchor, { history: false })).then(() => {
+              if (reflowAnchorRef.current === hold && currentCfiRef.current) {
+                hold.settled = currentCfiRef.current;
+              }
+            }).catch(() => {});
+          }
         }
         // Passive-vocab notes pick margin rail or ruby from the window width at
         // install time. Crossing that threshold mid-session leaves rails in a

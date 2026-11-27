@@ -15,7 +15,8 @@ interface HighlightToolbarProps {
   color: string;
   note: string | null;
   onChangeColor: (color: string) => void;
-  onSaveNote: (note: string) => void;
+  /** Resolves false when the note could not be saved; the draft then stays open. */
+  onSaveNote: (note: string) => Promise<boolean>;
   onDeleteNote: () => void;
   onDeleteHighlight: () => void;
   onClose: () => void;
@@ -46,6 +47,7 @@ export default function HighlightToolbar({
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState(note ?? "");
   const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const hasNote = Boolean(note?.trim());
 
   useEffect(() => {
@@ -92,9 +94,10 @@ export default function HighlightToolbar({
     anchorTransformOrigin(element, { x, y }, { left, top });
   }, [x, y]);
 
-  const handleSaveNote = () => {
-    onSaveNote(noteDraft.trim());
-    setNoteOpen(false);
+  const handleSaveNote = async () => {
+    setSaveFailed(false);
+    if (await onSaveNote(noteDraft.trim())) setNoteOpen(false);
+    else setSaveFailed(true);
   };
 
   return (
@@ -182,10 +185,15 @@ export default function HighlightToolbar({
             rows={3}
             className="field-soft w-full resize-none rounded-md bg-bg-input px-2 py-1.5 text-[13px] text-text-primary placeholder:text-text-placeholder outline-none"
           />
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-2">
+            {saveFailed && (
+              <span role="alert" className="mr-auto text-[11px] text-danger-text">
+                {t("notes.saveFailed")}
+              </span>
+            )}
             <button
               type="button"
-              onClick={handleSaveNote}
+              onClick={() => void handleSaveNote()}
               className="text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
             >
               {t("common.save")}

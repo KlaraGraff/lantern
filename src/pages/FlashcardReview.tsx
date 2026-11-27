@@ -77,6 +77,9 @@ export default function FlashcardReview() {
   const [now] = useState(() => Date.now());
   const [words, setWords] = useState<DictionaryWord[] | null>(null);
   const [piles, setPiles] = useState<ReviewPile[] | null>(null);
+  // A failed load must not read as an empty queue, which is the "done" screen.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const { settings, loading: settingsLoading } = useSettings();
 
   useEffect(() => {
@@ -87,10 +90,10 @@ export default function FlashcardReview() {
       })
       .catch((err) => {
         console.error("Failed to load vocab words:", err);
-        if (!cancelled) setWords([]);
+        if (!cancelled) setLoadFailed(true);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
     if (!pileParam) {
@@ -102,10 +105,10 @@ export default function FlashcardReview() {
       .then((result) => { if (!cancelled) setPiles(result); })
       .catch((err) => {
         console.error("Failed to load review piles:", err);
-        if (!cancelled) setPiles([]);
+        if (!cancelled) setLoadFailed(true);
       });
     return () => { cancelled = true; };
-  }, [pileParam]);
+  }, [pileParam, loadAttempt]);
 
   const primaryOverrides = useMemo<Record<string, string>>(() => {
     const raw = settings.vocab_primary_definition;
@@ -366,7 +369,19 @@ export default function FlashcardReview() {
       {/* pb carries the home indicator's inset — the last card's controls
           would otherwise end up underneath it. */}
       <div className="flex-1 overflow-y-auto px-4 pt-8 pb-[calc(var(--spacing-safe-bottom)+2rem)]">
-        {queue === null ? null : done ? (
+        {loadFailed ? (
+          <div role="alert" className="mx-auto max-w-[520px] py-10 text-center">
+            <p className="text-[13px] text-text-secondary">{t("vocab.reviewLoadFailed")}</p>
+            <Button
+              className="mt-6"
+              variant="primary"
+              size="md"
+              onClick={() => { setLoadFailed(false); setLoadAttempt((attempt) => attempt + 1); }}
+            >
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : queue === null ? null : done ? (
           <div className="mx-auto max-w-[520px] py-10 text-center">
             <CheckCircle2 size={34} className="mx-auto text-accent" />
             <h2 className="mt-3 text-[16px] font-semibold text-text-primary">{t("vocab.reviewComplete")}</h2>
