@@ -20,6 +20,7 @@ import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { useTranslation } from "react-i18next";
 import { deriveBookIndexState, type BookIndexState, type IndexDetails } from "./index-state";
 import { anchorTransformOrigin } from "./motion";
+import { isPaletteRowActivation } from "./command-palette/palette-model";
 import { platform } from "../services/platform";
 
 /** Fixed width of the collections submenu — it is set on the element too. */
@@ -404,7 +405,7 @@ export default function BookContextMenu({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreateAndAdd();
+                  if (isPaletteRowActivation(e.nativeEvent)) handleCreateAndAdd();
                   if (e.key === "Escape") setCreatingNew(false);
                 }}
                 placeholder={t("bookMenu.collectionPlaceholder")}

@@ -19,6 +19,7 @@ import i18n from "../../i18n";
 import { createSettingsSaveFeedback, runSettingsSave } from "./settings-save-feedback";
 import ResetDataDialog from "./ResetDataDialog";
 import { openSettings } from "../settings-open";
+import { isPaletteRowActivation } from "../command-palette/palette-model";
 import { runReset, type ResetDataSummary, type ResetStep } from "./reset-data";
 
 /**
@@ -169,7 +170,7 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
               if (saved && displayNameDraftRef.current.value === draft) displayNameDraftRef.current.dirty = false;
             });
           }}
-          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          onKeyDown={(e) => { if (isPaletteRowActivation(e.nativeEvent)) (e.target as HTMLInputElement).blur(); }}
           placeholder="Reader"
           className={`field-soft ${ROW_CONTROL_WIDTH} h-8 bg-white dark:bg-bg-surface rounded-[10px] px-3 text-[13px] font-medium text-text-secondary text-center outline-none`}
         />

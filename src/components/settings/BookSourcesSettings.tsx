@@ -17,6 +17,7 @@ import {
 } from "../book-sources";
 import { createUuid } from "../../utils/randomUuid";
 import ConfirmDialog from "./ConfirmDialog";
+import { isPaletteRowActivation } from "../command-palette/palette-model";
 import { presetDeleteConfirm, type PresetDeleteConfirmation } from "./presetDeletion";
 import type { SettingsProps } from "./types";
 
@@ -143,7 +144,7 @@ export default function BookSourcesSettings({ settings, saveBulk, showSavedToast
         placeholder="https://example.com"
         onChange={(event) => setDraft((current) => (current ? { ...current, url: event.target.value } : current))}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && draftValid) commitDraft();
+          if (isPaletteRowActivation(event.nativeEvent) && draftValid) commitDraft();
         }}
       />
       <div>

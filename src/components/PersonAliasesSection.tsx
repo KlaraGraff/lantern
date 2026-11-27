@@ -19,6 +19,7 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { useSettings } from "../hooks/useSettings";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { isPaletteRowActivation } from "./command-palette/palette-model";
 import { platform } from "../services/platform";
 import {
   aliasAmbiguities,
@@ -789,7 +790,7 @@ export default function PersonAliasesSection({
                         value={addAliasText}
                         onChange={(event) => setAddAliasText(event.target.value)}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter") submitAddAlias(row.canonical);
+                          if (isPaletteRowActivation(event.nativeEvent)) submitAddAlias(row.canonical);
                           if (event.key === "Escape") cancelAddAlias();
                         }}
                         onBlur={cancelAddAlias}
