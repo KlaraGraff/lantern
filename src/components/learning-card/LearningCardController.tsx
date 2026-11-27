@@ -80,7 +80,12 @@ interface LearningCardControllerProps {
   onFocus?: () => void;
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
   onSelectText?: (source: PanelSelectionSource) => void;
-  onAskAi: (quote: string, location?: string, analysis?: string) => void;
+  /**
+   * `source` is the card as it stands on screen, so the hand-off can be drawn
+   * as the card moving into the right card. Absent on a bottom sheet, which
+   * has no place of its own to move from.
+   */
+  onAskAi: (quote: string, location?: string, analysis?: string, source?: HTMLElement | null) => void;
   onViewAllNotes?: () => void;
   onLookupSuccess?: (interaction: ReaderInteraction) => void;
   /** Passed through to a save from this card: `"quiz"` for the quiz paper. */
@@ -525,7 +530,12 @@ export default function LearningCardController({
 
   const onAction = useCallback(async (action: LearningCardActionId) => {
     if (action === "ask_ai") {
-      onAskAi(interaction.text, interaction.location, JSON.stringify(result));
+      onAskAi(
+        interaction.text,
+        interaction.location,
+        JSON.stringify(result),
+        coarsePointer ? null : wrapperRef.current,
+      );
       return;
     }
     if (action === "note") {
@@ -565,7 +575,7 @@ export default function LearningCardController({
       setCollected(true);
       window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi: interaction.location } }));
     }
-  }, [bookId, interaction, onAskAi, result, vocabSource, vocabSourceLabel]);
+  }, [bookId, coarsePointer, interaction, onAskAi, result, vocabSource, vocabSourceLabel]);
 
   const saveNote = useCallback(async () => {
     if (!noteDraft.trim() || !bookId) return;
