@@ -189,6 +189,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (75, include_str!("../migrations/075_ai_api_mode.sql")),
     (76, include_str!("../migrations/076_book_manual_order.sql")),
     (77, include_str!("../migrations/077_book_field_clocks.sql")),
+    (78, include_str!("../migrations/078_hot_path_indexes.sql")),
 ];
 
 fn register_sqlite_vec() {
@@ -826,6 +827,67 @@ mod tests {
             .query_row("SELECT version FROM schema_version", [], |r| r.get(0))
             .unwrap();
         assert_eq!(version, MIGRATIONS.last().unwrap().0);
+    }
+
+    fn query_plan(conn: &Connection, sql: &str) -> String {
+        let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        rows.join("\n")
+    }
+
+    /// The hot-path queries 078 exists for must seek an index, not scan the table.
+    #[test]
+    fn hot_path_queries_use_their_indexes() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        let cases = [
+            (
+                "SELECT word_count, dwell_ms FROM reading_screen_dwells
+                  WHERE word_count > 0 AND dwell_ms > 0 AND (word_count * 60000.0) / dwell_ms <= 1000
+                  ORDER BY started_at DESC LIMIT 500",
+                "idx_reading_screen_dwells_started",
+            ),
+            (
+                "SELECT SUM(lookup_count), MAX(last_looked_up_at) FROM lookup_records
+                  WHERE normalized_text = 'word'",
+                "idx_lookup_records_text_recent",
+            ),
+            (
+                "SELECT definition FROM lookup_records
+                  WHERE normalized_text = 'word' AND definition <> ''
+                  ORDER BY last_looked_up_at DESC LIMIT 1",
+                "idx_lookup_records_text_recent",
+            ),
+            (
+                "SELECT id, word, mastery FROM vocab_words
+                  WHERE word COLLATE NOCASE IN ('Word', 'word')",
+                "idx_vocab_words_word_nocase",
+            ),
+            (
+                "SELECT EXISTS(SELECT 1 FROM vocab_words
+                  WHERE word = 'word' COLLATE NOCASE AND list_status = 'confirmed')",
+                "idx_vocab_words_word_nocase",
+            ),
+            (
+                "SELECT id FROM books ORDER BY books.updated_at DESC, books.id ASC LIMIT 21",
+                "idx_books_updated",
+            ),
+        ];
+        for (sql, index) in cases {
+            let plan = query_plan(&conn, sql);
+            assert!(
+                plan.contains(index),
+                "expected {index} in plan for {sql}:\n{plan}"
+            );
+            assert!(
+                !plan.contains("USE TEMP B-TREE FOR ORDER BY"),
+                "sort should come from the index for {sql}:\n{plan}"
+            );
+        }
     }
 
     #[test]
@@ -1578,6 +1640,8 @@ mod tests {
                 "idx_vocab_due_review",
                 "idx_vocab_mastery",
                 "idx_vocab_words_list_status",
+                // Added after 074, by 078.
+                "idx_vocab_words_word_nocase",
                 // The PRIMARY KEY's implicit index — proof the rebuilt table
                 // still declares `id` as the primary key.
                 "sqlite_autoindex_vocab_words_1",
