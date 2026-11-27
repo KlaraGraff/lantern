@@ -1,6 +1,6 @@
-import { parseTextLocation, textLocation } from "./text-book-location";
-import { loadFoliateModules } from "../pages/reader/foliate-modules";
-import type { CfiModule } from "../pages/reader/foliate-modules";
+import { parseTextLocation, textLocation } from "./text-book-location.ts";
+import { loadFoliateModules } from "../pages/reader/foliate-modules.ts";
+import type { CfiModule } from "../pages/reader/foliate-modules.ts";
 
 export type { CfiModule };
 
@@ -154,7 +154,7 @@ function planRanges<Position>(
       removeIds.add(highlight.id);
       const nextStart = minimum(mergedStart, highlight.start, compare);
       const nextEnd = maximum(mergedEnd, highlight.end, compare);
-      changed = compare(nextStart, mergedStart) !== 0 || compare(nextEnd, mergedEnd) !== 0;
+      changed ||= compare(nextStart, mergedStart) !== 0 || compare(nextEnd, mergedEnd) !== 0;
       mergedStart = nextStart;
       mergedEnd = nextEnd;
     }
