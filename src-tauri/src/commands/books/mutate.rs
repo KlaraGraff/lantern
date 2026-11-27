@@ -263,7 +263,10 @@ pub(crate) fn do_update_reading_progress(
         // publishes only the promotion (or nothing) here — the finished pair
         // is published separately, after this transaction commits, so it can
         // carry its own later logical timestamps (see below).
-        let should_finish = if was_finished || was_unread {
+        let should_finish = if was_finished
+            || was_unread
+            || !crate::mastery::auto_finish_progress_reached(progress)
+        {
             false
         } else if let Some(total_screens) =
             crate::commands::reading_behavior::estimate_total_book_screens(tx, id)?
