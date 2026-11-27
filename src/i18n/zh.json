@@ -827,6 +827,7 @@
   "settings.general.subtitle": "界面、名称与应用选项",
   "settings.general.displayName": "显示名称",
   "settings.general.displayNameHint": "显示在书库侧栏，仅保存在此设备。",
+  "settings.general.displayNameDefault": "读者",
   "settings.general.languageHint": "界面语言",
   "settings.general.themeHint": "选择你偏好的配色方案",
   "settings.general.lookupHistoryRetention": "查询历史保留期限",

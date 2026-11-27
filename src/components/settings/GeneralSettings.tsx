@@ -37,8 +37,10 @@ import { runReset, type ResetDataSummary, type ResetStep } from "./reset-data";
 export default function GeneralSettings({ settings, loading, save, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
   const [language, setLanguage] = useState("en");
-  const [displayName, setDisplayName] = useState("Reader");
-  const displayNameDraftRef = useRef({ value: "Reader", dirty: false });
+  // null until a name is loaded or typed: the field then shows the localized
+  // default, which is never written back as if the reader had chosen it.
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const displayNameDraftRef = useRef<{ value: string | null; dirty: boolean }>({ value: null, dirty: false });
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
 
   useEffect(() => {
@@ -159,19 +161,20 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.displayNameHint")}</p>
         </div>
         <input
-          value={displayName}
+          value={displayName ?? t("settings.general.displayNameDefault")}
           onChange={(e) => {
             displayNameDraftRef.current = { value: e.target.value, dirty: true };
             setDisplayName(e.target.value);
           }}
           onBlur={() => {
             const draft = displayNameDraftRef.current.value;
+            if (draft === null) return;
             void persist("user_name", draft).then((saved) => {
               if (saved && displayNameDraftRef.current.value === draft) displayNameDraftRef.current.dirty = false;
             });
           }}
           onKeyDown={(e) => { if (isPaletteRowActivation(e.nativeEvent)) (e.target as HTMLInputElement).blur(); }}
-          placeholder="Reader"
+          placeholder={t("settings.general.displayNameDefault")}
           className={`field-soft ${ROW_CONTROL_WIDTH} h-8 bg-white dark:bg-bg-surface rounded-[10px] px-3 text-[13px] font-medium text-text-secondary text-center outline-none`}
         />
       </div>
