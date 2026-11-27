@@ -1262,8 +1262,8 @@ mod tests {
         // post-dedup. Before the fix, this call would have panicked with
         // `QueryReturnedMoreThanOneRow` on any library carrying this shape.
         let db = Db {
-            conn: Arc::new(Mutex::new(conn)),
-            read_conn: Arc::new(Mutex::new({
+            conn: Arc::new(crate::db::ConnMutex::new(conn)),
+            read_conn: Arc::new(crate::db::ConnMutex::new({
                 let read = Connection::open(&db_path).unwrap();
                 crate::db::register_unicode_lower(&read).unwrap();
                 read
