@@ -1561,4 +1561,118 @@ mod tests {
             );
         }
     }
+
+    /// Real-app round trip, driven by `scripts/e2e-backup-restore.sh` (and the
+    /// manual `e2e-backup-restore` workflow on a macOS runner). Each phase runs
+    /// between launches of the built app against the same data dir, so the
+    /// reset and the restore are applied by the app's own startup, not here.
+    #[test]
+    #[ignore = "run by scripts/e2e-backup-restore.sh"]
+    fn e2e_backup_reset_restore_phase() {
+        let phase = std::env::var("LANTERN_E2E_PHASE").expect("LANTERN_E2E_PHASE");
+        let dir = PathBuf::from(std::env::var("LANTERN_E2E_DIR").expect("LANTERN_E2E_DIR"));
+        let backup =
+            PathBuf::from(std::env::var("LANTERN_E2E_BACKUP").expect("LANTERN_E2E_BACKUP"));
+        let db = Db::init(&dir).unwrap();
+        let count = |table: &str| -> i64 {
+            db.reader()
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        };
+        match phase.as_str() {
+            "seed" => {
+                assert_eq!(count("books"), 0, "app should start on an empty library");
+                let epub = std::env::var("LANTERN_E2E_EPUB").expect("LANTERN_E2E_EPUB");
+                let sync = crate::sync::writer::SyncWriter::new("e2e".into());
+                let book = crate::commands::books::do_import_epub(&epub, &db, &sync).unwrap();
+                let conn = db.conn.lock().unwrap();
+                conn.execute(
+                    "UPDATE books SET progress = 0.42, current_cfi = 'epubcfi(/6/8!/4/2/1:0)' WHERE id = ?1",
+                    params![book.id],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO highlights (id, book_id, cfi_range, color, text_content, created_at, updated_at)
+                     VALUES ('e2e-h', ?1, 'epubcfi(/6/8!/4/2,/1:0,/1:20)', 'yellow', 'It is a truth universally acknowledged', 1, 1)",
+                    params![book.id],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO notes (id, book_id, anchor_kind, location, selected_text, content, created_at, updated_at)
+                     VALUES ('e2e-n', ?1, 'selection', 'epubcfi(/6/8!/4/2,/1:0,/1:20)', 'It is a truth universally acknowledged', 'e2e note', 1, 1)",
+                    params![book.id],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO vocab_words (id, book_id, word, definition, created_at, updated_at)
+                     VALUES ('e2e-v', ?1, 'acknowledged', 'accepted as true', 1, 1)",
+                    params![book.id],
+                )
+                .unwrap();
+                drop(conn);
+                write_settings(&db, &[(DIR_KEY, backup.to_string_lossy().into_owned())]).unwrap();
+                let outcome =
+                    run_backup(&db, &backup, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+                println!("e2e: backed up {outcome:?}");
+                assert_eq!(snapshot_names(&backup.join(DATA_DIR)).len(), 1);
+                crate::reset::request(&dir).unwrap();
+            }
+            "after_reset" => {
+                assert_eq!(count("books"), 0, "reset should have emptied the library");
+                assert_eq!(count("highlights"), 0);
+                let preview = preview_restore(&backup).unwrap();
+                println!("e2e: restore preview {preview:?}");
+                let name = snapshot_names(&backup.join(DATA_DIR)).remove(0);
+                prepare_restore(&db, &backup, &name).unwrap();
+                assert!(crate::restore::staged_path(&dir).is_file());
+            }
+            "after_restore" => {
+                assert_eq!(count("books"), 1);
+                let (title, file_path, progress, cfi): (String, String, f64, String) = db
+                    .reader()
+                    .query_row(
+                        "SELECT title, file_path, progress, current_cfi FROM books",
+                        [],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    )
+                    .unwrap();
+                println!("e2e: restored {title} at {file_path}, progress {progress}");
+                assert!(title.contains("Pride"), "{title}");
+                assert!(
+                    db.resolve_path(&file_path).unwrap().is_file(),
+                    "book file missing"
+                );
+                assert!((progress - 0.42).abs() < 1e-9);
+                assert_eq!(cfi, "epubcfi(/6/8!/4/2/1:0)");
+                let text: String = db
+                    .reader()
+                    .query_row(
+                        "SELECT text_content FROM highlights WHERE id = 'e2e-h'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert!(text.starts_with("It is a truth"));
+                let note: String = db
+                    .reader()
+                    .query_row("SELECT content FROM notes WHERE id = 'e2e-n'", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(note, "e2e note");
+                let word: String = db
+                    .reader()
+                    .query_row(
+                        "SELECT word FROM vocab_words WHERE id = 'e2e-v'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(word, "acknowledged");
+            }
+            other => panic!("unknown phase {other}"),
+        }
+    }
 }
