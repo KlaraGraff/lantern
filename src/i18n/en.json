@@ -164,6 +164,7 @@
   "home.sortError": "Could not save the order. Please try again.",
   "home.moveBook": "Drag to reorder book",
   "home.loading": "Loading...",
+  "home.loadFailed": "Couldn't load your library.",
   "home.noResults": "No results found",
   "home.noCollectionBooks": "No books in this collection",
   "home.noFilteredBooks": "No {{filter}} books",

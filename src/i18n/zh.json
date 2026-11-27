@@ -164,6 +164,7 @@
   "home.sortError": "顺序保存失败，请重试",
   "home.moveBook": "拖动调整书籍顺序",
   "home.loading": "加载中...",
+  "home.loadFailed": "书库加载失败",
   "home.noResults": "未找到结果",
   "home.noCollectionBooks": "此书单暂无书籍",
   "home.noFilteredBooks": "没有{{filter}}的书籍",
