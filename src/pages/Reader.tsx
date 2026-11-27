@@ -121,6 +121,7 @@ import { useJumpHistory } from "./reader/useJumpHistory";
 import { toggleSidePanel, type TracesTab } from "./reader/side-panel";
 import { useReaderSides } from "./reader/useReaderSides";
 import { useDockTransition } from "./reader/useDockTransition";
+import { useDockMorph } from "./reader/useDockMorph";
 import { LEFT_CARD_WIDTH, RIGHT_CARD_WIDTH, slotWidth } from "./reader/reader-sides";
 import { placeRightCard, type RightCardPlacement } from "./reader/right-card-placement";
 import { useLingering } from "./reader/useLingering";
@@ -690,6 +691,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   }, [contextMenu, clearReaderSelection]);
   const rightSlotRef = useRef<HTMLDivElement>(null);
   const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, !isNarrow, rightSlotRef);
+  // 「停靠」: an answer card moving into the right card (`dock-morph.ts`).
+  const prepareDockMorph = useDockMorph(panelRef, isNarrow);
   // Pinning or unpinning a card is the one thing that changes the page's
   // width, and it does so in one transition: hold the page still through it
   // and reflow once at the end. Before paint, so the freeze reads the width
@@ -4050,7 +4053,11 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           onSelectText={(event) => openPanelSelectionMenu(event, card.interaction)}
           onClose={() => closeLearningCard(card.id)}
           onFocus={() => setTopLearningCardId(card.id)}
-          onAskAi={(quote, cfi, analysis) => {
+          onAskAi={(quote, cfi, analysis, source) => {
+            // The card becomes the right card, so it goes as the right card
+            // comes: read where it stands first, then let it go.
+            prepareDockMorph(source, sidePanel !== null);
+            closeLearningCard(card.id);
             setAiContext({ text: quote, cfi, analysis });
             openAiChat();
           }}

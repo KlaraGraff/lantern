@@ -42,7 +42,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - **3b-4, the receipt line and the bookmark ear (shipped, PR #30).**
   - The answer beside the sentence is the learning card today (`ExplainPopover` only carries custom actions), so the receipt line goes on the learning card, under its header, from the first frame. It names only what `ai_learning_card` sends: the selection and its context, the book and chapter titles when there is a book, the level settings, and for a word any earlier lookups. The model leads once the answer reports it. A cached card says nothing was sent this time (`learning-card/receipt.ts`). The design's 「本章」 scope chip is left off, because this request sends a sentence, not the chapter.
   - The bookmark ear: when the right card is shut while the conversation is still answering, a 28×36 tab on the right edge holds it, its dot breathing until the answer is done. A click reopens the conversation. AiPanel stays mounted while the card is shut, so the answer keeps arriving either way.
-- 「停靠」 turns it into the 380px right card (in 3b-4 the card's existing 「问 AI」 is this hand-off, minus the morph) with 「对话 | 本章」 (text with a 2px accent underline). 「本章」 lists this chapter's words, highlights and notes, people so far, and questions asked.
+- 「停靠」 turns it into the 380px right card (the card's 「问 AI」 is this hand-off; see 「停靠」 under Wrap-up) with 「对话 | 本章」 (text with a 2px accent underline). 「本章」 lists this chapter's words, highlights and notes, people so far, and questions asked.
 - Floating, the page only translates. Pinned, it reflows once. When the geometry leaves no room to float, as with the default two columns, the card opens pinned and never covers text.
 - The bookmark ear on the right edge holds an answer still streaming, and a learning card whose sentence a page turn took away.
 - The vocab, notes and X-Ray tabs go. Traces moves to Settings → Advanced. *As built in 3b-3 the tabs leave the card's surface but stay one link away under 「全书」, since the reader has no Advanced settings section, and a vocab marker click or 「查看语境解释」 still opens them directly.*
@@ -70,7 +70,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 
 ## Decisions (3b-4)
 
-- **「停靠」 is the learning card's existing 「问 AI」 for now.** It already hands the passage and the card's analysis to the right card's conversation. The 260ms morph from one element into the other is left for later.
+- **「停靠」 is the learning card's existing 「问 AI」 for now.** It already hands the passage and the card's analysis to the right card's conversation. The 260ms morph from one element into the other was added in the wrap-up (below).
 - **The ear does not follow the anchor sentence off screen.** The design also folds a beside-the-sentence answer into the ear when a page turn takes its sentence away. The learning card is a dialog positioned by its own placement code, so that waits for the morph. (Done in the wrap-up, below.)
 - **The edge-peek setting moves to step 4** with the rest of the settings changes.
 
@@ -80,7 +80,8 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - **The learn page keeps step 2's shape.** The design's 「单词 / 学习卡 / 测验」 switch would repeat the review card (→ flashcards) and the quiz card (→ the quiz) that already sit at the top of the page, so it is not added. The review card's 「约 X 分钟」 is left off: nothing records how long a review takes, and a per-word guess would be a made-up number.
 - **The status row stays as it is.** It is already one line under a hairline (book progress, and chapter progress or page numbers as set in Settings → Reading), which is what §12 asked of it.
 - **The ear collects a card whose sentence is turned past** (`answer-fold.ts`). After every relocate, each open learning card from a Foliate page is placed against the visible range (`placeOnPage`, shared with read-aloud's follow). One whose sentence is definitely off the page, or in another chapter, folds: it fades and drifts a few pixels toward the ear (140ms) and is hidden and inert, but stays mounted, so an answer being written keeps arriving. A sentence that cannot be placed (a fixed-layout page, nothing rendered yet) never folds its card. The ear shows while any card is folded, its dot breathing while one of them is still being written; a click brings every folded card back where it stood. Cards do not come back by themselves when their sentence returns. Folded cards come back before a conversation the ear also holds. Text books, touch sheets and narrow windows are unchanged.
-- **Left for later, each needing more than a UI change:** people so far in 「本章」 (a first-seen index), the morph from the answer card into the right card, and chapter jumps in a reader-window ⌘K.
+- **「停靠」 moves.** 「问 AI」 on a learning card closes the card and opens the right card, and on a wide window the one turns into the other (`dock-morph.ts`, `useDockMorph.ts`). The two are separate elements with separate content, so a stand-in box the size of the right card starts drawn over the answer card and travels to the right card's place in 260ms by `transform` alone; the answer's words fade where they were (140ms) and the right card's content comes up as the box lands. The move waits for the first painted frame, since opening the right card can keep the page busy for a few frames. Reduced motion and narrow windows open the right card as before. If the right card was already open, the box lands on it the same way.
+- **Left for later, each needing more than a UI change:** people so far in 「本章」 (a first-seen index), and chapter jumps in a reader-window ⌘K.
 
 ## Tests
 
@@ -93,6 +94,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - `tests/learning-card-receipt.test.ts`: what the receipt says for a fresh, a word and a cached answer.
 - `tests/chrome-fade.test.ts`: two turns fade the bar, a wake resets the count, a held turn does not count.
 - `tests/answer-fold.test.ts`: which placements fold a card (turned past, another chapter, touching the edge, unplaceable), which cards can fold, and what the ear shows.
+- `tests/dock-morph.test.ts`: when the hand-off moves, the transform-only frames from the answer card to the right card, and the motion caps.
 
 ## Figma prompt
 
