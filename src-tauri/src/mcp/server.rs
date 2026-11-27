@@ -20,7 +20,7 @@ use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
     ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, Implementation,
     InputRequest, InputRequests, InputRequiredResult, JsonObject, ProtocolVersion,
-    ServerCapabilities, ServerInfo,
+    ServerCapabilities, ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::io::stdio;
@@ -467,13 +467,13 @@ impl ServerHandler for LanternMcpHandler {
         }
     }
 
-    fn get_info(&self) -> ServerInfo {
-        // `ServerInfo` and `Implementation` are both `#[non_exhaustive]`.
+    fn get_info(&self) -> ServerConfig {
+        // `ServerConfig` and `Implementation` are both `#[non_exhaustive]`.
         // Use the public constructors / builder methods rather than
         // struct literals.
         let implementation = Implementation::new("lantern", env!("CARGO_PKG_VERSION"));
         let capabilities = ServerCapabilities::builder().enable_tools().build();
-        ServerInfo::new(capabilities)
+        ServerConfig::new(capabilities)
             .with_protocol_version(ProtocolVersion::V_2026_07_28)
             .with_server_info(implementation)
             .with_instructions(
@@ -512,7 +512,7 @@ mod tests {
     use crate::sync::writer::SyncWriter;
     use rmcp::handler::server::wrapper::Parameters;
     use rmcp::model::{
-        ClientCapabilities, ClientInfo, ElicitationCapability, FormElicitationCapability,
+        ClientCapabilities, ClientConfig, ElicitationCapability, FormElicitationCapability,
         InputResponses, RequestId,
     };
     use rusqlite::params;
@@ -711,7 +711,7 @@ mod tests {
             capabilities.elicitation =
                 Some(ElicitationCapability::new().with_form(FormElicitationCapability::new()));
         }
-        let client_info = ClientInfo::new(
+        let client_info = ClientConfig::new(
             capabilities.clone(),
             Implementation::new("lantern-test-client", "0.0.0"),
         )
