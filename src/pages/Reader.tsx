@@ -128,6 +128,8 @@ import ReaderRightSide from "./reader/ReaderRightSide";
 import { spineSegments } from "./reader/reader-spine";
 import ReaderLeftSide from "./reader/ReaderLeftSide";
 import ReaderBookmarkEar from "./reader/ReaderBookmarkEar";
+import { canFoldWithPage, foldedEar, isAnchorOffPage } from "./reader/answer-fold";
+import { placeOnPage } from "./reader/foliate-continuous-source";
 import { confirmsLeave, escapeStep } from "./reader/reader-escape";
 import { useChromeFade } from "./reader/useChromeFade";
 import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
@@ -496,8 +498,14 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setTopLearningCardId,
     openLearningCard,
     closeLearningCard,
+    foldLearningCards,
+    unfoldLearningCards,
+    setLearningCardLoading,
     selectionMenuRowCount,
   } = useLearningCards({ learningCardConfig, supportsManualAnnotations, onToast: setReaderToast });
+  // Below the breakpoint there is no ear, so nothing folds there.
+  const foldedCards = foldedEar(isNarrow ? [] : learningCards);
+  const earHoldsCards = foldedCards.count > 0;
   const [bindingHud, setBindingHud] = useState<string | null>(null);
   const dismissBindingHud = useCallback(() => setBindingHud(null), []);
   const bindingHudTimerRef = useRef<number | null>(null);
@@ -541,6 +549,16 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setReaderViewportEl(node);
   }, []);
   const viewRef = useRef<FoliateView | null>(null);
+  // Every relocate: the jump pill's fade count, and the bookmark ear collecting
+  // a learning card whose sentence the page turn took away (`answer-fold.ts`).
+  const handleLocationChanged = useCallback(() => {
+    notifyLocationChanged();
+    const view = viewRef.current;
+    if (!view) return;
+    foldLearningCards((interaction) => (
+      canFoldWithPage(interaction) && isAnchorOffPage(placeOnPage(view, interaction.location))
+    ));
+  }, [notifyLocationChanged, foldLearningCards]);
   const searchNavigationClosingRef = useRef(false);
   useEffect(() => {
     if (!supportsSearch || !bookReady) return;
@@ -992,7 +1010,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   // keeps Esc to itself.
   const escapeOverlayOpen = Boolean(
     settingsOpen || exportOpen || contextMenu || translation || customAction || footnote
-    || learningCards.length > 0 || diagnosticsPanelOpen || chromeOpen,
+    || learningCards.length > foldedCards.count || diagnosticsPanelOpen || chromeOpen,
   );
   const leaveArmedAtRef = useRef<number | null>(null);
   const handleEscape = useCallback((): boolean => {
@@ -1906,7 +1924,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     setReaderError,
     pushJump,
     getCurrentLabel,
-    notifyLocationChanged,
+    notifyLocationChanged: handleLocationChanged,
     setChapters,
     setCurrentChapterIndex,
     setCurrentSectionIndex,
@@ -3192,8 +3210,14 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         className="relative flex flex-1 overflow-hidden"
         style={{ backgroundColor: pageColor }}
       >
-        {!isNarrow && aiStreaming && sidePanel !== "ai" && (
-          <ReaderBookmarkEar onOpen={() => setSidePanel("ai")} />
+        {!isNarrow && (earHoldsCards || (aiStreaming && sidePanel !== "ai")) && (
+          <ReaderBookmarkEar
+            holds={earHoldsCards ? "cards" : "conversation"}
+            writing={earHoldsCards ? foldedCards.writing : true}
+            // Folded cards come back first: they are what the page turn took
+            // away. A conversation still answering keeps the ear after that.
+            onOpen={() => (earHoldsCards ? unfoldLearningCards() : setSidePanel("ai"))}
+          />
         )}
         {isNarrow ? (
           <>
@@ -4020,6 +4044,8 @@ function ReaderSession({ bookId }: { bookId?: string }) {
           getTextRect={getReaderPageRect}
           stackIndex={index}
           elevated={card.id === topLearningCardId}
+          folded={Boolean(card.folded) && !isNarrow}
+          onLoadingChange={(loading) => setLearningCardLoading(card.id, loading)}
           onLookupWord={(event) => lookupWordInPanel(event, card.interaction)}
           onSelectText={(event) => openPanelSelectionMenu(event, card.interaction)}
           onClose={() => closeLearningCard(card.id)}

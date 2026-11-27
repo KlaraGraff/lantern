@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readerMenuRows } from "../../components/reader-bindings";
 import type { ReaderInteraction } from "../../components/reader-interaction";
@@ -7,6 +7,15 @@ import { readerMenuAction } from "./menu-actions";
 
 /** Cards stay open until dismissed; past this many the oldest one gives way. */
 const MAX_LEARNING_CARDS = 5;
+
+export interface OpenLearningCard {
+  id: string;
+  interaction: ReaderInteraction;
+  /** Folded into the bookmark ear: a page turn took its sentence away. */
+  folded?: boolean;
+  /** Its answer is still being written. */
+  loading?: boolean;
+}
 
 interface LearningCardsOptions {
   learningCardConfig: CardDesignConfigV1;
@@ -29,7 +38,13 @@ export function useLearningCards({
   onToast,
 }: LearningCardsOptions) {
   const { t } = useTranslation();
-  const [learningCards, setLearningCards] = useState<Array<{ id: string; interaction: ReaderInteraction }>>([]);
+  const [learningCards, setLearningCards] = useState<OpenLearningCard[]>([]);
+  // Read by `foldLearningCards`, which runs from the page's relocate listener,
+  // long after the render that last changed the cards.
+  const learningCardsRef = useRef(learningCards);
+  useEffect(() => {
+    learningCardsRef.current = learningCards;
+  }, [learningCards]);
   const [topLearningCardId, setTopLearningCardId] = useState<string | null>(null);
 
   const openLearningCard = useCallback((interaction: ReaderInteraction) => {
@@ -45,7 +60,8 @@ export function useLearningCards({
     const id = `${interaction.kind}:${interaction.location}:${interaction.text}`;
     setLearningCards((current) => (
       current.some((card) => card.id === id)
-        ? current
+        // Asking again for a card the ear holds brings it back.
+        ? current.map((card) => (card.id === id && card.folded ? { ...card, folded: false } : card))
         : [...current, { id, interaction }].slice(-MAX_LEARNING_CARDS)
     ));
     setTopLearningCardId(id);
@@ -53,6 +69,33 @@ export function useLearningCards({
 
   const closeLearningCard = useCallback((id: string) => {
     setLearningCards((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  /** Folds every open card whose interaction `offPage` says has left the page. */
+  const foldLearningCards = useCallback((offPage: (interaction: ReaderInteraction) => boolean) => {
+    const leaving = new Set(learningCardsRef.current
+      .filter((card) => !card.folded && offPage(card.interaction))
+      .map((card) => card.id));
+    if (leaving.size === 0) return;
+    setLearningCards((current) => current.map((card) => (
+      leaving.has(card.id) ? { ...card, folded: true } : card
+    )));
+  }, []);
+
+  /** Brings every folded card back where it stood; the newest one comes up on top. */
+  const unfoldLearningCards = useCallback(() => {
+    const folded = learningCardsRef.current.filter((card) => card.folded);
+    if (folded.length === 0) return;
+    setLearningCards((current) => current.map((card) => (card.folded ? { ...card, folded: false } : card)));
+    setTopLearningCardId(folded[folded.length - 1].id);
+  }, []);
+
+  const setLearningCardLoading = useCallback((id: string, loading: boolean) => {
+    setLearningCards((current) => (
+      current.some((card) => card.id === id && Boolean(card.loading) !== loading)
+        ? current.map((card) => (card.id === id ? { ...card, loading } : card))
+        : current
+    ));
   }, []);
 
   // What the selection menu would actually draw for this interaction. An empty
@@ -77,6 +120,9 @@ export function useLearningCards({
     setTopLearningCardId,
     openLearningCard,
     closeLearningCard,
+    foldLearningCards,
+    unfoldLearningCards,
+    setLearningCardLoading,
     selectionMenuRowCount,
   };
 }

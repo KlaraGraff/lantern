@@ -44,7 +44,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
   - The bookmark ear: when the right card is shut while the conversation is still answering, a 28×36 tab on the right edge holds it, its dot breathing until the answer is done. A click reopens the conversation. AiPanel stays mounted while the card is shut, so the answer keeps arriving either way.
 - 「停靠」 turns it into the 380px right card (in 3b-4 the card's existing 「问 AI」 is this hand-off, minus the morph) with 「对话 | 本章」 (text with a 2px accent underline). 「本章」 lists this chapter's words, highlights and notes, people so far, and questions asked.
 - Floating, the page only translates. Pinned, it reflows once. When the geometry leaves no room to float, as with the default two columns, the card opens pinned and never covers text.
-- The bookmark ear on the right edge holds an answer still streaming.
+- The bookmark ear on the right edge holds an answer still streaming, and a learning card whose sentence a page turn took away.
 - The vocab, notes and X-Ray tabs go. Traces moves to Settings → Advanced. *As built in 3b-3 the tabs leave the card's surface but stay one link away under 「全书」, since the reader has no Advanced settings section, and a vocab marker click or 「查看语境解释」 still opens them directly.*
 - **3b-2, the chrome (shipped, PR #28).**
   - The top bar fades and becomes `inert` after two page turns, while staying in flow (`chrome-fade.ts`, `useChromeFade`). A turn counts only through the page-turn path, so a TOC jump or a link does not. A pointer over the bar brings it back; the inert bar's pointer events land on a wrapper around it. Settings, export, a peeking or floating card, or a pointer resting on the bar hold it up. A pinned card does not, since it is part of the page. Narrow is unchanged.
@@ -71,7 +71,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 ## Decisions (3b-4)
 
 - **「停靠」 is the learning card's existing 「问 AI」 for now.** It already hands the passage and the card's analysis to the right card's conversation. The 260ms morph from one element into the other is left for later.
-- **The ear does not follow the anchor sentence off screen.** The design also folds a beside-the-sentence answer into the ear when a page turn takes its sentence away. The learning card is a dialog positioned by its own placement code, so that waits for the morph.
+- **The ear does not follow the anchor sentence off screen.** The design also folds a beside-the-sentence answer into the ear when a page turn takes its sentence away. The learning card is a dialog positioned by its own placement code, so that waits for the morph. (Done in the wrap-up, below.)
 - **The edge-peek setting moves to step 4** with the rest of the settings changes.
 
 ## Wrap-up (step 4)
@@ -79,7 +79,8 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - **The edge peek can be turned off.** Settings → Reading gains 「悬停左缘查看目录」 (`reader_edge_peek`, on by default, app-level like one-handed mode). Off, the spine stays and the edge no longer opens the card; ⌘1, the toolbar and the pin still do. The row shows only with a mouse, the only pointer that peeks.
 - **The learn page keeps step 2's shape.** The design's 「单词 / 学习卡 / 测验」 switch would repeat the review card (→ flashcards) and the quiz card (→ the quiz) that already sit at the top of the page, so it is not added. The review card's 「约 X 分钟」 is left off: nothing records how long a review takes, and a per-word guess would be a made-up number.
 - **The status row stays as it is.** It is already one line under a hairline (book progress, and chapter progress or page numbers as set in Settings → Reading), which is what §12 asked of it.
-- **Left for later, each needing more than a UI change:** people so far in 「本章」 (a first-seen index), the morph from the answer card into the right card, the ear collecting an answer whose sentence turns off the page, and chapter jumps in a reader-window ⌘K.
+- **The ear collects a card whose sentence is turned past** (`answer-fold.ts`). After every relocate, each open learning card from a Foliate page is placed against the visible range (`placeOnPage`, shared with read-aloud's follow). One whose sentence is definitely off the page, or in another chapter, folds: it fades and drifts a few pixels toward the ear (140ms) and is hidden and inert, but stays mounted, so an answer being written keeps arriving. A sentence that cannot be placed (a fixed-layout page, nothing rendered yet) never folds its card. The ear shows while any card is folded, its dot breathing while one of them is still being written; a click brings every folded card back where it stood. Cards do not come back by themselves when their sentence returns. Folded cards come back before a conversation the ear also holds. Text books, touch sheets and narrow windows are unchanged.
+- **Left for later, each needing more than a UI change:** people so far in 「本章」 (a first-seen index), the morph from the answer card into the right card, and chapter jumps in a reader-window ⌘K.
 
 ## Tests
 
@@ -91,6 +92,7 @@ Below 48rem nothing changes: every side is today's full-page sheet.
 - `tests/chapter-traces.test.ts`: section from a CFI, the chapter range, which questions belong.
 - `tests/learning-card-receipt.test.ts`: what the receipt says for a fresh, a word and a cached answer.
 - `tests/chrome-fade.test.ts`: two turns fade the bar, a wake resets the count, a held turn does not count.
+- `tests/answer-fold.test.ts`: which placements fold a card (turned past, another chapter, touching the edge, unplaceable), which cards can fold, and what the ear shows.
 
 ## Figma prompt
 
