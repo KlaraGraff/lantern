@@ -211,8 +211,12 @@ export function useAllLookupHistory() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [books, setBooks] = useState<LookupBookFacet[]>([]);
   const requestGenerationRef = useRef(0);
+  // The filters the list was last asked for, so a reload for a change made
+  // elsewhere keeps showing what the reader filtered to.
+  const queryRef = useRef<{ search?: string; bookId?: string }>({});
 
   const refresh = useCallback(async (search?: string, bookId?: string) => {
+    queryRef.current = { search, bookId };
     const generation = ++requestGenerationRef.current;
     try {
       const page = await invoke<LookupRecordPage>("list_all_lookup_records", {
@@ -271,7 +275,7 @@ export function useAllLookupHistory() {
   }, []);
 
   useEffect(() => {
-    const refreshForChange = () => { refresh(); };
+    const refreshForChange = () => { refresh(queryRef.current.search, queryRef.current.bookId); };
     window.addEventListener("lookup-record-changed", refreshForChange);
     return () => window.removeEventListener("lookup-record-changed", refreshForChange);
   }, [refresh]);
