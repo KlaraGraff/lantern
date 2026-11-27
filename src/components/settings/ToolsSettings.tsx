@@ -23,6 +23,7 @@ import SelectionMenuSettings from "./SelectionMenuSettings";
 import MarkerStyleSettings from "./MarkerStyleSettings";
 import ReaderBindingsSettings from "./ReaderBindingsSettings";
 import ConfirmDialog from "./ConfirmDialog";
+import OfflineDictionarySettings from "./OfflineDictionarySettings";
 import type { SettingsProps } from "./types";
 import {
   MARKER_STYLE_SETTING_KEY,
@@ -529,6 +530,7 @@ export default function ToolsSettings({
               }}
             />
           </SettingsRow>
+          {dictionaryLookupEnabled && <OfflineDictionarySettings />}
           {/* Below the breakpoint the reader ignores dblclick outright (each tap
               already got its own answer from the single-tap handler), so this
               row would be a switch that changes nothing. Same width test as the

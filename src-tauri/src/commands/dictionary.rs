@@ -43,9 +43,13 @@ const NAME_POS_MARKER: &str = "名";
 /// to a single hard line instead.
 const FALLBACK_SUMMARY_CHARS: usize = 53;
 
-const ERR_NOT_FOUND: &str = "DICTIONARY_NOT_FOUND";
-const ERR_UNAVAILABLE: &str = "DICTIONARY_UNAVAILABLE";
+pub(crate) const ERR_NOT_FOUND: &str = "DICTIONARY_NOT_FOUND";
+pub(crate) const ERR_UNAVAILABLE: &str = "DICTIONARY_UNAVAILABLE";
 const ERR_QUERY_INVALID: &str = "DICTIONARY_QUERY_INVALID";
+/// Youdao could not be reached, no local dictionary had the word, and the
+/// offline dictionary is neither installed nor queued — the one failure the
+/// card answers with an offer to download it.
+const ERR_OFFLINE_MISSING: &str = "DICTIONARY_OFFLINE_MISSING";
 
 #[derive(Deserialize)]
 struct SuggestResponse {
@@ -310,7 +314,7 @@ fn split_senses(text: &str) -> Vec<String> {
 /// there is one: `"n. 银行；…"` → `("n.", ["银行", …])`, `"【名】 （Bank）…"` →
 /// `("名", ["（Bank）…"])`. Phrase entries (`look up`) have no marker at all,
 /// so they come back with an empty pos and the whole string as one sense.
-fn split_pos_marker(raw: &str) -> (String, Vec<String>) {
+pub(crate) fn split_pos_marker(raw: &str) -> (String, Vec<String>) {
     let trimmed = raw.trim();
     if let Some(rest) = trimmed.strip_prefix('【') {
         if let Some(end) = rest.find('】') {
@@ -361,6 +365,9 @@ pub struct DictionaryEntry {
     pub phonetic: Option<String>,
     pub groups: Vec<DictionaryGroup>,
     pub fallback_summary: Option<String>,
+    /// Which local dictionary answered; `None` for Youdao, the default the
+    /// card does not need to name.
+    pub source: Option<String>,
 }
 
 /// Drops the `【名】` transliteration group — but only if something else is
@@ -387,6 +394,18 @@ fn entry_from_groups(
     phonetic: Option<String>,
     raw_groups: Vec<(String, Vec<String>)>,
 ) -> Option<DictionaryEntry> {
+    entry_from_groups_capped(word, phonetic, raw_groups, MAX_GROUPS)
+}
+
+/// `entry_from_groups` with the group cap made explicit: an imported MDict
+/// entry arrives as one group per line, so it needs far more than the eight a
+/// Youdao entry ever fills.
+pub(crate) fn entry_from_groups_capped(
+    word: String,
+    phonetic: Option<String>,
+    raw_groups: Vec<(String, Vec<String>)>,
+    max_groups: usize,
+) -> Option<DictionaryEntry> {
     let non_empty: Vec<(String, Vec<String>)> = raw_groups
         .into_iter()
         .filter(|(_, senses)| !senses.is_empty())
@@ -396,7 +415,7 @@ fn entry_from_groups(
     }
     let groups = drop_name_group(non_empty)
         .into_iter()
-        .take(MAX_GROUPS)
+        .take(max_groups)
         .map(|(pos, mut senses)| {
             senses.truncate(MAX_SENSES_PER_GROUP);
             DictionaryGroup { pos, senses }
@@ -407,6 +426,7 @@ fn entry_from_groups(
         phonetic,
         groups,
         fallback_summary: None,
+        source: None,
     })
 }
 
@@ -486,6 +506,7 @@ fn fallback_entry(query: &str, explain: &str) -> DictionaryEntry {
         phonetic: None,
         groups: Vec::new(),
         fallback_summary: Some(summary),
+        source: None,
     }
 }
 
@@ -521,36 +542,111 @@ fn lookup_cache() -> &'static Mutex<HashMap<String, Result<DictionaryEntry, Stri
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The single-click dictionary layer: jsonapi first, `suggest` as a fallback
-/// when jsonapi is unavailable or unparseable, cached either way so the same
-/// word never triggers a second request in this session — including a
-/// cached error, so a word that failed once does not get hammered on every
-/// re-click.
+/// Drops every cached lookup. Called when a local dictionary is installed,
+/// imported or removed: a word that failed (or came from a dictionary that is
+/// gone) must be looked up again, not answered from memory.
+pub(crate) fn clear_lookup_cache() {
+    if let Ok(mut map) = lookup_cache().lock() {
+        map.clear();
+    }
+}
+
+/// Youdao's half of the lookup: jsonapi first, `suggest` as a fallback when
+/// jsonapi is unavailable or unparseable.
+async fn online_lookup(query: &str) -> Result<DictionaryEntry, String> {
+    let jsonapi_outcome = jsonapi_lookup(query).await;
+    let fallback = if jsonapi_outcome.is_err() {
+        Some(fetch_explain(query).await)
+    } else {
+        None
+    };
+    merge_lookup_outcome(jsonapi_outcome, query, fallback)
+}
+
+/// Pure on purpose, like `merge_lookup_outcome`: how the online answer and
+/// the local one combine, testable without a network or a dictionary file.
+///
+/// The online answer wins unless it failed, in which case a local hit answers
+/// instead. A failure that only means "no network" becomes
+/// `ERR_OFFLINE_MISSING` when nothing offline could ever have answered — that
+/// is what lets the card offer the download instead of saying the word does
+/// not exist.
+fn combine_with_local(
+    online: Result<DictionaryEntry, String>,
+    local: Option<DictionaryEntry>,
+    offline_dictionary_expected: bool,
+) -> Result<DictionaryEntry, String> {
+    match (online, local) {
+        (Ok(entry), _) => Ok(entry),
+        (Err(_), Some(entry)) => Ok(entry),
+        (Err(code), None) if code == ERR_UNAVAILABLE && !offline_dictionary_expected => {
+            Err(ERR_OFFLINE_MISSING.to_string())
+        }
+        (Err(code), None) => Err(code),
+    }
+}
+
+/// Network failures are not cached: the next click after the connection
+/// comes back should reach Youdao, not replay the outage.
+fn is_cacheable(result: &Result<DictionaryEntry, String>) -> bool {
+    !matches!(result, Err(code) if code == ERR_UNAVAILABLE || code == ERR_OFFLINE_MISSING)
+}
+
+/// The single-click dictionary layer. By default Youdao answers and the local
+/// dictionaries (imported MDict files, then the downloaded ECDICT) only step
+/// in when it cannot; with `dictionary_source = local` they are asked first
+/// and Youdao only hears about the words they do not have. Cached either way
+/// so the same word never triggers a second request in this session —
+/// including a not-found, so a word that failed once does not get hammered on
+/// every re-click.
 #[tauri::command]
-pub async fn dictionary_lookup_word(word: String) -> AppResult<DictionaryEntry> {
+pub async fn dictionary_lookup_word(
+    word: String,
+    db: tauri::State<'_, crate::db::Db>,
+) -> AppResult<DictionaryEntry> {
     let query = normalize_query(&word)?;
+    let offline = crate::commands::offline_dictionary::LocalLookup::for_db(&db)?;
+    // Keyed by the source order too: switching it must not replay answers the
+    // other order chose.
+    let cache_key = format!(
+        "{}:{query}",
+        if offline.local_first() {
+            "local"
+        } else {
+            "online"
+        }
+    );
 
     if let Some(cached) = lookup_cache()
         .lock()
         .ok()
-        .and_then(|map| map.get(&query).cloned())
+        .and_then(|map| map.get(&cache_key).cloned())
     {
         return cached.map_err(AppError::Other);
     }
 
-    let jsonapi_outcome = jsonapi_lookup(&query).await;
-    let fallback = if jsonapi_outcome.is_err() {
-        Some(fetch_explain(&query).await)
-    } else {
-        None
-    };
-    let result = merge_lookup_outcome(jsonapi_outcome, &query, fallback);
-
-    if let Ok(mut map) = lookup_cache().lock() {
-        if map.len() >= MAX_CACHE_ENTRIES {
-            map.clear();
+    let result = if offline.local_first() {
+        match offline.lookup(&query).await {
+            Some(entry) => Ok(entry),
+            None => combine_with_local(online_lookup(&query).await, None, offline.expects_ecdict()),
         }
-        map.insert(query, result.clone());
+    } else {
+        let online = online_lookup(&query).await;
+        let local = if online.is_err() {
+            offline.lookup(&query).await
+        } else {
+            None
+        };
+        combine_with_local(online, local, offline.expects_ecdict())
+    };
+
+    if is_cacheable(&result) {
+        if let Ok(mut map) = lookup_cache().lock() {
+            if map.len() >= MAX_CACHE_ENTRIES {
+                map.clear();
+            }
+            map.insert(cache_key, result.clone());
+        }
     }
 
     result.map_err(AppError::Other)
@@ -804,6 +900,67 @@ mod tests {
         assert!(summary.chars().count() <= FALLBACK_SUMMARY_CHARS + 1);
     }
 
+    fn sample_entry(source: Option<&str>) -> DictionaryEntry {
+        DictionaryEntry {
+            word: "bank".to_string(),
+            phonetic: None,
+            groups: vec![DictionaryGroup {
+                pos: "n.".to_string(),
+                senses: vec!["银行".to_string()],
+            }],
+            fallback_summary: None,
+            source: source.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn online_answer_wins_and_local_only_fills_a_failure() {
+        let online = combine_with_local(
+            Ok(sample_entry(None)),
+            Some(sample_entry(Some("ECDICT"))),
+            true,
+        );
+        assert_eq!(online.unwrap().source, None);
+        let offline = combine_with_local(
+            Err(ERR_UNAVAILABLE.to_string()),
+            Some(sample_entry(Some("ECDICT"))),
+            true,
+        );
+        assert_eq!(offline.unwrap().source.as_deref(), Some("ECDICT"));
+        let not_found = combine_with_local(
+            Err(ERR_NOT_FOUND.to_string()),
+            Some(sample_entry(Some("我的词典"))),
+            false,
+        );
+        assert_eq!(not_found.unwrap().source.as_deref(), Some("我的词典"));
+    }
+
+    #[test]
+    fn no_network_and_no_offline_dictionary_asks_for_the_download() {
+        assert_eq!(
+            combine_with_local(Err(ERR_UNAVAILABLE.to_string()), None, false).unwrap_err(),
+            ERR_OFFLINE_MISSING
+        );
+        // Installed or already queued: nothing to offer, the plain failure stands.
+        assert_eq!(
+            combine_with_local(Err(ERR_UNAVAILABLE.to_string()), None, true).unwrap_err(),
+            ERR_UNAVAILABLE
+        );
+        // Youdao answered "no such word": a download would not change that.
+        assert_eq!(
+            combine_with_local(Err(ERR_NOT_FOUND.to_string()), None, false).unwrap_err(),
+            ERR_NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn network_failures_are_never_cached() {
+        assert!(is_cacheable(&Ok(sample_entry(None))));
+        assert!(is_cacheable(&Err(ERR_NOT_FOUND.to_string())));
+        assert!(!is_cacheable(&Err(ERR_UNAVAILABLE.to_string())));
+        assert!(!is_cacheable(&Err(ERR_OFFLINE_MISSING.to_string())));
+    }
+
     #[test]
     fn merge_prefers_jsonapi_and_ignores_fallback_on_success() {
         let entry = DictionaryEntry {
@@ -814,6 +971,7 @@ mod tests {
                 senses: vec!["银行".to_string()],
             }],
             fallback_summary: None,
+            source: None,
         };
         let result = merge_lookup_outcome(Ok(Some(entry.clone())), "bank", None);
         assert_eq!(result.unwrap().word, entry.word);

@@ -31,6 +31,7 @@ pub mod mastery_events;
 pub mod mcp;
 pub mod notes;
 pub mod oauth;
+pub mod offline_dictionary;
 pub mod profile;
 pub mod reader_background;
 pub mod reader_exit;

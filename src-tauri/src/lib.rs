@@ -727,6 +727,7 @@ pub fn run() {
             // Resume any interrupted work after managed state is available;
             // this deliberately runs away from setup's UI-critical path.
             commands::books::resume_interrupted_text_book_preparations(app.handle().clone());
+            commands::offline_dictionary::resume_pending(app.handle());
             commands::books::resume_interrupted_book_conversions(app.handle().clone());
 
             // Fill in book_difficulty_sections (migration 057) for books
@@ -961,6 +962,12 @@ pub fn run() {
             // Dictionary pronunciation audio (cached on disk, never synced)
             commands::dictionary::dictionary_gloss,
             commands::dictionary::dictionary_lookup_word,
+            commands::offline_dictionary::offline_dictionary_status,
+            commands::offline_dictionary::offline_dictionary_download,
+            commands::offline_dictionary::offline_dictionary_cancel,
+            commands::offline_dictionary::offline_dictionary_remove_ecdict,
+            commands::offline_dictionary::offline_dictionary_import_mdx,
+            commands::offline_dictionary::offline_dictionary_remove_mdx,
             commands::dictionary_glance::record_dictionary_glance,
             commands::speech::speech_dictionary_audio,
             commands::speech::speech_edge_audio,

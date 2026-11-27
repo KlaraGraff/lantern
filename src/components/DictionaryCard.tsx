@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePronunciation } from "./speech/usePronunciation";
 import { GLANCE_SAFE_ATTR } from "./dictionary-glance";
+import { OFFLINE_DICTIONARY_DOWNLOAD_MB, type DictionaryFailure } from "./dictionary-failure";
 import { prefersReducedMotion } from "./page-turn-transition";
 import { motionDuration, motionEasing } from "./motion";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
@@ -18,6 +19,14 @@ export interface DictionaryEntry {
   phonetic: string | null;
   groups: DictionaryGroup[];
   fallbackSummary: string | null;
+  /** The local dictionary that answered; null for Youdao. */
+  source?: string | null;
+}
+
+interface OfflineOffer {
+  queued: boolean;
+  onDownload: () => void;
+  onDismiss: () => void;
 }
 
 /** Parts of speech shown before 展开. A fourth is rare (`light` has one). */
@@ -87,6 +96,8 @@ export default function DictionaryCard({
   entry,
   showSpeak,
   showAiHint,
+  failure = null,
+  offlineOffer = null,
 }: {
   word: string;
   loading: boolean;
@@ -104,6 +115,10 @@ export default function DictionaryCard({
    * off — drop the line rather than reword it.
    */
   showAiHint: boolean;
+  /** Set when `entry` is null because there was no network, not no word. */
+  failure?: DictionaryFailure;
+  /** Offered when nothing offline could answer; null once declined. */
+  offlineOffer?: OfflineOffer | null;
 }) {
   const { t } = useTranslation();
   const coarsePointer = useCoarsePointer();
@@ -235,6 +250,11 @@ export default function DictionaryCard({
             /{entry.phonetic}/
           </span>
         ) : null}
+        {!loading && entry?.source ? (
+          <span className="min-w-0 truncate text-[10px] text-text-placeholder">
+            {entry.source === "ECDICT" ? t("dictionary.sourceOffline") : entry.source}
+          </span>
+        ) : null}
         {showSpeak && !nothingToSpeak ? (
           // The pronounce control belongs beside the word, the way every
           // dictionary puts it — and it is useful from the first frame, since
@@ -300,9 +320,41 @@ export default function DictionaryCard({
           <div className="h-[11px] w-2/3 animate-pulse rounded-sm bg-border" />
         </div>
         <div className="motion-crossfade-in" aria-hidden={loading} inert={loading}>
-          {!entry ? (
+          {!entry && offlineOffer ? (
+            <div className="text-[12px] leading-5 text-text-secondary">
+              {offlineOffer.queued ? (
+                <p role="status">{t("dictionary.offlineQueued")}</p>
+              ) : (
+                <>
+                  <p>{t("dictionary.offlinePrompt", { size: OFFLINE_DICTIONARY_DOWNLOAD_MB })}</p>
+                  <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      {...{ [GLANCE_SAFE_ATTR]: "" }}
+                      onClick={offlineOffer.onDownload}
+                      className="rounded-sm font-medium text-accent-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent touch:inline-flex touch:min-h-11 touch:items-center"
+                    >
+                      {t("dictionary.offlineDownload")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      {...{ [GLANCE_SAFE_ATTR]: "" }}
+                      onClick={offlineOffer.onDismiss}
+                      className="rounded-sm text-text-muted underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent touch:inline-flex touch:min-h-11 touch:items-center"
+                    >
+                      {t("dictionary.offlineDismiss")}
+                    </button>
+                  </p>
+                </>
+              )}
+            </div>
+          ) : !entry ? (
             <p className="text-[12px] leading-5 text-text-secondary">
-              {t("dictionary.notFound", { defaultValue: "词典里没有这个词" })}
+              {failure
+                ? t("dictionary.offline")
+                : t("dictionary.notFound", { defaultValue: "词典里没有这个词" })}
             </p>
           ) : entry.fallbackSummary ? (
             // Degraded fallback: no phonetic, no part-of-speech grouping — one
