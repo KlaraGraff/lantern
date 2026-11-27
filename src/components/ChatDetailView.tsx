@@ -11,6 +11,7 @@ import MessageBubble from "./MessageBubble";
 import { TOP_INSET } from "../utils/top-inset";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { chatSendHintKey, isSendKey } from "./chat-input-keys";
+import { isPaletteRowActivation } from "./command-palette/palette-model";
 import { platform } from "../services/platform";
 
 interface ChatDetailViewProps {
@@ -96,7 +97,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
                 onChange={(e) => setTitleDraft(e.target.value)}
                 onBlur={handleTitleSubmit}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleTitleSubmit();
+                  if (isPaletteRowActivation(e.nativeEvent)) handleTitleSubmit();
                   if (e.key === "Escape") setEditingTitle(false);
                 }}
                 className="text-[15px] font-semibold text-text-primary bg-transparent outline-none border-b border-accent min-w-0"

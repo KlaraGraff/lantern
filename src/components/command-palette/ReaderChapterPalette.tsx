@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Search } from "lucide-react";
-import { chapterMatches, initialChapterIndex, splitMatch, wrapIndex, type PaletteChapter } from "./palette-model";
+import { chapterMatches, initialChapterIndex, isPaletteRowActivation, splitMatch, wrapIndex, type PaletteChapter } from "./palette-model";
 
 interface ReaderChapterPaletteProps {
   open: boolean;
@@ -62,6 +62,12 @@ export default function ReaderChapterPalette({ open, chapters, currentPage, onJu
       event.preventDefault();
       setSelected((index) => wrapIndex(index, event.key === "ArrowDown" ? 1 : -1, rows.length));
     } else if (event.key === "Enter") {
+      // Leave the IME's own Enter (accepting a candidate) untouched.
+      if (!isPaletteRowActivation({
+        key: event.key,
+        isComposing: event.nativeEvent.isComposing,
+        keyCode: event.nativeEvent.keyCode,
+      })) return;
       event.preventDefault();
       jump(rows[selected]);
     } else if (event.key === "Escape") {

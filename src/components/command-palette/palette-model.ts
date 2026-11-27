@@ -60,6 +60,8 @@ export function splitMatch(text: string, query: string): [string, string, string
  * close the palette and run whatever row happened to be highlighted. WebKit may
  * report `isComposing = false` on that event and leave keyCode 229 as the only
  * signal — the same pair of checks `chat-input-keys.ts` makes for the composer.
+ * Single-line fields that commit on Enter (renames, new names, aliases) use it
+ * for the same reason.
  */
 export function isPaletteRowActivation(event: {
   key: string;
