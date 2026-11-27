@@ -1830,6 +1830,7 @@
   "common.off": "关闭",
   "common.unknownAuthor": "未知作者",
   "import.batchFailedCount": "{{count}} 本书未能导入",
+  "import.unsupportedFile": "Lantern 打不开「{{name}}」这种文件。",
   "indexManager.title": "AI 索引管理",
   "indexManager.titleWithBook": "AI 索引 · {{title}}",
   "indexManager.status": "状态",

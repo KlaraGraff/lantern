@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X, Menu, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -19,7 +20,7 @@ import { listenForSettingsChanged } from "../components/settings-events";
 import LibraryHintBanner from "../components/onboarding/LibraryHintBanner";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
-import { useBooks, moveBook, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
+import { useBooks, moveBook, importBookDialog, IMPORT_SLOW_HINT_MS, type ImportFailure } from "../hooks/useBooks";
 import { summarizeImportFailures } from "../hooks/import-batch";
 import { useCollections } from "../hooks/useCollections";
 import { useIsNarrow } from "../hooks/useIsNarrow";
@@ -39,6 +40,19 @@ const DictionaryContent = lazy(() => import("../components/DictionaryContent"));
 const QaContent = lazy(() => import("../components/qa/QaContent"));
 const AnnotationsContent = lazy(() => import("../components/AnnotationsContent"));
 const ReadingStatsContent = lazy(() => import("../components/ReadingStatsContent"));
+
+/** What the import toast says about a batch's failures, or null for none. */
+function importFailureMessage(failures: readonly ImportFailure[], t: TFunction): string | null {
+  const summary = summarizeImportFailures(failures);
+  if (summary.kind === "singleFailure") {
+    const [failure] = failures;
+    return failure.error === "UNSUPPORTED_FORMAT"
+      ? t("import.unsupportedFile", { name: failure.file_name })
+      : summary.message;
+  }
+  if (summary.kind === "batchFailure") return t("import.batchFailedCount", { count: summary.failedCount });
+  return null;
+}
 
 function formatError(err: unknown): string {
   if (typeof err === "string") return err;
@@ -516,19 +530,27 @@ export default function Home() {
 
   // Covers native file association and drag/drop imports. The backend emits
   // these after the copy has completed, so a refresh cannot race the import.
+  // The batch reports the same "importing" toast and failure summary as the
+  // Import button.
   useEffect(() => {
+    const unlistenStarted = listen<number>("book-import-started", (event) => {
+      if (event.payload > 0) setImporting(true);
+    });
     const unlistenSuccess = listen("book-imported", () => {
       refreshRef.current();
       countsRefreshRef.current();
     });
-    const unlistenFailure = listen<string>("book-import-failed", (event) => {
-      setImportError(formatError(event.payload));
+    const unlistenFinished = listen<ImportFailure[]>("book-import-finished", (event) => {
+      setImporting(false);
+      const message = importFailureMessage(event.payload, t);
+      if (message) setImportError(message);
     });
     return () => {
+      unlistenStarted.then((fn) => fn());
       unlistenSuccess.then((fn) => fn());
-      unlistenFailure.then((fn) => fn());
+      unlistenFinished.then((fn) => fn());
     };
-  }, []);
+  }, [t]);
 
   const displayBooks = books;
   const canMoveBooks = activeFilter === "all" && !searchQuery && !debouncedSearchQuery && !loading && !sortSaving;
@@ -570,12 +592,8 @@ export default function Home() {
           refresh();
           refreshCounts();
         }
-        const failureSummary = summarizeImportFailures(result.failures);
-        if (failureSummary.kind === "singleFailure") {
-          setImportError(failureSummary.message);
-        } else if (failureSummary.kind === "batchFailure") {
-          setImportError(t("import.batchFailedCount", { count: failureSummary.failedCount }));
-        }
+        const failureMessage = importFailureMessage(result.failures, t);
+        if (failureMessage) setImportError(failureMessage);
       } finally {
         setImporting(false);
       }

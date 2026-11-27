@@ -524,7 +524,7 @@ fn import_user_selected_path(
 /// paired with `imported` on `ImportBatchResult` so the caller can report a
 /// partial success ("N imported, M failed") instead of the whole picker
 /// selection dying on its first bad file.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ImportFailure {
     pub file_name: String,
     pub error: String,
@@ -618,7 +618,7 @@ pub async fn import_book_from_dialog(
 /// Both events arrive on the main thread, and an import parses, hashes and
 /// copies the whole file, so the work runs on the blocking pool: a large PDF
 /// dropped on the window must not freeze the UI. Results still arrive as the
-/// `book-imported` / `book-import-failed` events.
+/// `book-import-started` / `book-imported` / `book-import-finished` events.
 pub(crate) fn import_external_paths(paths: Vec<PathBuf>, app: AppHandle) {
     tauri::async_runtime::spawn_blocking(move || {
         let db = app.state::<Db>();
@@ -627,11 +627,25 @@ pub(crate) fn import_external_paths(paths: Vec<PathBuf>, app: AppHandle) {
     });
 }
 
+/// Announces the batch so the shelf can show the same "importing" toast and
+/// failure summary as the Import button: `book-import-started` before the
+/// first file, `book-import-finished` with every failure — files of a kind
+/// Lantern cannot open included — after the last.
 fn import_paths(paths: Vec<PathBuf>, db: &Db, sync: &SyncWriter, app: &AppHandle) {
+    let mut failures = Vec::new();
+    let mut importable = Vec::new();
     for path in paths {
-        if !path.is_file() || !is_importable_book_path(&path) {
-            continue;
+        if path.is_file() && is_importable_book_path(&path) {
+            importable.push(path);
+        } else {
+            failures.push(ImportFailure {
+                file_name: display_file_name(&path),
+                error: "UNSUPPORTED_FORMAT".to_string(),
+            });
         }
+    }
+    let _ = app.emit("book-import-started", importable.len());
+    for path in importable {
         match import_user_selected_path(path.as_path(), db, sync, app) {
             Ok(book) => {
                 let _ = app.emit("book-imported", book);
@@ -641,10 +655,21 @@ fn import_paths(paths: Vec<PathBuf>, db: &Db, sync: &SyncWriter, app: &AppHandle
                     "import_book: native import failed for {}: {error}",
                     path.display()
                 );
-                let _ = app.emit("book-import-failed", error.to_string());
+                failures.push(ImportFailure {
+                    file_name: display_file_name(&path),
+                    error: error.to_string(),
+                });
             }
         }
     }
+    let _ = app.emit("book-import-finished", failures);
+}
+
+fn display_file_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("?")
+        .to_string()
 }
 
 fn is_importable_book_path(path: &Path) -> bool {
