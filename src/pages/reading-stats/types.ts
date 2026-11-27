@@ -239,6 +239,8 @@ export interface ReadingStatsLabels {
   emptyTitle: string;
   emptyDescription: string;
   emptyRule: string;
+  /** The history list's empty line, when the view is filtered to a range or book with no sessions. */
+  noHistoryInView: string;
   privacyButton: string;
   privacyTitle: string;
   privacyDescription: string;

@@ -17,6 +17,7 @@ import type {
   VocabMasteryDistribution,
 } from "./reading-stats/types";
 import { ReadingReviewError } from "./reading-stats/types";
+import { ALL_TIME_QUERY, readingStatsEmptyState } from "./reading-stats/empty-state";
 import { TOP_INSET } from "../utils/top-inset";
 import type { LevelObservation } from "./reading-stats/level-observation";
 import { splitEmphasis } from "../i18n/emphasis";
@@ -228,6 +229,9 @@ function BookHistory({
         <p className="mt-1 text-[10px] text-text-muted">{labels.historyDescription}</p>
       </div>
       <div className="overflow-hidden rounded-xl border border-border bg-bg-surface">
+        {books.length === 0 ? (
+          <p className="px-4 py-6 text-center text-[11px] text-text-muted">{labels.noHistoryInView}</p>
+        ) : null}
         {books.map((book) => {
           const progressPercent = Math.round(Math.max(0, Math.min(1, book.progress)) * 100);
           return (
@@ -763,6 +767,7 @@ export default function ReadingStats({
   const [range, setRange] = useState<ReadingStatsRange>("year");
   const [bookId, setBookId] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<ReadingStatsDashboard | null>(null);
+  const [firstUse, setFirstUse] = useState(false);
   const [knownBooks, setKnownBooks] = useState<ReadingStatsBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -785,8 +790,15 @@ export default function ReadingStats({
     const generation = ++loadGeneration.current;
     setLoading(true);
     setLoadError(false);
-    adapter.loadDashboard(query).then((next) => {
+    adapter.loadDashboard(query).then(async (next) => {
       if (generation !== loadGeneration.current) return;
+      let emptyState = readingStatsEmptyState(query, next);
+      if (emptyState === "unknown") {
+        const allTime = await adapter.loadDashboard(ALL_TIME_QUERY);
+        if (generation !== loadGeneration.current) return;
+        emptyState = readingStatsEmptyState(query, next, allTime.overview.sessionCount);
+      }
+      setFirstUse(emptyState === "firstUse");
       setDashboard(next);
       setKnownBooks((current) => {
         const merged = new Map(current.map((book) => [book.bookId, book]));
@@ -912,7 +924,7 @@ export default function ReadingStats({
     );
   }
 
-  if (!dashboard || dashboard.overview.sessionCount === 0) {
+  if (!dashboard || firstUse) {
     return (
       <div className="relative grid h-full place-items-center bg-bg-surface px-6 text-center">
         {floatingMenu}

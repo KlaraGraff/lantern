@@ -2324,6 +2324,7 @@
   "readingStats.emptyTitle": "你的阅读历程从这里开始",
   "readingStats.emptyDescription": "Lantern 会在本地记录你的阅读时间；连续 5 分钟没有活动会暂停，也不会猜测历史记录。",
   "readingStats.emptyRule": "少于 30 秒的会话会被丢弃。",
+  "readingStats.noHistoryInView": "这段时间没有阅读记录，可以在上方换个时间范围或书。",
   "readingStats.privacyButton": "阅读历程如何工作",
   "readingStats.privacyTitle": "阅读历程与隐私",
   "readingStats.privacyDescription": "这些事实由本机的阅读会话计算。",
