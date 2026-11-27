@@ -23,6 +23,7 @@ import {
   currentPositionIndex,
   filterMarkRows,
   mergeMarkRows,
+  noteForSelection,
   readerNoteDraftKey,
   sortMarkRows,
   type CompareLocation,
@@ -286,16 +287,15 @@ export default function ReaderNotesPanel({
     }
     const identity = `${selectedAnchor.anchorKind}\u0000${selectedAnchor.location ?? ""}\u0000${selectedAnchor.selectedText ?? ""}`;
     if (handledSelectionRef.current === identity) return;
+    const existing = noteForSelection(notes, selectedAnchor, loading);
+    if (existing === undefined) return;
     handledSelectionRef.current = identity;
-    const existing = notes.find(
-      (note) => note.anchor_kind === "selection" && note.location && note.location === selectedAnchor.location,
-    );
     openEditor(
       { key: existing ? `n:${existing.id}` : "new", noteId: existing?.id ?? null, anchor: selectedAnchor },
       existing?.content ?? "",
     );
     onSelectedAnchorHandled?.();
-  }, [notes, onSelectedAnchorHandled, openEditor, selectedAnchor]);
+  }, [loading, notes, onSelectedAnchorHandled, openEditor, selectedAnchor]);
 
   // 「记住这里」 opens this empty, so the caret has nowhere to go; on a note that
   // already says something it belongs after the last word, not before the first.
