@@ -426,7 +426,10 @@ pub(crate) fn update_highlight_inner(
                     })
                 },
             )
-            .map_err(|_| AppError::Other("HIGHLIGHT_NOT_FOUND".to_string()))?;
+            // Only a missing row is "not found". A locked or damaged
+            // database used to be reported the same way, hiding the cause.
+            .optional()?
+            .ok_or_else(|| AppError::Other("HIGHLIGHT_NOT_FOUND".to_string()))?;
         highlight.color = color.to_string();
         events.push(EventBody::HighlightColorSet {
             id: id.to_string(),
@@ -446,6 +449,31 @@ pub(crate) fn update_highlight_inner(
 mod tests {
     use super::*;
     use rusqlite::params;
+
+    #[test]
+    fn recolouring_reports_not_found_only_for_a_missing_highlight() {
+        let dir = TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".into());
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute_batch(
+                "INSERT INTO books (id, title, author, file_path, format, status, progress, created_at, updated_at)
+                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub', 'reading', 0, 1, 1);
+                 INSERT INTO highlights (id, book_id, cfi_range, color, created_at, updated_at)
+                 VALUES ('h1', 'b1', 'cfi', X'00', 1, 1);",
+            )
+            .unwrap();
+        }
+        let not_found = |result: AppResult<Highlight>| matches!(result, Err(AppError::Other(code)) if code == "HIGHLIGHT_NOT_FOUND");
+        assert!(not_found(update_highlight_inner(
+            "missing", "blue", &db, &sync
+        )));
+        // A row that cannot be read is a database problem, not a missing row.
+        let unreadable = update_highlight_inner("h1", "blue", &db, &sync);
+        assert!(unreadable.is_err());
+        assert!(!not_found(unreadable));
+    }
     use tauri::Manager;
     use tempfile::TempDir;
 
