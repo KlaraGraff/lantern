@@ -126,13 +126,49 @@ impl LocalLookup {
 /// Imported dictionaries first, in import order — the reader brought them for
 /// a reason — then ECDICT. A dictionary that fails to open or read is skipped,
 /// never surfaced: a broken file must not take the lookup down with it.
+///
+/// The word as clicked is tried in every dictionary before any of its
+/// fallback spellings (see `lookup_candidates`).
 fn lookup_local(root: &Path, query: &str) -> Option<DictionaryEntry> {
-    for dictionary in list_mdx(root) {
-        if let Some(entry) = lookup_mdx(root, &dictionary, query) {
-            return Some(entry);
+    let dictionaries = list_mdx(root);
+    let ecdict = root.join(ECDICT_FILE);
+    lookup_candidates(query).into_iter().find_map(|candidate| {
+        dictionaries
+            .iter()
+            .find_map(|dictionary| lookup_mdx(root, dictionary, &candidate))
+            .or_else(|| lookup_ecdict(&ecdict, &candidate).ok().flatten())
+    })
+}
+
+/// The spellings to try for a word as it was clicked in running text, best
+/// first: the word itself, then with a typographic apostrophe made plain
+/// (`it’s` → `it's`), without a possessive (`Darcy's` → `Darcy`), and for a
+/// hyphenated word the open spelling and then its first part
+/// (`dining-parlour` → `dining parlour` → `dining`).
+fn lookup_candidates(query: &str) -> Vec<String> {
+    let mut candidates = vec![query.to_string()];
+    let mut push = |candidate: String| {
+        let candidate = candidate.trim().to_string();
+        if !candidate.is_empty() && !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    };
+    let plain = query.replace(['\u{2019}', '\u{2018}'], "'");
+    push(plain.clone());
+    let base = plain
+        .strip_suffix("'s")
+        .or_else(|| plain.strip_suffix("'S"))
+        .or_else(|| plain.strip_suffix('\''))
+        .unwrap_or(&plain)
+        .to_string();
+    push(base.clone());
+    if base.contains('-') {
+        push(base.replace('-', " "));
+        if let Some(first) = base.split('-').find(|part| !part.is_empty()) {
+            push(first.to_string());
         }
     }
-    lookup_ecdict(&root.join(ECDICT_FILE), query).ok().flatten()
+    candidates
 }
 
 fn lookup_ecdict(path: &Path, query: &str) -> AppResult<Option<DictionaryEntry>> {
@@ -904,6 +940,29 @@ empty,,,,,,,,0,0,,,\n";
         assert!(lookup_ecdict(&dir.path().join("missing.sqlite"), "bank")
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn running_text_spellings_fall_back_to_the_headword() {
+        assert_eq!(lookup_candidates("bank"), vec!["bank"]);
+        assert_eq!(lookup_candidates("it\u{2019}s"), vec!["it\u{2019}s", "it's", "it"]);
+        assert_eq!(lookup_candidates("Darcy's"), vec!["Darcy's", "Darcy"]);
+        assert_eq!(lookup_candidates("sisters'"), vec!["sisters'", "sisters"]);
+        assert_eq!(
+            lookup_candidates("dining-parlour"),
+            vec!["dining-parlour", "dining parlour", "dining"]
+        );
+
+        let root = tempfile::tempdir().unwrap();
+        build(root.path());
+        for word in ["bank\u{2019}s", "bank's", "bank-holiday", "bank-holiday's"] {
+            assert_eq!(
+                lookup_local(root.path(), word).map(|entry| entry.word),
+                Some("bank".to_string()),
+                "{word}"
+            );
+        }
+        assert!(lookup_local(root.path(), "nosuch-word").is_none());
     }
 
     #[test]
