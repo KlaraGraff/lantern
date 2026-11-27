@@ -46,7 +46,10 @@ const ECDICT_SOURCE: &str = "ECDICT";
 const PENDING_KEY: &str = "offline_dictionary_pending";
 const SOURCE_KEY: &str = "dictionary_source";
 
+const ECDICT_PARTIAL: &str = ".ecdict.csv.partial";
 const RETRY_INTERVAL: Duration = Duration::from_secs(60);
+const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const CANCEL_POLL: Duration = Duration::from_secs(1);
 const PROGRESS_STEP_BYTES: u64 = 512 * 1024;
 const MDX_MAX_GROUPS: usize = 60;
 const MAX_LINK_HOPS: usize = 3;
@@ -649,68 +652,157 @@ fn is_retryable(code: &str) -> bool {
     code == "OFFLINE_DICTIONARY_DOWNLOAD_FAILED"
 }
 
-async fn download_once<R: Runtime>(app: &AppHandle<R>, root: &Path) -> AppResult<()> {
-    fs::create_dir_all(root).map_err(|_| error("OFFLINE_DICTIONARY_STORAGE_FAILED"))?;
-    let incoming = tempfile::TempPath::from_path(
-        root.join(format!(".ecdict.{}.csv.partial", uuid::Uuid::new_v4())),
-    );
-    let response = crate::ai::http_client()
-        .get(ECDICT_URL)
-        .send()
-        .await
-        .map_err(|_| error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED"))?;
+/// Where the CSV accumulates. One fixed name, so a download cut short by a
+/// dropped connection or a quit picks up where it stopped instead of starting
+/// 66 MB over.
+fn partial_csv(root: &Path) -> PathBuf {
+    root.join(ECDICT_PARTIAL)
+}
+
+struct Download<'a> {
+    url: &'a str,
+    size: u64,
+    sha256: &'a str,
+    idle: Duration,
+}
+
+/// Fetches the file into `partial`, resuming from whatever is already there.
+///
+/// A connection that stops delivering is treated as dropped after `idle`, and
+/// the cancel flag is looked at every second whether or not bytes are arriving:
+/// neither a stalled socket nor a slow one may hold the reader's cancel.
+async fn fetch_to_partial(
+    download: &Download<'_>,
+    partial: &Path,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64),
+) -> AppResult<()> {
+    let failed = || error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED");
+    let storage = |_| error("OFFLINE_DICTIONARY_STORAGE_FAILED");
+
+    let mut have = fs::metadata(partial).map(|meta| meta.len()).unwrap_or(0);
+    if have >= download.size {
+        let _ = fs::remove_file(partial);
+        have = 0;
+    }
+    let mut request = crate::ai::http_client().get(download.url);
+    if have > 0 {
+        request = request.header(reqwest::header::RANGE, format!("bytes={have}-"));
+    }
+    let send = request.send();
+    tokio::pin!(send);
+    let mut waited = Duration::ZERO;
+    let response = loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(error("OFFLINE_DICTIONARY_CANCELLED"));
+        }
+        match tokio::time::timeout(CANCEL_POLL.min(download.idle), &mut send).await {
+            Ok(sent) => break sent.map_err(|_| failed())?,
+            Err(_) => {
+                waited += CANCEL_POLL.min(download.idle);
+                if waited >= download.idle {
+                    return Err(failed());
+                }
+            }
+        }
+    };
     if !response.status().is_success() {
-        return Err(error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED"));
+        return Err(failed());
+    }
+    // A server that ignores the range answers 200 with the whole file.
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        have = 0;
     }
     if response
         .content_length()
-        .is_some_and(|length| length != ECDICT_SIZE)
+        .is_some_and(|length| length != download.size - have)
     {
         return Err(error("OFFLINE_DICTIONARY_LENGTH_MISMATCH"));
     }
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&incoming)
-        .map_err(|_| error("OFFLINE_DICTIONARY_STORAGE_FAILED"))?;
+
     let mut hasher = Sha256::new();
-    let mut downloaded = 0_u64;
-    let mut reported = 0_u64;
-    set_transient(Transient::Downloading(0));
-    emit_status(app);
+    let mut file = if have > 0 {
+        let mut existing = fs::File::open(partial).map_err(storage)?;
+        std::io::copy(&mut existing, &mut hasher).map_err(storage)?;
+        OpenOptions::new()
+            .append(true)
+            .open(partial)
+            .map_err(storage)?
+    } else {
+        fs::File::create(partial).map_err(storage)?
+    };
+    let mut downloaded = have;
+    let mut reported = have;
+    progress(downloaded);
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        if cancel_requested().load(Ordering::SeqCst) {
+    let mut quiet = Duration::ZERO;
+    loop {
+        if cancel.load(Ordering::SeqCst) {
             return Err(error("OFFLINE_DICTIONARY_CANCELLED"));
         }
-        let chunk = chunk.map_err(|_| error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED"))?;
+        let chunk = match tokio::time::timeout(CANCEL_POLL.min(download.idle), stream.next()).await
+        {
+            Err(_) => {
+                quiet += CANCEL_POLL.min(download.idle);
+                if quiet >= download.idle {
+                    return Err(failed());
+                }
+                continue;
+            }
+            Ok(None) => break,
+            Ok(Some(chunk)) => chunk.map_err(|_| failed())?,
+        };
+        quiet = Duration::ZERO;
         downloaded = downloaded.saturating_add(chunk.len() as u64);
-        if downloaded > ECDICT_SIZE {
+        if downloaded > download.size {
             return Err(error("OFFLINE_DICTIONARY_LENGTH_MISMATCH"));
         }
         hasher.update(&chunk);
-        file.write_all(&chunk)
-            .map_err(|_| error("OFFLINE_DICTIONARY_STORAGE_FAILED"))?;
+        file.write_all(&chunk).map_err(storage)?;
         if downloaded - reported >= PROGRESS_STEP_BYTES {
             reported = downloaded;
-            set_transient(Transient::Downloading(downloaded));
-            emit_status(app);
+            progress(downloaded);
         }
     }
-    file.sync_all()
-        .map_err(|_| error("OFFLINE_DICTIONARY_STORAGE_FAILED"))?;
+    file.sync_all().map_err(storage)?;
     drop(file);
-    if downloaded != ECDICT_SIZE {
+    if downloaded != download.size {
         // A short body is a dropped connection, not a bad file.
-        return Err(error("OFFLINE_DICTIONARY_DOWNLOAD_FAILED"));
+        return Err(failed());
     }
-    if format!("{:x}", hasher.finalize()) != ECDICT_SHA256 {
+    if format!("{:x}", hasher.finalize()) != download.sha256 {
         return Err(error("OFFLINE_DICTIONARY_HASH_MISMATCH"));
+    }
+    Ok(())
+}
+
+async fn download_once<R: Runtime>(app: &AppHandle<R>, root: &Path) -> AppResult<()> {
+    fs::create_dir_all(root).map_err(|_| error("OFFLINE_DICTIONARY_STORAGE_FAILED"))?;
+    let partial = partial_csv(root);
+    let download = Download {
+        url: ECDICT_URL,
+        size: ECDICT_SIZE,
+        sha256: ECDICT_SHA256,
+        idle: DOWNLOAD_IDLE_TIMEOUT,
+    };
+    let fetched = fetch_to_partial(&download, &partial, cancel_requested(), |downloaded| {
+        set_transient(Transient::Downloading(downloaded));
+        emit_status(app);
+    })
+    .await;
+    if let Err(err) = fetched {
+        // Only a dropped connection leaves something worth resuming.
+        if !is_retryable(&err.to_string()) {
+            let _ = fs::remove_file(&partial);
+        }
+        return Err(err);
     }
 
     set_transient(Transient::Installing);
     emit_status(app);
     let root = root.to_path_buf();
+    // Dropped once installed, or on failure: either way the CSV is spent.
+    let incoming = tempfile::TempPath::from_path(partial);
     tauri::async_runtime::spawn_blocking(move || install_from_csv(&root, &incoming))
         .await
         .map_err(|_| error("OFFLINE_DICTIONARY_INSTALL_FAILED"))?
@@ -775,7 +867,18 @@ fn spawn_worker<R: Runtime>(app: AppHandle<R>) {
                     emit_status(&app);
                 }
             }
-            tokio::time::sleep(RETRY_INTERVAL).await;
+            let mut waited = Duration::ZERO;
+            while waited < RETRY_INTERVAL && !cancel_requested().load(Ordering::SeqCst) {
+                tokio::time::sleep(CANCEL_POLL).await;
+                waited += CANCEL_POLL;
+            }
+        }
+        if cancel_requested().load(Ordering::SeqCst) {
+            // Cancelling gives the space back, including when it lands between
+            // two attempts.
+            if let Some(Ok(root)) = app.try_state::<Db>().map(|db| root(&db)) {
+                let _ = fs::remove_file(partial_csv(&root));
+            }
         }
         worker_running().store(false, Ordering::SeqCst);
         // A request that arrived while this loop was winding down saw it still
@@ -945,7 +1048,10 @@ empty,,,,,,,,0,0,,,\n";
     #[test]
     fn running_text_spellings_fall_back_to_the_headword() {
         assert_eq!(lookup_candidates("bank"), vec!["bank"]);
-        assert_eq!(lookup_candidates("it\u{2019}s"), vec!["it\u{2019}s", "it's", "it"]);
+        assert_eq!(
+            lookup_candidates("it\u{2019}s"),
+            vec!["it\u{2019}s", "it's", "it"]
+        );
         assert_eq!(lookup_candidates("Darcy's"), vec!["Darcy's", "Darcy"]);
         assert_eq!(lookup_candidates("sisters'"), vec!["sisters'", "sisters"]);
         assert_eq!(
@@ -1119,5 +1225,150 @@ empty,,,,,,,,0,0,,,\n";
         let installed = ecdict_status(root.path(), false);
         assert_eq!(installed.state, EcdictState::Installed);
         assert!(installed.installed_bytes.unwrap() > 0);
+    }
+
+    /// Serves `body` once per connection; `cut_at` closes the first response
+    /// short, and `stall` leaves it open without sending the rest.
+    async fn serve(
+        body: &'static [u8],
+        cut_at: usize,
+        stall: bool,
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/ecdict.csv", listener.local_addr().unwrap());
+        let ranges = Arc::new(Mutex::new(Vec::new()));
+        let seen = ranges.clone();
+        tokio::spawn(async move {
+            let mut first = true;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buffer = vec![0_u8; 4096];
+                let read = socket.read(&mut buffer).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buffer[..read]).to_ascii_lowercase();
+                let from = request
+                    .split("range: bytes=")
+                    .nth(1)
+                    .and_then(|rest| rest.split('-').next())
+                    .and_then(|start| start.trim().parse::<usize>().ok());
+                seen.lock()
+                    .unwrap()
+                    .push(from.map_or("none".into(), |n| n.to_string()));
+                let start = from.unwrap_or(0);
+                let head = format!(
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    if from.is_some() {
+                        "206 Partial Content"
+                    } else {
+                        "200 OK"
+                    },
+                    body.len() - start,
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                if first {
+                    first = false;
+                    let _ = socket.write_all(&body[start..cut_at]).await;
+                    let _ = socket.flush().await;
+                    if stall {
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs(30)).await;
+                            drop(socket);
+                        });
+                    }
+                    continue;
+                }
+                let _ = socket.write_all(&body[start..]).await;
+            }
+        });
+        (url, ranges)
+    }
+
+    const BODY: &[u8] = b"word,translation\nbank,n. bank\nwent,v. go\n";
+
+    fn body_download(url: &str) -> Download<'_> {
+        static HASH: OnceLock<String> = OnceLock::new();
+        Download {
+            url,
+            size: BODY.len() as u64,
+            sha256: HASH.get_or_init(|| format!("{:x}", Sha256::digest(BODY))),
+            idle: Duration::from_millis(300),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stalled_download_gives_up_and_the_next_attempt_resumes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let partial = dir.path().join(ECDICT_PARTIAL);
+        let (url, ranges) = serve(BODY, 10, true).await;
+        let cancel = AtomicBool::new(false);
+
+        let stalled = fetch_to_partial(&body_download(&url), &partial, &cancel, |_| {}).await;
+        assert_eq!(
+            stalled.unwrap_err().to_string(),
+            "OFFLINE_DICTIONARY_DOWNLOAD_FAILED"
+        );
+        assert_eq!(fs::read(&partial).unwrap(), &BODY[..10]);
+
+        fetch_to_partial(&body_download(&url), &partial, &cancel, |_| {})
+            .await
+            .unwrap();
+        assert_eq!(fs::read(&partial).unwrap(), BODY);
+        assert_eq!(*ranges.lock().unwrap(), ["none", "10"]);
+    }
+
+    #[tokio::test]
+    async fn cancel_is_honoured_while_no_bytes_are_arriving() {
+        let dir = tempfile::tempdir().unwrap();
+        let partial = dir.path().join(ECDICT_PARTIAL);
+        let (url, _) = serve(BODY, 10, true).await;
+        let cancel = AtomicBool::new(false);
+        let mut download = body_download(&url);
+        download.idle = Duration::from_secs(20);
+
+        let attempt = fetch_to_partial(&download, &partial, &cancel, |_| {});
+        let stop = async {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            cancel.store(true, Ordering::SeqCst);
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(attempt, stop)
+        })
+        .await
+        .expect("cancel must not wait for the idle timeout");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "OFFLINE_DICTIONARY_CANCELLED"
+        );
+    }
+    #[tokio::test]
+    async fn cancel_is_honoured_before_the_server_answers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/ecdict.csv", listener.local_addr().unwrap());
+        // Accepts and then says nothing, like a captive or dead route.
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                held.push(socket);
+            }
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let partial = dir.path().join(ECDICT_PARTIAL);
+        let cancel = AtomicBool::new(false);
+        let mut download = body_download(&url);
+        download.idle = Duration::from_secs(20);
+
+        let attempt = fetch_to_partial(&download, &partial, &cancel, |_| {});
+        let stop = async {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            cancel.store(true, Ordering::SeqCst);
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(attempt, stop)
+        })
+        .await
+        .expect("cancel must not wait for the server");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "OFFLINE_DICTIONARY_CANCELLED"
+        );
     }
 }
