@@ -96,6 +96,45 @@ fn text_preparation_normalizes_markdown_and_html() {
 }
 
 #[test]
+fn html_inline_markup_and_source_line_breaks_stay_inside_their_paragraph() {
+    let dir = TempDir::new().unwrap();
+    let html = dir.path().join("book.html");
+    fs::write(
+        &html,
+        "<html><head><title>T</title><style>p { color: red }</style></head><body>\n\
+         <h1>Chapter Two</h1>\n\
+         <p>Hello <em>reader</em>.</p>\n\
+         <p>It was a <a href=\"#n1\">dark</a> and\n    stormy night.</p>\n\
+         <ul><li>one</li><li>two<br>lines</li></ul>\n\
+         <pre>keep\n  this</pre>\n\
+         </body></html>",
+    )
+    .unwrap();
+
+    let document = prepare_text_document(&html, "html", None).unwrap();
+    let blocks = document
+        .chunks
+        .iter()
+        .flat_map(|chunk| &chunk.blocks)
+        .map(|block| block.text.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        blocks,
+        [
+            "Chapter Two",
+            "Hello reader.",
+            "It was a dark and stormy night.",
+            "one",
+            "two",
+            "lines",
+            "keep",
+            "this",
+        ]
+    );
+}
+
+#[test]
 fn text_preparation_hashes_the_source_bytes() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("book.txt");
