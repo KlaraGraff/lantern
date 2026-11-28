@@ -65,16 +65,17 @@ pub(crate) use import::{
 };
 #[doc(hidden)]
 pub use mutate::{
-    __cmd__delete_book, __cmd__mark_finished, __cmd__update_book_cover,
+    __cmd__cover_image_preview, __cmd__delete_book, __cmd__mark_finished, __cmd__update_book_cover,
     __cmd__update_book_metadata, __cmd__update_book_pages, __cmd__update_book_status,
-    __cmd__update_reading_progress, __tauri_command_name_delete_book,
-    __tauri_command_name_mark_finished, __tauri_command_name_update_book_cover,
-    __tauri_command_name_update_book_metadata, __tauri_command_name_update_book_pages,
-    __tauri_command_name_update_book_status, __tauri_command_name_update_reading_progress,
+    __cmd__update_reading_progress, __tauri_command_name_cover_image_preview,
+    __tauri_command_name_delete_book, __tauri_command_name_mark_finished,
+    __tauri_command_name_update_book_cover, __tauri_command_name_update_book_metadata,
+    __tauri_command_name_update_book_pages, __tauri_command_name_update_book_status,
+    __tauri_command_name_update_reading_progress,
 };
 pub use mutate::{
-    delete_book, mark_finished, update_book_cover, update_book_metadata, update_book_pages,
-    update_book_status, update_reading_progress,
+    cover_image_preview, delete_book, mark_finished, update_book_cover, update_book_metadata,
+    update_book_pages, update_book_status, update_reading_progress,
 };
 #[allow(unused_imports)]
 pub(crate) use mutate::{

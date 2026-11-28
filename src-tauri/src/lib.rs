@@ -872,6 +872,7 @@ pub fn run() {
             commands::books::check_book_available,
             commands::books::diagnose_book_file,
             icloud::download::cancel_book_download,
+            commands::books::cover_image_preview,
             commands::books::update_book_cover,
             commands::books::update_book_metadata,
             commands::books::get_text_book_document,
