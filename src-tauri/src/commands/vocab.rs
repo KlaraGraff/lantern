@@ -343,6 +343,12 @@ struct VocabCsvRow {
     created_at: i64,
     #[serde(default)]
     updated_at: i64,
+    // The last two columns. Files exported before they existed have no such
+    // columns and read as words saved from a book, as they always did.
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    source_label: Option<String>,
 }
 
 impl From<VocabCsvRow> for VocabBackupWord {
@@ -369,12 +375,15 @@ impl From<VocabCsvRow> for VocabBackupWord {
             fsrs_version: row.fsrs_version,
             created_at: row.created_at,
             updated_at: row.updated_at,
-            // CSV never carries these columns (see `VOCAB_BACKUP_CSV_HEADERS`
-            // on the frontend) — every CSV-imported word is treated as one
-            // the reader consciously saved, from a book.
+            // A backup never holds a watchlist word, so CSV has no column
+            // for it: every CSV-imported word is one the reader saved.
             list_status: default_list_status(),
-            source: default_source(),
-            source_label: None,
+            // An empty or missing cell is an older file: a book word.
+            source: row
+                .source
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(default_source),
+            source_label: row.source_label.filter(|value| !value.is_empty()),
         }
     }
 }
@@ -3492,6 +3501,57 @@ mod tests {
     #[test]
     fn vocab_import_csv_accepts_a_valid_backup_row() {
         assert_eq!(import_one_csv_row(VOCAB_BACKUP_SCHEMA), 1);
+    }
+
+    /// A word saved from a quiz paper has no book. Its CSV row carries
+    /// `source` and `source_label` as the last two columns, and import must
+    /// keep them instead of filing the word as one saved from a book.
+    #[test]
+    fn vocab_import_csv_keeps_a_quiz_words_source() {
+        let (_dir, db, writer) = setup_import_db();
+        let csv = "backup_schema,backup_version,id,book_id,word,definition,context_sentence,context_explanation,cfi,mastery,review_count,next_review_at,review_interval_days,last_reviewed_at,last_review_rating,fsrs_stability,fsrs_difficulty,fsrs_version,created_at,updated_at,source,source_label\n\
+            lantern-vocabulary,1,quiz-1,,ephemeral,Short-lived,,,,new,0,,0,,,,,1,1600000000000,1600000000000,quiz,8/14 今日词卷\n";
+        let result = do_import_vocab_backup(
+            csv,
+            VocabImportFormat::Csv,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+        assert_eq!(result.imported, 1);
+        let (book_id, source, label): (Option<String>, String, Option<String>) = db
+            .reader()
+            .query_row(
+                "SELECT book_id, source, source_label FROM vocab_words WHERE word = 'ephemeral'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(book_id, None);
+        assert_eq!(source, "quiz");
+        assert_eq!(label.as_deref(), Some("8/14 今日词卷"));
+    }
+
+    /// Files exported before the two columns existed still import, as book
+    /// words.
+    #[test]
+    fn vocab_import_csv_without_source_columns_reads_as_book_words() {
+        let (_dir, db, writer) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        do_import_vocab_backup(
+            &backup_csv(VOCAB_BACKUP_SCHEMA),
+            VocabImportFormat::Csv,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+        let saved = &query_vocab_words_including_watchlist(&db, "book-1").unwrap()[0];
+        assert_eq!(saved.source, "book");
+        assert_eq!(saved.source_label, None);
     }
 
     #[test]

@@ -60,6 +60,7 @@ import {
 import { TOP_INSET } from "../utils/top-inset";
 import { platform } from "../services/platform";
 import LearnTodayRow from "./vocab/LearnTodayRow";
+import { VOCAB_BACKUP_CSV_HEADERS, vocabBackupCsvRow } from "./vocab/backup-csv";
 
 // Deferred the same way VocabEntry.tsx defers it — this panel only opens on
 // an explicit expand, and the markdown renderer it drags in has no business
@@ -106,6 +107,8 @@ interface VocabBackupWord {
   fsrs_version: number;
   created_at: number;
   updated_at: number;
+  source?: string;
+  source_label?: string | null;
 }
 
 interface VocabBackup {
@@ -131,29 +134,6 @@ interface VocabImportResult {
   skipped: number;
   dry_run: boolean;
 }
-
-const VOCAB_BACKUP_CSV_HEADERS = [
-  "backup_schema",
-  "backup_version",
-  "id",
-  "book_id",
-  "word",
-  "definition",
-  "context_sentence",
-  "context_explanation",
-  "cfi",
-  "mastery",
-  "review_count",
-  "next_review_at",
-  "review_interval_days",
-  "last_reviewed_at",
-  "last_review_rating",
-  "fsrs_stability",
-  "fsrs_difficulty",
-  "fsrs_version",
-  "created_at",
-  "updated_at",
-];
 
 /** A row of the saved list: one merged word, or one record in the by-book view. */
 interface VocabListEntry {
@@ -498,13 +478,7 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
         await downloadCsv(
           "lantern-vocabulary.csv",
           VOCAB_BACKUP_CSV_HEADERS,
-          backup.words.map((word) => [
-            backup.schema, backup.version, word.id, word.book_id, word.word, word.definition,
-            word.context_sentence, word.context_explanation, word.cfi, word.mastery,
-            word.review_count, word.next_review_at, word.review_interval_days,
-            word.last_reviewed_at, word.last_review_rating, word.fsrs_stability,
-            word.fsrs_difficulty, word.fsrs_version, word.created_at, word.updated_at,
-          ]),
+          backup.words.map((word) => vocabBackupCsvRow(backup.schema, backup.version, word)),
         );
       }
     } catch (error) {
