@@ -2349,7 +2349,10 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
                         ))
                     },
                 )
-                .ok();
+                // A word deleted meanwhile is skipped; a row that can't be
+                // read fails the batch instead of being dropped from it
+                // without a word.
+                .optional()?;
             let Some((word, review, previous_mastery)) = found else {
                 continue;
             };
@@ -3016,6 +3019,33 @@ mod tests {
         assert_eq!(changed, 1);
         assert_eq!(stored_word(&db, &b).mastery, "mastered");
         assert_eq!(stored_word(&db, &other).mastery, "new");
+    }
+
+    #[test]
+    fn bulk_mastery_change_fails_rather_than_skipping_an_unreadable_word() {
+        let (_dir, db, sync, a, _b, other) = setup_sibling_db();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET word = CAST(word AS BLOB) WHERE id = ?1",
+                params![other],
+            )
+            .unwrap();
+
+        let result = bulk_update_vocab_mastery_inner(
+            &[a.clone(), other.clone()],
+            "mastered",
+            None,
+            &db,
+            &sync,
+        );
+
+        assert!(
+            result.is_err(),
+            "an unreadable word must not be skipped silently"
+        );
+        assert_eq!(stored_word(&db, &a).mastery, "new", "the batch rolls back");
     }
 
     /// The "我其实不认识" button lands here. Overruling an automatic tier has
