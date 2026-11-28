@@ -482,6 +482,23 @@ pub(crate) fn replace_chat_message_inner(
                 "CHAT_MESSAGE_REPLACE_FORBIDDEN".to_string(),
             ));
         }
+        // The replace event carries only what a replace changes: content and
+        // metadata. Peers reject a replace that also carries `context`, or
+        // whose content is blank or oversized — and one rejected event drops
+        // that device's whole log on every peer. So build the event first and
+        // refuse the edit here, before anything is written, if a peer would
+        // refuse it there.
+        let payload = ChatMessagePayload {
+            id: message.id.clone(),
+            chat_id: message.chat_id.clone(),
+            role: message.role.clone(),
+            content: content.to_string(),
+            context: None,
+            metadata: metadata.clone(),
+        };
+        crate::sync::validation::validate_chat_message_replace_payload(&payload).map_err(|_| {
+            crate::error::AppError::Other("CHAT_MESSAGE_REPLACE_INVALID".to_string())
+        })?;
         tx.execute(
             "UPDATE chat_messages
              SET content = ?1, metadata = ?2, updated_at = ?3, updated_by_device = ?4
@@ -495,14 +512,7 @@ pub(crate) fn replace_chat_message_inner(
         message.content = content.to_string();
         message.metadata = metadata.clone();
         message.updated_at = now;
-        events.push(EventBody::ChatMessageReplace(ChatMessagePayload {
-            id: message.id.clone(),
-            chat_id: message.chat_id.clone(),
-            role: message.role.clone(),
-            content: message.content.clone(),
-            context: message.context.clone(),
-            metadata: message.metadata.clone(),
-        }));
+        events.push(EventBody::ChatMessageReplace(payload));
         Ok(message)
     })?;
     Ok(message)
@@ -1005,5 +1015,62 @@ mod tests {
             .unwrap();
 
         assert_eq!(chat.metadata, Some(meta.to_string()));
+    }
+    #[test]
+    fn replacing_an_answer_emits_a_replace_peers_accept() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".to_string());
+        sync.set_should_queue(true);
+        let chat_id = Uuid::new_v4().to_string();
+        insert_chat(&db, &chat_id, "book1", "Chat");
+        // An assistant row that carries context, as an MCP client may save.
+        let answer = save_chat_message_inner(
+            &chat_id,
+            "assistant",
+            "First answer",
+            Some("passage the answer was about".to_string()),
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let queued_replace = |db: &Db| -> Vec<ChatMessagePayload> {
+            let conn = db.reader();
+            let mut stmt = conn
+                .prepare("SELECT body_json FROM _pending_publish ORDER BY ts")
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .map(|json| serde_json::from_str::<EventBody>(&json.unwrap()).unwrap())
+                .filter_map(|body| match body {
+                    EventBody::ChatMessageReplace(payload) => Some(payload),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        replace_chat_message_inner(&answer.id, "Better answer", None, &db, &sync).unwrap();
+        let replaces = queued_replace(&db);
+        assert_eq!(replaces.len(), 1);
+        crate::sync::validation::validate_chat_message_replace_payload(&replaces[0])
+            .expect("a peer must accept the replace this device publishes");
+
+        // A blank answer is one a peer would refuse, so it is refused here,
+        // before the local row changes or anything is queued.
+        let blank = replace_chat_message_inner(&answer.id, "  ", None, &db, &sync);
+        assert!(matches!(
+            blank,
+            Err(crate::error::AppError::Other(code)) if code == "CHAT_MESSAGE_REPLACE_INVALID"
+        ));
+        assert_eq!(queued_replace(&db).len(), 1);
+        let content: String = db
+            .reader()
+            .query_row(
+                "SELECT content FROM chat_messages WHERE id = ?1",
+                params![answer.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(content, "Better answer");
     }
 }
