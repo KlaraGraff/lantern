@@ -530,11 +530,17 @@ fn sqlite_failed(error: rusqlite::Error) -> AppError {
 /// day. `VACUUM INTO` reads one consistent transaction through its own
 /// read-only connection, so neither the app's writer nor its reader waits.
 fn write_data_snapshot(db: &Db, dest_root: &Path) -> AppResult<()> {
+    write_data_snapshot_for(db, dest_root, chrono::Local::now().date_naive())
+}
+
+/// [`write_data_snapshot`] for a given local day, so tests can pin the day
+/// instead of racing the clock past midnight.
+fn write_data_snapshot_for(db: &Db, dest_root: &Path, day: chrono::NaiveDate) -> AppResult<()> {
     let dir = dest_root.join(DATA_DIR);
     fs::create_dir_all(&dir).map_err(write_failed)?;
     let name = format!(
         "{SNAPSHOT_PREFIX}{}{SNAPSHOT_SUFFIX}",
-        chrono::Local::now().format("%Y-%m-%d")
+        day.format("%Y-%m-%d")
     );
     let temporary = dir.join(format!(".{name}.{}.tmp", now_ms()));
     let result = (|| -> AppResult<()> {
@@ -1309,9 +1315,12 @@ mod tests {
             .collect();
         assert_eq!(leftovers, names);
 
-        // A second run the same day replaces that day's snapshot.
+        // A second snapshot the same day replaces that day's snapshot. Pin
+        // the day to the first snapshot's: a second `run` could land after
+        // midnight and rightly write a new day's file.
+        let day = snapshot_date(&names[0]).unwrap();
         set_setting(&db, "probe", "after");
-        run(&db, backup.path()).unwrap();
+        write_data_snapshot_for(&db, backup.path(), day).unwrap();
         let names = snapshots_in(backup.path());
         assert_eq!(names.len(), 1);
         let snapshot = open_snapshot(&backup.path().join(DATA_DIR).join(&names[0])).unwrap();
@@ -1323,6 +1332,18 @@ mod tests {
             )
             .unwrap();
         assert_eq!(probe, "after");
+    }
+
+    #[test]
+    fn a_snapshot_on_a_new_day_keeps_the_previous_days() {
+        let (_library, backup, db) = setup();
+        let today = chrono::Local::now().date_naive();
+        let yesterday = today.pred_opt().unwrap();
+        write_data_snapshot_for(&db, backup.path(), yesterday).unwrap();
+        write_data_snapshot_for(&db, backup.path(), today).unwrap();
+        // This is what the test above saw when its two runs straddled
+        // midnight: two snapshots, both correct.
+        assert_eq!(snapshots_in(backup.path()).len(), 2);
     }
 
     #[test]
