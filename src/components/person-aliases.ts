@@ -406,6 +406,8 @@ export interface AliasBuildErrorView {
    * better information than we do.
    */
   detail: string | null;
+  /** Whether the "a failed rebuild never clears the table" note applies. */
+  tableKeptNote: boolean;
 }
 
 const K = "indexManager.aliases.buildError.";
@@ -422,9 +424,26 @@ const K = "indexManager.aliases.buildError.";
  *
  * Only a failure no layer can name keeps its raw text, and even then behind a
  * disclosure rather than in the reader's face.
+ *
+ * The same band reports the section's other actions, so `action` — the name
+ * the section ran it under — says which one failed. A failed add is not a
+ * build: it gets its own sentence, and no retry button, since that button
+ * rebuilds the whole table. The add form stays open with what the reader
+ * typed, so pressing Add again is the retry.
  */
-export function aliasBuildError(error: unknown): AliasBuildErrorView {
+export function aliasBuildError(error: unknown, action?: string | null): AliasBuildErrorView {
   const message = String(error);
+  if (action === "add-person" || action?.startsWith("add-alias-")) {
+    return {
+      tone: "danger",
+      titleKey: "indexManager.aliases.addError.title",
+      bodyKey: "indexManager.aliases.addError.body",
+      canRetry: false,
+      canPickModel: false,
+      detail: message,
+      tableKeptNote: false,
+    };
+  }
   const code = ALIAS_BUILD_ERROR_CODES.find((candidate) => message.includes(candidate));
 
   switch (code) {
@@ -447,6 +466,7 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
         canRetry: true,
         canPickModel: true,
         detail: null,
+        tableKeptNote: true,
       };
     case "PERSON_ALIASES_AI_INVALID":
       // Now raised only after three unparseable replies in a row: the parse
@@ -461,6 +481,7 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
         canRetry: true,
         canPickModel: true,
         detail: null,
+        tableKeptNote: true,
       };
     case "PERSON_ALIASES_ALREADY_RUNNING":
       // Nothing broke: a pass for this book is in flight and the second one
@@ -473,6 +494,7 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
         canRetry: false,
         canPickModel: false,
         detail: null,
+        tableKeptNote: true,
       };
   }
 
@@ -485,6 +507,7 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
       canRetry: isAiRetryableError(aiCode),
       canPickModel: isAiSettingsError(aiCode),
       detail: null,
+      tableKeptNote: true,
     };
   }
 
@@ -495,6 +518,7 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
     canRetry: true,
     canPickModel: false,
     detail: message,
+    tableKeptNote: true,
   };
 }
 

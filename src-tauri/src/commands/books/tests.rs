@@ -606,7 +606,10 @@ fn text_parser_keeps_complete_lines_as_separate_paragraphs() {
 }
 
 #[test]
-fn text_preparation_does_not_reflow_markdown_soft_breaks() {
+fn text_preparation_joins_markdown_soft_breaks_into_one_paragraph() {
+    // Markdown wraps prose at a fixed width; a single newline is only that
+    // wrap, so twelve source lines of one paragraph are one paragraph, not
+    // twelve.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("lines.md");
     let markdown = (0..12)
@@ -616,13 +619,21 @@ fn text_preparation_does_not_reflow_markdown_soft_breaks() {
     fs::write(&path, markdown).unwrap();
 
     let document = prepare_text_document(&path, "markdown", None).unwrap();
+    let blocks = document
+        .chunks
+        .iter()
+        .flat_map(|chunk| chunk.blocks.iter())
+        .collect::<Vec<_>>();
+    assert_eq!(blocks.len(), 1);
+}
+
+#[test]
+fn markdown_text_keeps_blank_line_paragraphs_and_hard_breaks() {
+    let text =
+        markdown_to_text("First line\nstill first.\n\nSecond paragraph,  \nafter a hard break.\n");
     assert_eq!(
-        document
-            .chunks
-            .iter()
-            .map(|chunk| chunk.blocks.len())
-            .sum::<usize>(),
-        12
+        text,
+        "First line still first.\nSecond paragraph,\nafter a hard break.\n"
     );
 }
 
@@ -997,6 +1008,7 @@ fn test_list_books_returns_format() {
                 created_at: row.get(17)?,
                 updated_at: row.get(18)?,
                 available: true,
+                file_missing: false,
                 cover_data: None,
             })
         })
@@ -1175,7 +1187,7 @@ fn test_get_book_returns_format() {
             source_file_path: row.get(9)?, source_sha256: row.get(10)?, conversion_version: row.get::<_, Option<i32>>(11)?.unwrap_or(0),
             preparation_state: row.get(19)?, preparation_error: row.get(20)?,
             genre: row.get(12)?, pages: row.get(13)?, status: row.get(14)?, progress: row.get(15)?, current_cfi: row.get(16)?,
-            created_at: row.get(17)?, updated_at: row.get(18)?, available: true, cover_data: None,
+            created_at: row.get(17)?, updated_at: row.get(18)?, available: true, file_missing: false, cover_data: None,
         }),
     ).unwrap();
 
@@ -1207,6 +1219,7 @@ fn converted_book(id: &str, state: &str) -> Book {
         created_at: 1,
         updated_at: 1,
         available: false,
+        file_missing: false,
         cover_data: None,
     }
 }
@@ -1228,6 +1241,36 @@ fn resolve_paths_redirects_ready_converted_book_to_local_artifact() {
         book.available,
         "local converted artifact is always available"
     );
+}
+
+/// One book whose stored path can't be resolved used to fail `list_books` as
+/// a whole, so the library showed nothing at all.
+#[test]
+fn listing_marks_a_book_whose_path_cannot_be_resolved_instead_of_failing() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "good", "reading", 1000);
+    insert_book_with_ts(&db, "broken", "reading", 2000);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE books SET file_path = '/Users/someone/Old Library/book.epub' WHERE id = 'broken'",
+            [],
+        )
+        .unwrap();
+
+    let mut page = query_books(&db, None, None, None, None, 10).unwrap();
+    super::query::resolve_listed_books(&mut page.books, &db, None);
+
+    let ids: Vec<&str> = page.books.iter().map(|book| book.id.as_str()).collect();
+    assert_eq!(ids, ["broken", "good"]);
+    let broken = &page.books[0];
+    assert!(broken.file_missing);
+    assert!(
+        broken.available,
+        "a missing file is not an iCloud placeholder to wait for"
+    );
+    assert!(!page.books[1].file_missing);
 }
 
 #[test]
@@ -2042,6 +2085,28 @@ fn passage_note_is_detached_exactly_as_before() {
 /// reusable. In SQLite's default auto-vacuum mode the file only ever grows, so
 /// a user who imports a shelf of books and deletes most of them gets no space
 /// back and reads that as the delete having failed.
+/// The book the library marks "file not found" has to be removable: the row
+/// delete used to commit and then report a failure over the path it couldn't
+/// resolve for the file cleanup.
+#[test]
+fn delete_book_succeeds_when_its_file_path_cannot_be_resolved() {
+    let (_dir, db) = setup();
+    insert_book(&db, "b1", "epub");
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE books SET file_path = '/Users/someone/Old Library/book.epub' WHERE id = 'b1'",
+            [],
+        )
+        .unwrap();
+
+    let sync = SyncWriter::new("dev-A".into());
+    do_delete_book_with_note_policy("b1", false, &db, &sync).unwrap();
+
+    assert!(!super::query::query_book_exists(&db, "b1").unwrap());
+}
+
 #[test]
 fn delete_book_returns_its_pages_to_the_file() {
     let (_dir, db) = setup();

@@ -610,6 +610,7 @@ mod tests {
             created_at: 1,
             updated_at: 1,
             available: true,
+            file_missing: false,
             cover_data: None,
         };
         std::fs::write(dir.path().join("books/book.txt"), "source").unwrap();

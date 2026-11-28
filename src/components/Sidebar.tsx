@@ -7,6 +7,7 @@ import { platform } from "../services/platform";
 import { TOP_INSET } from "../utils/top-inset";
 import { memoRowBadgeCount } from "./sidebar-badges";
 import type { Collection } from "../hooks/useCollections";
+import { avatarInitials } from "../utils/avatar-initials";
 
 interface BookCounts {
   all: number;
@@ -428,9 +429,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg w-full cursor-pointer hover:bg-bg-input"
         >
           <div className="size-7 rounded-full bg-accent flex items-center justify-center text-[12px] font-semibold text-white shrink-0">
-            {userName
-              ? userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-              : "R"}
+            {avatarInitials(userName || t("settings.general.displayNameDefault"))}
           </div>
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-text-primary truncate">{userName || t("settings.general.displayNameDefault")}</p>

@@ -29,8 +29,10 @@ import {
   BookmarkCheck,
   ClipboardList,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
 import Button from "./ui/Button";
+import Toast from "./ui/Toast";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import { notifyReaders } from "../utils/notifyReaders";
@@ -60,6 +62,7 @@ import {
 import { TOP_INSET } from "../utils/top-inset";
 import { platform } from "../services/platform";
 import LearnTodayRow from "./vocab/LearnTodayRow";
+import { VOCAB_BACKUP_CSV_HEADERS, vocabBackupCsvRow } from "./vocab/backup-csv";
 
 // Deferred the same way VocabEntry.tsx defers it — this panel only opens on
 // an explicit expand, and the markdown renderer it drags in has no business
@@ -106,6 +109,8 @@ interface VocabBackupWord {
   fsrs_version: number;
   created_at: number;
   updated_at: number;
+  source?: string;
+  source_label?: string | null;
 }
 
 interface VocabBackup {
@@ -131,29 +136,6 @@ interface VocabImportResult {
   skipped: number;
   dry_run: boolean;
 }
-
-const VOCAB_BACKUP_CSV_HEADERS = [
-  "backup_schema",
-  "backup_version",
-  "id",
-  "book_id",
-  "word",
-  "definition",
-  "context_sentence",
-  "context_explanation",
-  "cfi",
-  "mastery",
-  "review_count",
-  "next_review_at",
-  "review_interval_days",
-  "last_reviewed_at",
-  "last_review_rating",
-  "fsrs_stability",
-  "fsrs_difficulty",
-  "fsrs_version",
-  "created_at",
-  "updated_at",
-];
 
 /** A row of the saved list: one merged word, or one record in the by-book view. */
 interface VocabListEntry {
@@ -225,6 +207,9 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
   const [bulkMastery, setBulkMastery] = useState<"new" | "learning" | "mastered">("learning");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // How many selected words a failed bulk status change left as they were.
+  const [bulkMasteryFailed, setBulkMasteryFailed] = useState<number | null>(null);
+  const bulkMasteryFailedTimer = useRef<number | null>(null);
   const [deleteEntry, setDeleteEntry] = useState<MergedVocabEntry | null>(null);
   // "review" starts the list collapsed behind the divider; "all" starts it
   // open. Re-synced on prop change (not just on mount) so switching sidebar
@@ -307,6 +292,9 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
   useEffect(() => () => {
     if (clearConfirmationTimer.current !== null) {
       window.clearTimeout(clearConfirmationTimer.current);
+    }
+    if (bulkMasteryFailedTimer.current !== null) {
+      window.clearTimeout(bulkMasteryFailedTimer.current);
     }
   }, []);
 
@@ -498,13 +486,7 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
         await downloadCsv(
           "lantern-vocabulary.csv",
           VOCAB_BACKUP_CSV_HEADERS,
-          backup.words.map((word) => [
-            backup.schema, backup.version, word.id, word.book_id, word.word, word.definition,
-            word.context_sentence, word.context_explanation, word.cfi, word.mastery,
-            word.review_count, word.next_review_at, word.review_interval_days,
-            word.last_reviewed_at, word.last_review_rating, word.fsrs_stability,
-            word.fsrs_difficulty, word.fsrs_version, word.created_at, word.updated_at,
-          ]),
+          backup.words.map((word) => vocabBackupCsvRow(backup.schema, backup.version, word)),
         );
       }
     } catch (error) {
@@ -685,17 +667,26 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
   const applyBulkMastery = async () => {
     if (selectedWordIds.size === 0) return;
     const nextReviewAt = bulkMastery === "learning" ? Date.now() + 24 * 60 * 60 * 1000 : null;
+    const ids = Array.from(selectedWordIds);
     setBulkBusy(true);
     try {
-      await invoke<number>("bulk_update_vocab_mastery", {
-        ids: Array.from(selectedWordIds),
-        mastery: bulkMastery,
-        nextReviewAt,
-      });
+      try {
+        await invoke<number>("bulk_update_vocab_mastery", { ids, mastery: bulkMastery, nextReviewAt });
+      } catch (error) {
+        // The backend changes the whole batch in one transaction, so a failure
+        // leaves every selected word as it was: the list is still right, and
+        // the selection stays for another try.
+        console.error("Failed to update vocabulary mastery in bulk:", error);
+        setBulkMasteryFailed(ids.length);
+        if (bulkMasteryFailedTimer.current !== null) window.clearTimeout(bulkMasteryFailedTimer.current);
+        bulkMasteryFailedTimer.current = window.setTimeout(() => {
+          setBulkMasteryFailed(null);
+          bulkMasteryFailedTimer.current = null;
+        }, 3200);
+        return;
+      }
       await refreshWords();
       setSelectedWordIds(new Set());
-    } catch (error) {
-      console.error("Failed to update vocabulary mastery in bulk:", error);
     } finally {
       setBulkBusy(false);
     }
@@ -1482,6 +1473,11 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
             </div>
           </div>
         </div>
+      )}
+      {bulkMasteryFailed !== null && (
+        <Toast icon={<AlertCircle size={14} className="shrink-0 text-danger-text" />}>
+          {t("vocab.bulk.masteryFailed", { count: bulkMasteryFailed })}
+        </Toast>
       )}
     </div>
   );

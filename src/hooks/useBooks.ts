@@ -25,6 +25,8 @@ export interface Book {
   created_at: number;
   updated_at: number;
   available: boolean;
+  /** The stored file path can't be resolved: listed as "file not found". */
+  file_missing?: boolean;
   cover_data: string | null;
 }
 
@@ -51,6 +53,9 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
   const [books, setBooks] = useState<Book[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // The first page could not be read. Without it an unreadable library and an
+  // empty one look the same, and the shelf invites the reader to import a book.
+  const [failed, setFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -80,8 +85,11 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
       setTotal(page.total);
       setCursor(page.next_cursor);
       setHasMore(page.next_cursor !== null);
+      setFailed(false);
     } catch (err) {
-      if (generation === generationRef.current) console.error("Failed to load books:", err);
+      if (generation !== generationRef.current) return;
+      console.error("Failed to load books:", err);
+      setFailed(true);
     } finally {
       if (generation === generationRef.current) setLoading(false);
     }
@@ -132,7 +140,7 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
     loadingCursorRef.current = null;
   }, [refresh]);
 
-  return { books, total, loading, loadingMore, hasMore, loadMore, refresh, reorderVisible };
+  return { books, total, loading, failed, loadingMore, hasMore, loadMore, refresh, reorderVisible };
 }
 
 export async function moveBook(bookId: string, targetId: string, after: boolean, fromRecent: boolean): Promise<void> {
