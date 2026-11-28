@@ -528,4 +528,19 @@ mod cover_tests {
         fs::write(&path, b"not an image").unwrap();
         assert!(validated_cover_bytes(&path).is_err());
     }
+
+    #[test]
+    fn custom_cover_accepts_png_and_webp() {
+        // 2×2 red pixels, written by Pillow, so the fixtures do not depend on
+        // which encoders this crate's `image` build happens to carry.
+        const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02\x00\x00\x00\x02\x08\x02\x00\x00\x00\xfd\xd4\x9as\x00\x00\x00\x16IDATx\x9cc<\xc1\xc5\xc5\xc0\xc0\xc0\xc4\xc0\xc0\xc0\xc0\xc0\x00\x00\x0b8\x00\xe0\x11\xf4\xd5\xd6\x00\x00\x00\x00IEND\xaeB`\x82";
+        const WEBP: &[u8] = b"RIFF\x1e\x00\x00\x00WEBPVP8L\x11\x00\x00\x00/\x01@\x00\x00\x07P\x85\"W\xa1\xff\x81\x88\xe8\x7f\x00\x00";
+        let dir = tempfile::tempdir().unwrap();
+        for (name, bytes) in [("cover.png", PNG), ("cover.webp", WEBP)] {
+            let path = dir.path().join(name);
+            fs::write(&path, bytes).unwrap();
+            assert_eq!(validated_cover_bytes(&path).unwrap(), bytes, "{name} was rejected");
+        }
+    }
 }
+
