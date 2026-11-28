@@ -1,7 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+import StartupFailure from "./components/StartupFailure";
+import type { StartupFailureInfo } from "./components/startup-failure";
 import "./index.css";
 import "./i18n";
 import { installReaderDiagnostics } from "./utils/readerDiagnostics";
@@ -59,14 +62,22 @@ if (prefersDark) document.documentElement.classList.add("dark");
 // 100% before the app jumped to the size the user actually chose.
 applyAppZoom(readAppZoom());
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    {/* Last resort. The boundaries inside `App` contain a page or a panel and
-        leave the rest usable; this one only exists so that a failure in the
-        shell itself — router, providers, `App`'s own effects — is an error
-        screen with a way out rather than an empty white window. */}
-    <ErrorBoundary scope="app">
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>,
-);
+// One IPC before the first render: when the library or the key store would
+// not open, the backend registered none of the state `App` reads, so the
+// window shows the failure page instead of mounting the app at all.
+const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+void invoke<StartupFailureInfo | null>("startup_failure")
+  .catch(() => null)
+  .then((failure) => {
+    root.render(
+      <React.StrictMode>
+        {/* Last resort. The boundaries inside `App` contain a page or a panel and
+            leave the rest usable; this one only exists so that a failure in the
+            shell itself — router, providers, `App`'s own effects — is an error
+            screen with a way out rather than an empty white window. */}
+        <ErrorBoundary scope="app">
+          {failure ? <StartupFailure info={failure} /> : <App />}
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+  });

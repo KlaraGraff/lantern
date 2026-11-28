@@ -324,19 +324,8 @@ fn already_backed_up(dest: &Path, len: u64) -> bool {
 /// place, so an unplugged disk or a cancelled run never leaves a half-written
 /// file that a later run would mistake for a finished one.
 fn copy_into(db: &Db, source: &Source, dest: &Path) -> io::Result<()> {
-    let parent = dest
-        .parent()
-        .ok_or_else(|| io::Error::other("destination has no parent"))?;
-    fs::create_dir_all(parent)?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
-    if dest.exists() {
-        keep_previous_copy(dest)?;
-    }
-    match source {
-        Source::File(path) => {
-            let mut reader = fs::File::open(path)?;
-            io::copy(&mut reader, temporary.as_file_mut())?;
-        }
+    write_into(dest, |file| match source {
+        Source::File(path) => copy_file_contents(path, file),
         Source::CoverBlob { book_id, .. } => {
             let bytes: Vec<u8> = db
                 .reader()
@@ -346,9 +335,27 @@ fn copy_into(db: &Db, source: &Source, dest: &Path) -> io::Result<()> {
                     |row| row.get(0),
                 )
                 .map_err(|_| io::Error::from(io::ErrorKind::NotFound))?;
-            temporary.write_all(&bytes)?;
+            file.write_all(&bytes)
         }
+    })
+}
+
+fn copy_file_contents(path: &Path, file: &mut fs::File) -> io::Result<()> {
+    io::copy(&mut fs::File::open(path)?, file).map(|_| ())
+}
+
+/// Write `dest` through a temporary file beside it, so a half-written copy is
+/// never left under the real name.
+fn write_into(dest: &Path, fill: impl FnOnce(&mut fs::File) -> io::Result<()>) -> io::Result<()> {
+    let parent = dest
+        .parent()
+        .ok_or_else(|| io::Error::other("destination has no parent"))?;
+    fs::create_dir_all(parent)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    if dest.exists() {
+        keep_previous_copy(dest)?;
     }
+    fill(temporary.as_file_mut())?;
     temporary.as_file().sync_all()?;
     temporary.persist(dest).map_err(|error| error.error)?;
     Ok(())
@@ -696,7 +703,7 @@ pub(crate) fn preview_restore(dest_root: &Path) -> AppResult<RestorePreview> {
 
 /// Copy the book files, covers and fonts the snapshot names into the library,
 /// leaving any file the library already has as it is.
-fn restore_files(db: &Db, dest_root: &Path, snapshot: &Path) -> AppResult<u64> {
+fn restore_files(data_dir: &Path, dest_root: &Path, snapshot: &Path) -> AppResult<u64> {
     let conn = open_snapshot(snapshot)?;
     let mut relatives: Vec<String> = Vec::new();
     {
@@ -725,14 +732,14 @@ fn restore_files(db: &Db, dest_root: &Path, snapshot: &Path) -> AppResult<u64> {
     for relative in relatives {
         let (Ok(from), Ok(to)) = (
             resolve_blob_path(dest_root, &relative),
-            db.resolve_path(&relative),
+            resolve_blob_path(data_dir, &relative),
         ) else {
             continue;
         };
         if to.exists() || !from.is_file() {
             continue;
         }
-        copy_into(db, &Source::File(from), &to).map_err(write_failed)?;
+        write_into(&to, |file| copy_file_contents(&from, file)).map_err(write_failed)?;
         copied += 1;
     }
     Ok(copied)
@@ -761,8 +768,8 @@ fn stage_snapshot(local_dir: &Path, snapshot: &Path) -> AppResult<()> {
     result
 }
 
-fn check_sync_off(db: &Db) -> AppResult<()> {
-    if crate::sync::migration::is_sync_enabled(&db.local_data_dir()?) {
+fn check_sync_off(local_dir: &Path) -> AppResult<()> {
+    if crate::sync::migration::is_sync_enabled(local_dir) {
         return Err(AppError::Other(RESTORE_SYNC_ON.to_string()));
     }
     Ok(())
@@ -771,7 +778,18 @@ fn check_sync_off(db: &Db) -> AppResult<()> {
 /// The whole restore short of the relaunch: files into the library, the
 /// snapshot staged. `name` must be one of the folder's own snapshot names.
 pub(crate) fn prepare_restore(db: &Db, dest_root: &Path, name: &str) -> AppResult<()> {
-    check_sync_off(db)?;
+    prepare_restore_into(&db.local_data_dir()?, &db.data_dir()?, dest_root, name)
+}
+
+/// [`prepare_restore`] without an open library — what the startup failure
+/// page uses when `lantern.db` itself would not open.
+pub(crate) fn prepare_restore_into(
+    local_dir: &Path,
+    data_dir: &Path,
+    dest_root: &Path,
+    name: &str,
+) -> AppResult<()> {
+    check_sync_off(local_dir)?;
     if snapshot_date(name).is_none() {
         return Err(AppError::Other(RESTORE_NO_DATA.to_string()));
     }
@@ -784,9 +802,9 @@ pub(crate) fn prepare_restore(db: &Db, dest_root: &Path, name: &str) -> AppResul
         Ok(Inspected::TooNew) => return Err(AppError::Other(RESTORE_TOO_NEW.to_string())),
         Err(_) => return Err(AppError::Other(RESTORE_DAMAGED.to_string())),
     }
-    let copied = restore_files(db, dest_root, &snapshot)?;
+    let copied = restore_files(data_dir, dest_root, &snapshot)?;
     log::info!("library_restore: copied {copied} files back from {name}");
-    stage_snapshot(&db.local_data_dir()?, &snapshot)
+    stage_snapshot(local_dir, &snapshot)
 }
 
 fn now_ms() -> i64 {
@@ -1069,7 +1087,7 @@ pub async fn library_backup_set_auto(
 #[tauri::command]
 pub async fn library_restore_choose(app: AppHandle) -> AppResult<Option<RestorePreview>> {
     let db = app.state::<Db>();
-    check_sync_off(&db)?;
+    check_sync_off(&db.local_data_dir()?)?;
     let mut dialog = app.dialog().file();
     if let Some(dir) = configured_dir(&db).filter(|dir| dir.is_dir()) {
         dialog = dialog.set_directory(dir);
@@ -1109,6 +1127,49 @@ pub async fn library_restore_apply(
     tauri::async_runtime::spawn_blocking(move || prepare_restore(&db, &dir, &name))
         .await
         .map_err(|error| AppError::Other(error.to_string()))?
+}
+
+/// `library_restore_choose` for the startup failure page, where there is no
+/// open library: no configured backup folder to start the picker at, and no
+/// `Db` state to read it from.
+#[tauri::command]
+pub async fn startup_restore_choose(
+    app: AppHandle,
+    state: State<'_, crate::startup_failure::StartupFailure>,
+) -> AppResult<Option<RestorePreview>> {
+    if !state.info.can_restore {
+        return Err(AppError::Other(RESTORE_SYNC_ON.to_string()));
+    }
+    let Some(picked) = app.dialog().file().blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let dir = picked
+        .into_path()
+        .map_err(|_| AppError::Other(RESTORE_NO_DATA.to_string()))?;
+    let preview = preview_restore(&dir)?;
+    *state.restore_dir.lock().expect("restore mutex") = Some(dir);
+    Ok(Some(preview))
+}
+
+/// `library_restore_apply` for the startup failure page. The relaunch that
+/// follows swaps the snapshot in and moves the damaged database aside.
+#[tauri::command]
+pub async fn startup_restore_apply(
+    name: String,
+    state: State<'_, crate::startup_failure::StartupFailure>,
+) -> AppResult<()> {
+    let dir = state
+        .restore_dir
+        .lock()
+        .expect("restore mutex")
+        .clone()
+        .ok_or_else(|| AppError::Other(RESTORE_NO_DATA.to_string()))?;
+    let (local_dir, data_dir) = (state.local_dir.clone(), state.data_dir.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        prepare_restore_into(&local_dir, &data_dir, &dir, &name)
+    })
+    .await
+    .map_err(|error| AppError::Other(error.to_string()))?
 }
 
 #[cfg(test)]
@@ -1495,6 +1556,42 @@ mod tests {
             .unwrap();
         assert_eq!(title, "Alpha");
         assert_eq!(read_setting(&restored, "probe").as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn a_damaged_library_restores_without_opening_it() {
+        let (library, backup, db) = setup();
+        insert_book(&db, "a", "Alpha", None);
+        run(&db, backup.path()).unwrap();
+        drop(db);
+        // The book file went with whatever broke the database.
+        fs::remove_file(library.path().join("books/a.epub")).unwrap();
+        fs::write(library.path().join(crate::db::DB_FILE_NAME), b"not a database").unwrap();
+        for suffix in ["-wal", "-shm"] {
+            let _ = fs::remove_file(
+                library
+                    .path()
+                    .join(format!("{}{suffix}", crate::db::DB_FILE_NAME)),
+            );
+        }
+        assert!(Db::init(library.path()).is_err());
+
+        let name = snapshots_in(backup.path()).remove(0);
+        prepare_restore_into(library.path(), library.path(), backup.path(), &name).unwrap();
+        assert_eq!(
+            fs::read(library.path().join("books/a.epub")).unwrap(),
+            b"book a"
+        );
+
+        assert!(crate::restore::apply_pending(library.path()).unwrap());
+        let restored = Db::init(library.path()).unwrap();
+        let title: String = restored
+            .reader()
+            .query_row("SELECT title FROM books WHERE id = 'a'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(title, "Alpha");
     }
 
     #[test]
