@@ -25,6 +25,25 @@ test("English counts read as singular at one and plural otherwise", () => {
   assert.equal(en1("vocab.merged.altDefinitions", 1), "1 other definition — different from the one above");
 });
 
+// The singulars #106 added kept the plural's shape: "Select this 1",
+// "Your 1 most-read book". English names the one thing instead.
+test("English singulars name the one thing rather than pointing at a 1", () => {
+  const en1 = (key: string) => i18n.t(key, { lng: "en", count: 1, model: "m", date: "d" });
+  const expected: Record<string, string> = {
+    "readerSettings.scope.selectVisible": "Select this book",
+    "readerSettings.scope.unselectVisible": "Unselect this book",
+    "readerSettings.scope.promote": "Use this setting as a global default",
+    "readerSettings.scope.chooseHeading": "Which books should also use this setting?",
+    "readerSettings.scope.confirmHint": "This setting becomes the new default. This book will follow it without keeping a hidden copy.",
+    "readerSettings.scope.impactSelected": "Books without overrides adopt the defaults; the selected book also follows these new values.",
+    "settings.speech.custom.voiceSource": "This voice comes from what the endpoint reported when it rejected a voice for m (d).",
+    "settings.ai.reasoningEffortSource": "This level comes from what the endpoint reported when it rejected a request for m (d).",
+    "indexManager.aliases.clearConfirmBody": "Including the one you taught yourself — it doesn't come back on a rebuild. A rebuild only ever re-finds the ones it can see in the book's own text.",
+    "profile.evidence.exampleSource.summary": "Your most-read book over the last 90 days, by actual reading time:",
+  };
+  for (const [key, text] of Object.entries(expected)) assert.equal(en1(key), text, key);
+});
+
 test("Chinese, which has no plural, mirrors one text under both suffixes", () => {
   const differing = Object.keys(zh)
     .filter((key) => key.endsWith("_one"))
@@ -47,7 +66,6 @@ const neverSingular: Record<string, string> = {
   "indexManager.aliases.bridgeLeadMany": "two candidates use bridgeLeadTwo",
   "learningCard.memory.repeat": "shown from the second lookup on",
   "reviewBoard.pile.repeatLookupsInBook.reasonSolo": "a solo pile without glances needs at least two cards",
-  "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixed": "two counts in one string, passed as text; not covered here",
   "bookDifficulty.why.similar": "needs at least MIN_BASELINE_BOOKS (2) finished books",
   "bookDifficulty.why.harder": "needs at least MIN_BASELINE_BOOKS (2) finished books",
 };
