@@ -199,7 +199,13 @@ pub(super) fn markdown_to_text(markdown: &str) -> String {
     for event in MarkdownParser::new_ext(markdown, options) {
         match event {
             MarkdownEvent::Text(value) | MarkdownEvent::Code(value) => text.push_str(&value),
-            MarkdownEvent::SoftBreak | MarkdownEvent::HardBreak => text.push('\n'),
+            // A single newline inside a paragraph is only a soft wrap in the
+            // source: Markdown renders it as a space, and only a blank line
+            // starts a new paragraph. A hard break (two trailing spaces or a
+            // backslash) is a real line break. Both are one UTF-16 unit, so
+            // the offsets of the rest of the text are unchanged.
+            MarkdownEvent::SoftBreak => text.push(' '),
+            MarkdownEvent::HardBreak => text.push('\n'),
             MarkdownEvent::End(
                 MarkdownTagEnd::Paragraph
                 | MarkdownTagEnd::Heading(_)

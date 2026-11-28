@@ -606,7 +606,10 @@ fn text_parser_keeps_complete_lines_as_separate_paragraphs() {
 }
 
 #[test]
-fn text_preparation_does_not_reflow_markdown_soft_breaks() {
+fn text_preparation_joins_markdown_soft_breaks_into_one_paragraph() {
+    // Markdown wraps prose at a fixed width; a single newline is only that
+    // wrap, so twelve source lines of one paragraph are one paragraph, not
+    // twelve.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("lines.md");
     let markdown = (0..12)
@@ -616,13 +619,21 @@ fn text_preparation_does_not_reflow_markdown_soft_breaks() {
     fs::write(&path, markdown).unwrap();
 
     let document = prepare_text_document(&path, "markdown", None).unwrap();
+    let blocks = document
+        .chunks
+        .iter()
+        .flat_map(|chunk| chunk.blocks.iter())
+        .collect::<Vec<_>>();
+    assert_eq!(blocks.len(), 1);
+}
+
+#[test]
+fn markdown_text_keeps_blank_line_paragraphs_and_hard_breaks() {
+    let text =
+        markdown_to_text("First line\nstill first.\n\nSecond paragraph,  \nafter a hard break.\n");
     assert_eq!(
-        document
-            .chunks
-            .iter()
-            .map(|chunk| chunk.blocks.len())
-            .sum::<usize>(),
-        12
+        text,
+        "First line still first.\nSecond paragraph,\nafter a hard break.\n"
     );
 }
 
