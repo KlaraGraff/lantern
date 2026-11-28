@@ -162,7 +162,7 @@ fn approval_input_for_tool(
             }
         }
         "delete_collections" => {
-            let collection_ids = required_non_empty_string_array(arguments, "ids")?;
+            let collection_ids = tool_ids(arguments)?;
             ApprovalConfirmation::IrreversibleData {
                 effect: "Permanently delete the collection and its saved membership grouping. Books are not deleted."
                     .to_string(),
@@ -285,12 +285,23 @@ fn required_non_empty_string_array(
     Ok(values)
 }
 
+/// The `ids` of a delete tool, checked by the same rule the tool itself
+/// applies. Asking the reader to approve ids the tool will then refuse
+/// (duplicates, more than its limit) spends their approval on a call that
+/// can't run, and a duplicate also inflates the count they were shown.
+fn tool_ids(arguments: &JsonObject) -> Result<Vec<String>, ErrorData> {
+    crate::mcp::tools::annotations_write::validate_ids(
+        required_string_array(arguments, "ids")?,
+        "ids",
+    )
+}
+
 fn irreversible_ids_confirmation(
     arguments: &JsonObject,
     effect: &str,
     item_name: &str,
 ) -> Result<ApprovalConfirmation, ErrorData> {
-    let ids = required_non_empty_string_array(arguments, "ids")?;
+    let ids = tool_ids(arguments)?;
     Ok(ApprovalConfirmation::IrreversibleData {
         effect: effect.to_string(),
         scope: format!("{} {item_name}(s): {}.", ids.len(), ids.join(", ")),
@@ -859,6 +870,26 @@ mod tests {
                 input.confirmation,
                 ApprovalConfirmation::IrreversibleData { .. }
             ));
+        }
+    }
+
+    #[test]
+    fn delete_approval_refuses_ids_the_tool_would_refuse() {
+        let too_many: Vec<String> = (0..501).map(|n| format!("id{n}")).collect();
+        for (name, extra) in [
+            ("delete_annotations", json!({ "kind": "highlight" })),
+            ("delete_chats", json!({})),
+            ("delete_vocabulary", json!({})),
+            ("delete_collections", json!({})),
+        ] {
+            for ids in [json!(["a", "a"]), json!(too_many)] {
+                let mut arguments = extra.as_object().unwrap().clone();
+                arguments.insert("ids".into(), ids);
+                assert!(
+                    approval_input_for_tool(name, &arguments).is_err(),
+                    "{name} must not ask to approve ids its tool rejects"
+                );
+            }
         }
     }
 
