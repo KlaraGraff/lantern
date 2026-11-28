@@ -7,7 +7,7 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { coverImagePreview, updateBookCover, updateBookMetadata } from "../hooks/useBooks";
 import { pickedFilePath } from "../utils/picked-file";
-import { COVER_IMAGE_EXTENSIONS, isHeicPath } from "../utils/cover-image";
+import { COVER_IMAGE_EXTENSIONS, needsConvertedPreview } from "../utils/cover-image";
 
 interface EditMetadataModalProps {
   bookId: string;
@@ -74,7 +74,7 @@ export default function EditMetadataModal({
     if (!selected || Array.isArray(selected)) return;
     const path = pickedFilePath(selected);
     setError(null);
-    if (!isHeicPath(path)) {
+    if (!needsConvertedPreview(path)) {
       setCoverPath(path);
       setCoverPreview(convertFileSrc(path));
       return;

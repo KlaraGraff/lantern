@@ -12,21 +12,28 @@ fn validated_cover_bytes(path: &Path) -> AppResult<Vec<u8>> {
         return Err(AppError::Other("BOOK_COVER_SIZE_INVALID".to_string()));
     }
     let bytes = fs::read(path)?;
+    let invalid = || AppError::Other("BOOK_COVER_FORMAT_INVALID".to_string());
     if is_hevc_heif(&bytes) {
-        // Stored as JPEG: no webview but Safari's can draw HEIC, and the cover
-        // only ever shows small.
-        return heic_cover_jpeg(&bytes)
-            .ok_or_else(|| AppError::Other("BOOK_COVER_FORMAT_INVALID".to_string()));
+        return heic_cover_jpeg(&bytes).ok_or_else(invalid);
     }
-    let supported = bytes.starts_with(b"\x89PNG\r\n\x1a\n")
-        || bytes.starts_with(b"\xFF\xD8\xFF")
-        || (bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP");
-    if !supported {
-        return Err(AppError::Other("BOOK_COVER_FORMAT_INVALID".to_string()));
+    match image::guess_format(&bytes) {
+        Ok(image::ImageFormat::Jpeg) => {
+            image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)
+                .map_err(|_| invalid())?;
+            Ok(bytes)
+        }
+        // Everything else is stored as JPEG too, so every place that shows a
+        // cover keeps reading one format, and a TIFF shows in webviews that
+        // cannot draw one.
+        Ok(
+            format @ (image::ImageFormat::Png
+            | image::ImageFormat::WebP
+            | image::ImageFormat::Gif
+            | image::ImageFormat::Bmp
+            | image::ImageFormat::Tiff),
+        ) => raster_cover_jpeg(&bytes, format).ok_or_else(invalid),
+        _ => Err(invalid()),
     }
-    image::load_from_memory(&bytes)
-        .map_err(|_| AppError::Other("BOOK_COVER_FORMAT_INVALID".to_string()))?;
-    Ok(bytes)
 }
 
 /// A HEIF file whose images are HEVC-coded (what an iPhone writes as `.heic`).
@@ -52,9 +59,62 @@ fn is_hevc_heif(bytes: &[u8]) -> bool {
         .any(|brand| HEVC_BRANDS.contains(&brand))
 }
 
-/// Longest edge a converted HEIC cover keeps. A 48 MP phone photo would
-/// otherwise become a multi-megabyte JPEG that sync carries for a thumbnail.
-const HEIC_COVER_MAX_EDGE: u32 = 2048;
+/// Longest edge a converted cover keeps. A 48 MP phone photo would otherwise
+/// become a multi-megabyte JPEG that sync carries for a thumbnail.
+const COVER_MAX_EDGE: u32 = 2048;
+
+/// Largest edge a picked image may declare before it is decoded at all. A
+/// 10 MB PNG or TIFF can still claim a canvas of gigabytes.
+const COVER_DECODE_MAX_EDGE: u32 = 16_384;
+
+/// PNG, WebP, GIF (its first frame), BMP and TIFF, decoded in pure Rust on
+/// every platform, turned the way their EXIF says, and scaled down.
+fn raster_cover_jpeg(bytes: &[u8], format: image::ImageFormat) -> Option<Vec<u8>> {
+    use image::ImageDecoder;
+
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(COVER_DECODE_MAX_EDGE);
+    limits.max_image_height = Some(COVER_DECODE_MAX_EDGE);
+    reader.limits(limits);
+    let mut decoder = reader.into_decoder().ok()?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut image = image::DynamicImage::from_decoder(decoder).ok()?;
+    image.apply_orientation(orientation);
+    if image.width().max(image.height()) > COVER_MAX_EDGE {
+        image = image.thumbnail(COVER_MAX_EDGE, COVER_MAX_EDGE);
+    }
+    let rgba = image.to_rgba8();
+    rgba_over_white_jpeg(rgba.width(), rgba.height(), rgba.as_raw())
+}
+
+/// JPEG has no transparency, so transparent pixels become the white a cover
+/// card is drawn on.
+fn rgba_over_white_jpeg(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+    let rgb = rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|pixel| {
+            let alpha = u16::from(pixel[3]);
+            let over_white =
+                |channel: u8| ((u16::from(channel) * alpha + 255 * (255 - alpha)) / 255) as u8;
+            [
+                over_white(pixel[0]),
+                over_white(pixel[1]),
+                over_white(pixel[2]),
+            ]
+        })
+        .collect();
+    let image = image::RgbImage::from_raw(width, height, rgb)?;
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 90)
+        .encode_image(&image)
+        .ok()?;
+    Some(jpeg)
+}
 
 /// Apple platforms decode HEIC in ImageIO, which the OS ships and licenses.
 #[cfg(target_vendor = "apple")]
@@ -73,7 +133,7 @@ fn heic_cover_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
     // type its documentation gives for that key.
     unsafe {
         let source = CGImageSource::with_data(&data, None)?;
-        let max_edge = CFNumber::new_i32(HEIC_COVER_MAX_EDGE as i32);
+        let max_edge = CFNumber::new_i32(COVER_MAX_EDGE as i32);
         // `WithTransform` applies the photo's orientation, as the other
         // decoder below does.
         let thumbnail_options = CFDictionary::<CFString, CFType>::from_slices(
@@ -117,30 +177,9 @@ fn heic_cover_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
     // The preview decoder never holds the full-size canvas, and it applies
     // the photo's rotation and converts its colour (iPhones tag Display P3)
     // to sRGB.
-    let options = heifer::PreviewOptions::new(HEIC_COVER_MAX_EDGE, HEIC_COVER_MAX_EDGE);
+    let options = heifer::PreviewOptions::new(COVER_MAX_EDGE, COVER_MAX_EDGE);
     let decoded = heifer::decode_preview_rgba8(bytes, &options).ok()?;
-    let rgb = decoded
-        .data
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .flat_map(|pixel| {
-            let alpha = u16::from(pixel[3]);
-            let over_white =
-                |channel: u8| ((u16::from(channel) * alpha + 255 * (255 - alpha)) / 255) as u8;
-            [
-                over_white(pixel[0]),
-                over_white(pixel[1]),
-                over_white(pixel[2]),
-            ]
-        })
-        .collect();
-    let image = image::RgbImage::from_raw(decoded.width, decoded.height, rgb)?;
-    let mut jpeg = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 90)
-        .encode_image(&image)
-        .ok()?;
-    Some(jpeg)
+    rgba_over_white_jpeg(decoded.width, decoded.height, &decoded.data)
 }
 
 pub(crate) fn do_delete_book_with_note_policy(
@@ -664,22 +703,122 @@ mod cover_tests {
         assert!(validated_cover_bytes(&path).is_err());
     }
 
-    #[test]
-    fn custom_cover_accepts_png_and_webp() {
-        // 2×2 red pixels, written by Pillow, so the fixtures do not depend on
-        // which encoders this crate's `image` build happens to carry.
-        const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x02\x00\x00\x00\x02\x08\x02\x00\x00\x00\xfd\xd4\x9as\x00\x00\x00\x16IDATx\x9cc<\xc1\xc5\xc5\xc0\xc0\xc0\xc4\xc0\xc0\xc0\xc0\xc0\x00\x00\x0b8\x00\xe0\x11\xf4\xd5\xd6\x00\x00\x00\x00IEND\xaeB`\x82";
-        const WEBP: &[u8] = b"RIFF\x1e\x00\x00\x00WEBPVP8L\x11\x00\x00\x00/\x01@\x00\x00\x07P\x85\"W\xa1\xff\x81\x88\xe8\x7f\x00\x00";
+    /// Each is 6×4, red on the left and blue on the right, written by Pillow.
+    const COVER_FIXTURES: [(&str, &[u8]); 5] = [
+        (
+            "cover.png",
+            include_bytes!("../../../tests/fixtures/covers/cover.png"),
+        ),
+        (
+            "cover.webp",
+            include_bytes!("../../../tests/fixtures/covers/cover.webp"),
+        ),
+        (
+            "cover.gif",
+            include_bytes!("../../../tests/fixtures/covers/cover.gif"),
+        ),
+        (
+            "cover.bmp",
+            include_bytes!("../../../tests/fixtures/covers/cover.bmp"),
+        ),
+        (
+            "cover.tiff",
+            include_bytes!("../../../tests/fixtures/covers/cover.tiff"),
+        ),
+    ];
+
+    fn stored_cover(name: &str, bytes: &[u8]) -> image::RgbImage {
         let dir = tempfile::tempdir().unwrap();
-        for (name, bytes) in [("cover.png", PNG), ("cover.webp", WEBP)] {
-            let path = dir.path().join(name);
-            fs::write(&path, bytes).unwrap();
-            assert_eq!(
-                validated_cover_bytes(&path).unwrap(),
-                bytes,
-                "{name} was rejected"
+        let path = dir.path().join(name);
+        fs::write(&path, bytes).unwrap();
+        let stored = validated_cover_bytes(&path).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert!(
+            stored.starts_with(b"\xFF\xD8\xFF"),
+            "{name} was not stored as a JPEG"
+        );
+        image::load_from_memory(&stored).unwrap().to_rgb8()
+    }
+
+    fn near(got: [u8; 3], want: [u8; 3]) -> bool {
+        got.iter().zip(want).all(|(g, w)| g.abs_diff(w) < 40)
+    }
+
+    #[test]
+    fn custom_cover_stores_png_webp_gif_bmp_and_tiff_as_jpeg() {
+        for (name, bytes) in COVER_FIXTURES {
+            let cover = stored_cover(name, bytes);
+            assert_eq!(cover.dimensions(), (6, 4), "{name}");
+            assert!(
+                near(cover.get_pixel(0, 1).0, [220, 30, 30]),
+                "{name} left is not red"
+            );
+            assert!(
+                near(cover.get_pixel(5, 2).0, [30, 40, 220]),
+                "{name} right is not blue"
             );
         }
+    }
+
+    #[test]
+    fn custom_cover_keeps_a_jpeg_as_it_is() {
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 80)
+            .encode_image(&image::RgbImage::from_pixel(
+                3,
+                3,
+                image::Rgb([10, 200, 10]),
+            ))
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cover.jpg");
+        fs::write(&path, &jpeg).unwrap();
+        assert_eq!(validated_cover_bytes(&path).unwrap(), jpeg);
+    }
+
+    #[test]
+    fn custom_cover_follows_exif_rotation() {
+        // The same red-left, blue-right picture, tagged "rotate 90° clockwise".
+        let rotated = include_bytes!("../../../tests/fixtures/covers/rotated.png");
+        let cover = stored_cover("rotated.png", rotated);
+        assert_eq!(cover.dimensions(), (4, 6));
+        assert!(
+            near(cover.get_pixel(2, 0).0, [220, 30, 30]),
+            "red is not on top"
+        );
+        assert!(
+            near(cover.get_pixel(1, 5).0, [30, 40, 220]),
+            "blue is not below"
+        );
+    }
+
+    #[test]
+    fn custom_cover_puts_transparency_over_white() {
+        let transparent = include_bytes!("../../../tests/fixtures/covers/transparent.png");
+        let cover = stored_cover("transparent.png", transparent);
+        assert!(near(cover.get_pixel(1, 1).0, [255, 255, 255]));
+    }
+
+    #[test]
+    fn custom_cover_scales_a_large_image_down() {
+        let mut png = Vec::new();
+        image::RgbImage::from_pixel(3000, 1500, image::Rgb([200, 200, 0]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let cover = stored_cover("wide.png", &png);
+        assert_eq!(cover.dimensions(), (COVER_MAX_EDGE, COVER_MAX_EDGE / 2));
+    }
+
+    #[test]
+    fn custom_cover_refuses_a_png_that_claims_a_huge_canvas() {
+        // The 6×4 fixture with its header saying 20000×20000 (and its
+        // checksum fixed), so only the size limit can turn it away.
+        let mut png = COVER_FIXTURES[0].1.to_vec();
+        png[16..24].copy_from_slice(&[0, 0, 0x4E, 0x20, 0, 0, 0x4E, 0x20]);
+        png[29..33].copy_from_slice(&[0x6C, 0x12, 0xD1, 0x6E]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.png");
+        fs::write(&path, &png).unwrap();
+        assert!(validated_cover_bytes(&path).is_err());
     }
 
     /// 48×32 stored, red with a green square top-left and a blue one

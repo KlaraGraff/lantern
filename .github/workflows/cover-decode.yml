@@ -14,6 +14,7 @@ on:
       - .github/windows-test.manifest
       - src-tauri/src/commands/books/mutate.rs
       - src-tauri/tests/fixtures/cover-rotated.heic
+      - src-tauri/tests/fixtures/covers/**
       - src-tauri/Cargo.toml
       - src-tauri/Cargo.lock
 
