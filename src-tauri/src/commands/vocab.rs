@@ -2102,7 +2102,7 @@ fn preview_vocab_import_words(
         }
         let existing: Option<String> = known_words
             .query_row(params![word.book_id, word.word], |row| row.get(0))
-            .ok();
+            .optional()?;
         if existing.is_some() {
             preview.conflicts += 1;
         } else {
@@ -2175,7 +2175,10 @@ pub(crate) fn do_import_vocab_backup(
                     params![word.book_id, word.word],
                     |row| row.get(0),
                 )
-                .ok();
+                // Only "no such word" means no conflict. Any other failure
+                // has to stop the import: treating it as "not there" inserts
+                // a second copy of a word the reader already has.
+                .optional()?;
             if let Some(existing_id) = existing {
                 if matches!(
                     conflict_policy,
@@ -3412,6 +3415,48 @@ mod tests {
             "ephemeral"
         );
         result.imported
+    }
+
+    #[test]
+    fn vocab_import_stops_instead_of_duplicating_when_the_conflict_check_fails() {
+        let (_dir, db, writer) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        do_import_vocab_backup(
+            &backup_csv(VOCAB_BACKUP_SCHEMA),
+            VocabImportFormat::Csv,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+        // Make reading the existing row's id fail, the way a damaged row
+        // would, so the conflict lookup errors rather than finds nothing.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch("UPDATE vocab_words SET id = CAST(id AS BLOB)")
+            .unwrap();
+
+        let second = do_import_vocab_backup(
+            &backup_csv(VOCAB_BACKUP_SCHEMA),
+            VocabImportFormat::Csv,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        );
+
+        assert!(second.is_err(), "a failed conflict check must not import");
+        let copies: i64 = db
+            .reader()
+            .query_row(
+                "SELECT COUNT(*) FROM vocab_words WHERE word = 'ephemeral'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(copies, 1);
     }
 
     #[test]
