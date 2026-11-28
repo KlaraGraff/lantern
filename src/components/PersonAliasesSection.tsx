@@ -95,6 +95,8 @@ export default function PersonAliasesSection({
   const [availability, setAvailability] = useState<VectorAvailability | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  /** The `run` name of the action `error` came from; null when it isn't one. */
+  const [errorFrom, setErrorFrom] = useState<string | null>(null);
   const [copiedDetail, setCopiedDetail] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
@@ -123,7 +125,12 @@ export default function PersonAliasesSection({
     setGroups(next);
   }, [bookId]);
 
-  useEffect(() => { void load().catch(setError); }, [load]);
+  useEffect(() => {
+    void load().catch((reason) => {
+      setErrorFrom(null);
+      setError(reason);
+    });
+  }, [load]);
 
   // The same probe the embedding settings page runs, for the same reason: the
   // switch alone does not say whether there is a model behind it.
@@ -138,6 +145,7 @@ export default function PersonAliasesSection({
   const run = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
     setError(null);
+    setErrorFrom(null);
     setCopiedDetail(false);
     let done = false;
     try {
@@ -145,6 +153,8 @@ export default function PersonAliasesSection({
       done = true;
       await load();
     } catch (reason) {
+      // Past `done`, the action went through and only the refetch failed.
+      setErrorFrom(done ? null : name);
       setError(reason);
     } finally {
       setBusy(null);
@@ -153,7 +163,7 @@ export default function PersonAliasesSection({
   };
 
   const building = busy === "build" || busy === "rebuild";
-  const buildError = error == null ? null : aliasBuildError(error);
+  const buildError = error == null ? null : aliasBuildError(error, errorFrom);
 
   const rebuild = () => {
     setConfirmRebuild(false);
@@ -557,7 +567,7 @@ export default function PersonAliasesSection({
                 writes nothing. The reader can see the table survived; saying so
                 is what stops them clearing rows they taught on the suspicion
                 that the failure corrupted them. */}
-            {rows.length > 0 && (
+            {buildError.tableKeptNote && rows.length > 0 && (
               <p className="mt-1.5 border-l-2 border-border pl-2 text-[11px] leading-[1.65] text-text-muted">
                 {t("indexManager.aliases.buildError.tableKept")}
               </p>

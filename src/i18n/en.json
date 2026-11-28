@@ -1979,6 +1979,8 @@
   "indexManager.aliases.buildError.alreadyRunningBody": "The earlier run hasn't finished yet. Let it finish — there's no need to start another.",
   "indexManager.aliases.buildError.unknownTitle": "The build didn't finish",
   "indexManager.aliases.buildError.unknownBody": "It stopped for a reason we don't have a specific message for. Trying again is worth a shot; if it keeps happening, send us the details below.",
+  "indexManager.aliases.addError.title": "Couldn't add the alias",
+  "indexManager.aliases.addError.body": "Nothing was added, and what you typed is still in the box. Try again; if it keeps happening, send us the details below.",
   "indexManager.aliases.buildError.tableKept": "The table below was not touched. A failed rebuild never clears what's already there, and the rows you taught are all still in it.",
   "indexManager.aliases.buildError.retry": "Try again",
   "indexManager.aliases.buildError.pickModel": "Choose a model",
