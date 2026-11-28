@@ -68,7 +68,20 @@ describe("reader export", () => {
       { ...highlight, sourceText: "first", note: "one", createdAt: "D1" },
       { ...highlight, sourceText: "second", note: "two", createdAt: "D2" },
     ], "A Book", false);
-    assert.ok(text.includes("### One\n\n> first\n**Note**: one\nD1\n\n> second\n**Note**: two\nD2\n"), JSON.stringify(text));
+    assert.ok(text.includes("### One\n\n> first\n\n**Note**: one  \nD1\n\n> second\n\n**Note**: two  \nD2\n"), JSON.stringify(text));
+  });
+  it("keeps a highlight's note out of its quote and one field per line", () => {
+    // Markdown reads a line straight after a `>` line as more of the quote
+    // ("lazy continuation"), so the note, colour and date all rendered inside
+    // the blockquote; and lines joined by a single "\n" render as one line.
+    const text = serializeMarkdown([{ ...highlight, sourceText: "the quote", note: "my note", createdAt: "D1" }], "A Book", false, { ...defaultExportFields("markdown"), color: true });
+    assert.ok(text.includes("> the quote\n\n**Note**: my note  \n**Color**: Yellow  \nD1\n"), JSON.stringify(text));
+    // A vocabulary heading ends itself, so its fields follow straight on.
+    const vocab = serializeMarkdown([{ ...vocabulary, createdAt: "D2" }], "A Book", false);
+    assert.ok(vocab.includes("#### Courage\n**Context**: show courage  \n**Definition**: bravery  \n"), JSON.stringify(vocab));
+    // A quote with nothing after it gets no trailing blank line.
+    const bare = serializeMarkdown([{ ...highlight, note: undefined }], "A Book", false, only("source"));
+    assert.ok(!/\n\n\n/.test(bare) && bare.endsWith("> next\n"), JSON.stringify(bare));
   });
   it("sanitizes filenames and previews/counts records", () => {
     assert.equal(sanitizeExportFilename(" /:\u0000 "), "Lantern");

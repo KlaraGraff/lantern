@@ -195,20 +195,32 @@ export function serializeMarkdown(records: readonly ExportRecord[], title: strin
     for (const currentChapter of chapterOrder) {
       if (selected.chapter) output.push("", `### ${markdownHeading(currentChapter)}`);
       for (const record of byChapter.get(currentChapter)!) {
-        const lines: string[] = [];
+        // A record is an optional quote or heading, then one paragraph of
+        // fields. A line right after a `>` quote would continue the quote
+        // (lazy continuation), so the quote gets a blank line after it; and a
+        // single newline inside a paragraph is only a space, so the fields are
+        // joined with a hard line break to keep one field per line.
+        let lead = "";
+        const fields: string[] = [];
         if (record.kind === "highlight") {
-          if (selected.source && record.sourceText) lines.push(markdownQuote(record.sourceText));
-          if (selected.note && record.note) lines.push(markdownField(labels.note, record.note));
-          if (selected.color && record.color) lines.push(markdownField(labels.color, names.color[record.color] ?? record.color));
+          if (selected.source && record.sourceText) lead = markdownQuote(record.sourceText);
+          if (selected.note && record.note) fields.push(markdownField(labels.note, record.note));
+          if (selected.color && record.color) fields.push(markdownField(labels.color, names.color[record.color] ?? record.color));
         } else {
-          if (selected.word) lines.push(`#### ${markdownHeading(record.word)}`);
-          if (selected.context && record.context) lines.push(markdownField(labels.context, record.context));
-          if (selected.definition && record.definition) lines.push(markdownField(labels.definition, record.definition));
-          if (selected.explanation && record.contextExplanation) lines.push(markdownField(labels.explanation, record.contextExplanation));
-          if (selected.mastery && record.mastery) lines.push(markdownField(labels.mastery, names.mastery[record.mastery] ?? record.mastery));
+          if (selected.word) lead = `#### ${markdownHeading(record.word)}`;
+          if (selected.context && record.context) fields.push(markdownField(labels.context, record.context));
+          if (selected.definition && record.definition) fields.push(markdownField(labels.definition, record.definition));
+          if (selected.explanation && record.contextExplanation) fields.push(markdownField(labels.explanation, record.contextExplanation));
+          if (selected.mastery && record.mastery) fields.push(markdownField(labels.mastery, names.mastery[record.mastery] ?? record.mastery));
         }
         const footer = trailing(record);
-        if (footer) lines.push(footer);
+        if (footer) fields.push(footer);
+        const lines: string[] = [];
+        if (lead) lines.push(lead);
+        if (fields.length) {
+          if (lead.startsWith(">")) lines.push("");
+          lines.push(fields.join("  \n"));
+        }
         // A blank line ends the previous record's paragraph or quote.
         if (lines.length) output.push("", ...lines);
       }
