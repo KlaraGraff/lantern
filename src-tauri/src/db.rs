@@ -190,6 +190,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (76, include_str!("../migrations/076_book_manual_order.sql")),
     (77, include_str!("../migrations/077_book_field_clocks.sql")),
     (78, include_str!("../migrations/078_hot_path_indexes.sql")),
+    (
+        79,
+        include_str!("../migrations/079_default_display_name.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {
@@ -1967,6 +1971,40 @@ mod tests {
             (now, "dev-A".into()),
             "a representation fix must not bump the LWW clock against peers"
         );
+    }
+
+    #[test]
+    fn migration_079_clears_only_the_saved_english_default_name() {
+        for (saved, expected) in [
+            ("Reader", None),
+            ("Mia", Some("Mia")),
+            ("reader", Some("reader")),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+            Db::run_migrations_up_to(&conn, 78).unwrap();
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('user_name', ?1)",
+                [saved],
+            )
+            .unwrap();
+
+            Db::run_migrations_up_to(&conn, 79).unwrap();
+
+            let name: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM settings WHERE key = 'user_name'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map(Some)
+                .or_else(|error| match error {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                    other => Err(other),
+                })
+                .unwrap();
+            assert_eq!(name.as_deref(), expected, "saved name {saved:?}");
+        }
     }
 
     #[test]
