@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import i18next from "i18next";
 
 import {
   capPileChips,
+  pileCopyText,
   pileKey,
   pileReasonKey,
   pileTitleKey,
@@ -103,7 +105,38 @@ describe("pileReasonKey", () => {
     );
     const reason = pileReasonKey(p);
     assert.equal(reason.key, "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixed");
-    assert.deepEqual(reason.params, { count: "1", glances: "2" });
+    assert.deepEqual(reason.counts, {
+      cards: { key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixedCards", count: 1 },
+      glances: { key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixedGlances", count: 2 },
+    });
+  });
+
+  // Issue #17 follow-up: one key carried both counts, so neither could take a
+  // singular — "you opened 1 cards and checked the dictionary 1 times".
+  test("each of the two counts in the mixed solo 来由 takes its own singular or plural", async () => {
+    const read = (locale: string) =>
+      JSON.parse(readFileSync(path.join(rootDir, `src/i18n/${locale}.json`), "utf8")) as Record<string, string>;
+    const i18n = i18next.createInstance();
+    await i18n.init({
+      resources: { en: { translation: read("en") }, zh: { translation: read("zh") } },
+      lng: "en",
+      interpolation: { escapeValue: false },
+    });
+    const text = (lookups: number, glances: number, lng: string) =>
+      pileCopyText(
+        pileReasonKey(
+          pile(
+            { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: lookups, solo_word_glances: glances },
+            ["w1"],
+          ),
+        ),
+        (key, options) => i18n.t(key, { ...options, lng }),
+      );
+    const tail = " for it — being the only one in the pile makes the point better, not worse.";
+    assert.equal(text(1, 1, "en"), `Just one word, but you opened 1 card and checked the dictionary once${tail}`);
+    assert.equal(text(3, 2, "en"), `Just one word, but you opened 3 cards and checked the dictionary 2 times${tail}`);
+    assert.equal(text(1, 4, "en"), `Just one word, but you opened 1 card and checked the dictionary 4 times${tail}`);
+    assert.equal(text(1, 2, "zh"), "只有一个词，但你开了 1 次学习卡、翻了 2 次词典——堆里就它一个，反而更说明问题。");
   });
 
   test("a multi-word repeat_lookups_in_book pile uses the plural 来由, not the solo one", () => {

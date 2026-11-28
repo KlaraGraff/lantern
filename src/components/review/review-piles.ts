@@ -77,6 +77,24 @@ export function splitReviewPiles(piles: ReviewPile[]): SplitReviewPiles {
 export interface PileCopyKey {
   key: string;
   params?: Record<string, string>;
+  /**
+   * Counted fragments, each its own key with `_one`/`_other` forms, resolved
+   * first and interpolated into `key` under their name. i18next reads a
+   * single `count` per key, so a sentence with two counts is assembled from
+   * parts rather than pluralized as one.
+   */
+  counts?: Record<string, { key: string; count: number }>;
+}
+
+/** Resolves a `PileCopyKey` to its text; `t` is the caller's translator. */
+export function pileCopyText(
+  copy: PileCopyKey,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const parts = Object.fromEntries(
+    Object.entries(copy.counts ?? {}).map(([name, part]) => [name, t(part.key, { count: part.count })]),
+  );
+  return t(copy.key, { ...copy.params, ...parts });
 }
 
 /** i18n key (and interpolation params, if any) for a pile's title. */
@@ -127,7 +145,10 @@ export function pileReasonKey(pile: Pick<ReviewPile, "kind" | "word_ids">, ago?:
         }
         return {
           key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixed",
-          params: { count: String(cards), glances: String(glances) },
+          counts: {
+            cards: { key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixedCards", count: cards },
+            glances: { key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixedGlances", count: glances },
+          },
         };
       }
       return { key: "reviewBoard.pile.repeatLookupsInBook.reason" };

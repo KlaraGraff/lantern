@@ -1,7 +1,7 @@
 import { Book, History, BookOpen, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { timeAgo } from "../../utils/timeAgo";
-import { capPileChips, pileReasonKey, pileTitleKey, type ReviewPile } from "./review-piles";
+import { capPileChips, pileCopyText, pileReasonKey, pileTitleKey, type ReviewPile } from "./review-piles";
 
 const PILE_ICONS = {
   repeat_lookups_in_book: Book,
@@ -64,7 +64,7 @@ export default function PileCard({ pile, quiet = false, onOpen }: PileCardProps)
           {pile.word_ids.length}
         </span>
       </div>
-      <p className="text-[12.8px] leading-[1.6] text-text-secondary">{t(reason.key, reason.params)}</p>
+      <p className="text-[12.8px] leading-[1.6] text-text-secondary">{pileCopyText(reason, t)}</p>
       {/* Piles have no minimum size: a 1-word pile still shows every chip it has, no padding, no overflow. */}
       {!quiet && visible.length > 0 && (
         <div className="mt-px flex flex-wrap gap-[5px]">
