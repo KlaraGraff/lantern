@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   fileStatusExplainsFailure,
+  isAwaitingRoutedBook,
   toReaderOpenError,
 } from "../src/pages/reader/reader-open-error.ts";
 
@@ -49,4 +50,25 @@ test("a readable file explains nothing, so the parser error stands", () => {
   assert.equal(fileStatusExplainsFailure("available"), false);
   // Undiagnosed: the probe has not answered, or failed. Same treatment.
   assert.equal(fileStatusExplainsFailure(undefined), false);
+});
+
+test("a routed book whose lookup failed stops the wait, so the not-found screen shows", () => {
+  // Before: the lookup failed, `book` stayed empty and the reader waited on
+  // "Loading..." for good, whether it was opened from the shelf, the
+  // Continue-reading card or the command palette.
+  assert.equal(isAwaitingRoutedBook(false, "b1", undefined, "b1"), false);
+});
+
+test("the reader still waits while the lookup runs or before it has answered", () => {
+  assert.equal(isAwaitingRoutedBook(true, "b1", undefined, null), true);
+  assert.equal(isAwaitingRoutedBook(false, "b1", undefined, null), true);
+  // Switching books: the previous book is still loaded, the new one is not.
+  assert.equal(isAwaitingRoutedBook(false, "b2", "b1", null), true);
+  // A failure recorded for another book doesn't end the wait for this one.
+  assert.equal(isAwaitingRoutedBook(false, "b2", undefined, "b1"), true);
+});
+
+test("a loaded book, or no routed book, is not waited on", () => {
+  assert.equal(isAwaitingRoutedBook(false, "b1", "b1", null), false);
+  assert.equal(isAwaitingRoutedBook(false, undefined, undefined, null), false);
 });

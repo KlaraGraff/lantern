@@ -276,7 +276,7 @@
   "reader.side.rightViews": "助手视图",
   "reader.side.seated": "正文旁放不下，卡片坐在页旁",
   "reader.loading": "加载中...",
-  "reader.bookNotFound": "未找到书籍",
+  "reader.bookNotFound": "找不到这本书",
   "reader.preparingBook": "正在准备书籍...",
   "reader.initializationFailed": "无法打开这本书",
   "reader.pdfInvalidTitle": "PDF 文件已损坏或不完整",

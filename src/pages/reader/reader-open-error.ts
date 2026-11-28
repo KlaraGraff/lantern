@@ -48,3 +48,20 @@ export function toReaderOpenError(error: unknown, format?: string | null): Reade
     detail,
   };
 }
+
+/**
+ * Whether the reader is still waiting for the routed book's metadata. A book
+ * whose lookup already failed is not being waited on any more: without this,
+ * a failed lookup left `book` empty and the reader spun on "Loading..." for
+ * good, so the not-found screen behind it could never show.
+ */
+export function isAwaitingRoutedBook(
+  loading: boolean,
+  routeBookId: string | undefined,
+  loadedBookId: string | undefined,
+  failedBookId: string | null,
+): boolean {
+  if (loading) return true;
+  if (routeBookId === undefined) return false;
+  return loadedBookId !== routeBookId && failedBookId !== routeBookId;
+}

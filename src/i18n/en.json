@@ -276,7 +276,7 @@
   "reader.side.rightViews": "Assistant views",
   "reader.side.seated": "No room beside the text, so the card sits beside the page",
   "reader.loading": "Loading...",
-  "reader.bookNotFound": "Book not found",
+  "reader.bookNotFound": "Couldn't find this book",
   "reader.preparingBook": "Preparing book...",
   "reader.initializationFailed": "This book could not be opened",
   "reader.pdfInvalidTitle": "This PDF is damaged or incomplete",
