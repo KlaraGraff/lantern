@@ -1259,6 +1259,37 @@ mod tests {
     /// `mark_finished` (which synthesize a progress event after the user
     /// just turned a page) cannot be silently swallowed.
     #[test]
+    fn with_tx_keeps_working_after_a_mutation_panicked_mid_transaction() {
+        let (_dir, db) = setup_db();
+        let writer = SyncWriter::new("dev-A".into());
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _: AppResult<()> = writer.with_tx(&db, 1_000, |tx, _events| {
+                insert_book_row(tx, "b1", 1_000, "dev-A")?;
+                panic!("simulated bug inside a command");
+            });
+        }));
+        assert!(result.is_err());
+
+        // Before: "db conn mutex: poisoned lock" here and on every later save.
+        writer
+            .with_tx(&db, 2_000, |tx, _events| {
+                insert_book_row(tx, "b2", 2_000, "dev-A")?;
+                Ok(())
+            })
+            .expect("writes recover after the panic");
+        let ids: Vec<String> = {
+            let conn = db.reader();
+            let mut stmt = conn.prepare("SELECT id FROM books ORDER BY id").unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(ids, vec!["b2".to_string()]);
+    }
+
+    #[test]
     fn with_tx_does_not_drop_progress_events_inside_throttle_window() {
         let (dir, db) = setup_db();
         let writer = SyncWriter::new("dev-A".into());

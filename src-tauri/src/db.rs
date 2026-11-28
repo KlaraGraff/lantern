@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, LockResult, Mutex, MutexGuard, Once, TryLockError, TryLockResult};
 
 use crate::error::{AppError, AppResult};
 
@@ -234,15 +234,59 @@ pub fn register_unicode_lower(conn: &Connection) -> AppResult<()> {
 /// Separating them means the sync engine's 500-event replay never
 /// blocks a frontend `list_books` — the two mutexes are independent.
 ///
-/// Both fields live behind `Arc<Mutex<…>>` so `Db` is cheaply
+/// A SQLite connection behind a mutex that does not stay poisoned.
+///
+/// A panic while a guard is held would otherwise poison the mutex, and every
+/// later command touching the database would fail (or panic again) until the
+/// app restarts — progress, highlights and notes silently stop saving. The
+/// poison protects nothing here: a `Transaction` dropped during the unwind has
+/// already rolled back, and any transaction still open is rolled back below
+/// before the connection is handed out again.
+///
+/// `lock` and `try_lock` keep `std::sync::Mutex`'s signatures so existing
+/// callers compile unchanged; `lock` never returns `Err`.
+pub struct ConnMutex(Mutex<Connection>);
+
+impl ConnMutex {
+    pub fn new(conn: Connection) -> Self {
+        Self(Mutex::new(conn))
+    }
+
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, Connection>> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| self.recover(poisoned.into_inner())))
+    }
+
+    pub fn try_lock(&self) -> TryLockResult<MutexGuard<'_, Connection>> {
+        match self.0.try_lock() {
+            Err(TryLockError::Poisoned(poisoned)) => Ok(self.recover(poisoned.into_inner())),
+            other => other,
+        }
+    }
+
+    fn recover<'a>(&self, guard: MutexGuard<'a, Connection>) -> MutexGuard<'a, Connection> {
+        log::error!("db: connection mutex was poisoned by an earlier panic; recovering");
+        if !guard.is_autocommit() {
+            if let Err(e) = guard.execute_batch("ROLLBACK") {
+                log::error!("db: rollback after poisoned mutex failed: {e}");
+            }
+        }
+        self.0.clear_poison();
+        guard
+    }
+}
+
+/// Both fields live behind `Arc<ConnMutex>` so `Db` is cheaply
 /// `Clone`-able. Cloning shares the underlying mutexes; the sync
 /// watcher holds one clone in its dedicated thread while Tauri's
 /// command dispatcher holds another in app state.
 pub struct Db {
     /// Write connection — used by sync engine, import, delete, etc.
-    pub conn: Arc<Mutex<Connection>>,
+    pub conn: Arc<ConnMutex>,
     /// Read-only connection — used by frontend query commands.
-    pub read_conn: Arc<Mutex<Connection>>,
+    pub read_conn: Arc<ConnMutex>,
     pub data_dir: Arc<Mutex<PathBuf>>,
     /// Local cache root. Unlike `data_dir`, this never moves to iCloud and is
     /// where derived reader/index artifacts belong.
@@ -276,7 +320,10 @@ impl Db {
     /// call this instead of `conn.lock()` so they never contend with
     /// sync engine writes.
     pub fn reader(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.read_conn.lock().expect("read_conn mutex")
+        // `ConnMutex::lock` never returns `Err`.
+        self.read_conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Override the data_dir after construction. Used by `mcp_stdio_main`
@@ -318,7 +365,7 @@ impl Db {
             .parent()
             .unwrap_or_else(|| Path::new(""))
             .to_path_buf();
-        let conn = Arc::new(Mutex::new(conn));
+        let conn = Arc::new(ConnMutex::new(conn));
         Ok(Self {
             read_conn: conn.clone(),
             conn,
@@ -351,7 +398,7 @@ impl Db {
             .parent()
             .unwrap_or_else(|| Path::new(""))
             .to_path_buf();
-        let conn = Arc::new(Mutex::new(conn));
+        let conn = Arc::new(ConnMutex::new(conn));
         Ok(Self {
             read_conn: conn.clone(),
             conn,
@@ -439,8 +486,8 @@ impl Db {
 
         Ok((
             Self {
-                conn: Arc::new(Mutex::new(conn)),
-                read_conn: Arc::new(Mutex::new(read_conn)),
+                conn: Arc::new(ConnMutex::new(conn)),
+                read_conn: Arc::new(ConnMutex::new(read_conn)),
                 data_dir: Arc::new(Mutex::new(data_dir.to_path_buf())),
                 local_dir: Arc::new(Mutex::new(db_dir.to_path_buf())),
             },
@@ -817,6 +864,59 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let db = Db::init(dir.path()).unwrap();
         (dir, db)
+    }
+
+    /// A panic while a connection guard is held used to poison the mutex:
+    /// `reader()` then panicked and every `.lock().map_err(..)` write
+    /// returned "poisoned lock" until the app restarted.
+    #[test]
+    fn a_panic_holding_the_connection_does_not_break_later_reads_and_writes() {
+        let (_dir, db) = setup();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch("CREATE TABLE poison_probe (v INTEGER)")
+            .unwrap();
+
+        // Writer: panic with a hand-opened transaction still in flight.
+        let writer = db.clone();
+        let result = std::panic::catch_unwind(move || {
+            let conn = writer.conn.lock().unwrap();
+            conn.execute_batch("BEGIN; INSERT INTO poison_probe VALUES (1);")
+                .unwrap();
+            panic!("simulated bug mid-write");
+        });
+        assert!(result.is_err());
+
+        // Reader: panic while holding the read connection.
+        let reader = db.clone();
+        let result = std::panic::catch_unwind(move || {
+            let _guard = reader.reader();
+            panic!("simulated bug mid-read");
+        });
+        assert!(result.is_err());
+
+        // Both connections are usable again, and the half-done write was
+        // rolled back rather than left open (which would have blocked the
+        // next BEGIN with "cannot start a transaction within a transaction").
+        {
+            let conn = db.conn.lock().expect("writer recovers");
+            assert!(conn.is_autocommit());
+            let rows: i64 = conn
+                .query_row("SELECT COUNT(*) FROM poison_probe", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(rows, 0);
+            let tx = conn.unchecked_transaction().unwrap();
+            tx.execute("INSERT INTO poison_probe VALUES (2)", [])
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let rows: i64 = db
+            .reader()
+            .query_row("SELECT COUNT(*) FROM poison_probe", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+        assert!(db.conn.try_lock().is_ok());
     }
 
     #[test]
