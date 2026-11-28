@@ -5,6 +5,7 @@ import {
   currentPositionIndex,
   filterMarkRows,
   mergeMarkRows,
+  noteForSelection,
   readerNoteDraftKey,
   sortMarkRows,
   type CompareLocation,
@@ -183,4 +184,14 @@ test("a bookmark with nothing written on it is still findable by where it sits",
   const rows = mergeMarkRows([], [note("n1", "position", 10, "")], []);
   assert.deepEqual(keys(filterMarkRows(rows, "")), ["p:n1"]);
   assert.deepEqual(keys(filterMarkRows(rows, "anything")), []);
+});
+
+test("「记笔记」 on a passage waits for the notes to load before choosing new or existing", () => {
+  const anchor = { anchorKind: "selection" as const, location: "cfi-5", selectedText: "quoted" };
+  const written = note("n1", "selection", 5, "already said");
+  // An empty list while loading is "not known yet": opening a blank editor on
+  // it saved a second note over the same passage.
+  assert.equal(noteForSelection([], anchor, true), undefined);
+  assert.equal(noteForSelection([written], anchor, false), written);
+  assert.equal(noteForSelection([note("n2", "selection", 6, "elsewhere")], anchor, false), null);
 });

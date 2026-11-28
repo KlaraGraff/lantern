@@ -11,6 +11,7 @@ import IndexManagerModal from "./IndexManagerModal";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
 import { usePanelTextSelection, type PanelSelectionSource } from "../hooks/usePanelTextSelection";
 import { chatSendHintKey, isSendKey } from "./chat-input-keys";
+import { isPaletteRowActivation } from "./command-palette/palette-model";
 import { platform } from "../services/platform";
 import { passageRoute } from "../hooks/aiChatRouting";
 
@@ -438,7 +439,7 @@ function AiPanel({ active, bookId, bookTitle, bookAuthor, currentChapter, curren
               onChange={(e) => setTitleDraft(e.target.value)}
               onBlur={handleTitleSubmit}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleTitleSubmit();
+                if (isPaletteRowActivation(e.nativeEvent)) handleTitleSubmit();
                 if (e.key === "Escape") setEditingTitle(false);
               }}
               className="text-[15px] font-semibold text-text-primary bg-transparent outline-none border-b border-accent w-full min-w-0"

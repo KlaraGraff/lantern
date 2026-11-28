@@ -2455,6 +2455,17 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
 
 /// Helper: write events to a real on-disk EventLog so compact_own_log
 /// can be exercised end-to-end.
+/// Compact with an empty local database: only the prior snapshot and the
+/// log feed the fold, which is all these tests exercise.
+fn compact_without_local_rows(
+    shared: &Path,
+    log: &EventLog,
+) -> AppResult<super::rows::CompactReport> {
+    let local = TempDir::new().unwrap();
+    let db = Db::init(local.path()).unwrap();
+    compact_own_log(shared, log, &db)
+}
+
 fn seed_log(shared: &Path, device: &str, bodies: Vec<EventBody>) -> EventLog {
     let log_path = shared.join("logs").join(format!("{device}.jsonl"));
     let log = EventLog::open(&log_path, device, false).unwrap();
@@ -2537,7 +2548,7 @@ fn compact_own_log_truncates_log_and_writes_snapshot() {
         vec![import("b1"), import("b2"), import("b3")],
     );
 
-    let report = compact_own_log(shared, &log).unwrap();
+    let report = compact_without_local_rows(shared, &log).unwrap();
     assert_eq!(report.events_folded, 3);
     assert!(report.snapshot_written);
 
@@ -2560,7 +2571,7 @@ fn compact_own_log_is_noop_on_empty_log() {
     let log_path = shared.join("logs/dev-A.jsonl");
     let log = EventLog::open(&log_path, "dev-A", false).unwrap();
 
-    let report = compact_own_log(shared, &log).unwrap();
+    let report = compact_without_local_rows(shared, &log).unwrap();
     assert_eq!(report.events_folded, 0);
     assert!(!report.snapshot_written);
     assert!(!shared.join("logs/dev-A.snapshot.json").exists());
@@ -2573,11 +2584,11 @@ fn compact_own_log_idempotent_when_run_twice() {
     std::fs::create_dir_all(shared.join("logs")).unwrap();
     let log = seed_log(shared, "dev-A", vec![import("b1"), import("b2")]);
 
-    let r1 = compact_own_log(shared, &log).unwrap();
+    let r1 = compact_without_local_rows(shared, &log).unwrap();
     assert_eq!(r1.events_folded, 2);
 
     // Second run sees an empty log → no snapshot rewrite.
-    let r2 = compact_own_log(shared, &log).unwrap();
+    let r2 = compact_without_local_rows(shared, &log).unwrap();
     assert_eq!(r2.events_folded, 0);
     assert!(!r2.snapshot_written);
 }
@@ -2641,7 +2652,7 @@ fn compact_then_apply_yields_same_state_as_replay() {
 
     // Compaction path: compact the log → snapshot, then apply the
     // snapshot to a fresh DB.
-    compact_own_log(shared, &log).unwrap();
+    compact_without_local_rows(shared, &log).unwrap();
     let snap = Snapshot::read_from(&shared.join("logs/dev-A.snapshot.json")).unwrap();
     let mut db_via_snap = open_db();
     {
@@ -2719,7 +2730,7 @@ fn compact_keeps_log_when_snapshot_write_fails() {
     let snap_dst = shared.join("logs/dev-A.snapshot.json");
     std::fs::create_dir_all(&snap_dst).unwrap();
 
-    let result = compact_own_log(shared, &log);
+    let result = compact_without_local_rows(shared, &log);
     assert!(
         result.is_err(),
         "compaction must propagate snapshot write failure"
@@ -2744,10 +2755,10 @@ fn second_compaction_picks_up_new_events_via_prior_snapshot() {
     std::fs::create_dir_all(shared.join("logs")).unwrap();
     let log = seed_log(shared, "dev-A", vec![import("b1")]);
 
-    compact_own_log(shared, &log).unwrap();
+    compact_without_local_rows(shared, &log).unwrap();
     // New event lands after the first compaction.
     log.append(import("b2"), 9_999).unwrap();
-    compact_own_log(shared, &log).unwrap();
+    compact_without_local_rows(shared, &log).unwrap();
 
     let snap = Snapshot::read_from(&shared.join("logs/dev-A.snapshot.json")).unwrap();
     assert_eq!(
@@ -3205,4 +3216,109 @@ fn snapshot_carries_vocab_card_snapshot() {
         read(&direct),
         "the learning card must survive a snapshot bootstrap"
     );
+}
+
+/// Compaction folds only this device's own snapshot and log. Edits this
+/// device made to rows another device created must survive it: a device
+/// that catches up from the compacted snapshot (a new install, a peer that
+/// was offline) has to see them, because the log events are gone.
+#[test]
+fn compaction_keeps_own_edits_to_rows_another_device_created() {
+    let tmp = TempDir::new().unwrap();
+    let shared = tmp.path();
+    std::fs::create_dir_all(shared.join("logs")).unwrap();
+
+    // dev-B owns the book and a highlight.
+    let b_events = vec![
+        ev(1, "dev-B", import("b1")),
+        ev(
+            2,
+            "dev-B",
+            EventBody::HighlightAdd(HighlightPayload {
+                id: "hB".into(),
+                book_id: "b1".into(),
+                cfi_range: "cfi-b".into(),
+                color: "yellow".into(),
+                text_content: None,
+            }),
+        ),
+    ];
+
+    // dev-A reads the book, recolours dev-B's highlight and adds its own.
+    let log = seed_log(
+        shared,
+        "dev-A",
+        vec![
+            EventBody::BookProgressSet {
+                book: "b1".into(),
+                progress: 42,
+                cfi: Some("chapter-4".into()),
+            },
+            EventBody::HighlightColorSet {
+                id: "hB".into(),
+                color: "blue".into(),
+            },
+            EventBody::HighlightAdd(HighlightPayload {
+                id: "hA".into(),
+                book_id: "b1".into(),
+                cfi_range: "cfi-a".into(),
+                color: "green".into(),
+                text_content: None,
+            }),
+        ],
+    );
+    let a_events = log.read_all().unwrap();
+
+    // Reference: a device that replayed both logs.
+    let mut via_logs = open_db();
+    apply_to(&mut via_logs, &b_events);
+    apply_to(&mut via_logs, &a_events);
+
+    // A device that catches up after dev-A compacted: dev-B's events plus
+    // dev-A's snapshot (dev-A's log is now empty).
+    // dev-A's own database holds both devices' rows, as it would after
+    // replaying dev-B's log.
+    let local_dir = TempDir::new().unwrap();
+    let local = Db::init(local_dir.path()).unwrap();
+    {
+        let mut conn = local.conn.lock().unwrap();
+        apply_to(&mut conn, &b_events);
+        apply_to(&mut conn, &a_events);
+    }
+    compact_own_log(shared, &log, &local).unwrap();
+    assert!(log.read_all().unwrap().is_empty());
+    let snap = Snapshot::read_from(&shared.join("logs/dev-A.snapshot.json")).unwrap();
+    let mut via_snapshot = open_db();
+    apply_to(&mut via_snapshot, &b_events);
+    {
+        let tx = via_snapshot.transaction().unwrap();
+        snap.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let read = |db: &Connection| {
+        let progress: i32 = db
+            .query_row("SELECT progress FROM books WHERE id = 'b1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let mut stmt = db
+            .prepare("SELECT id, color FROM highlights ORDER BY id")
+            .unwrap();
+        let highlights: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        (progress, highlights)
+    };
+    let expected = (
+        42,
+        vec![
+            ("hA".to_string(), "green".to_string()),
+            ("hB".to_string(), "blue".to_string()),
+        ],
+    );
+    assert_eq!(read(&via_logs), expected, "reference replay");
+    assert_eq!(read(&via_snapshot), expected, "after compaction");
 }

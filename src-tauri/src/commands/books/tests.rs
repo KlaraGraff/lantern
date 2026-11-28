@@ -42,6 +42,37 @@ fn detect_import_format_accepts_utf16_txt_bom() {
     assert_eq!(decode_txt(&fs::read(&path).unwrap()).unwrap(), "Hi");
 }
 
+/// FB2 detection used to decode the 8 KiB header as UTF-8 first. A
+/// windows-1251 book (the usual encoding for Russian FB2) or a UTF-8 one
+/// whose 8 KiB cut lands inside a multi-byte character failed that decode
+/// and was rejected as an unsupported format.
+#[test]
+fn detect_import_format_accepts_fb2_whose_header_is_not_utf8() {
+    let dir = TempDir::new().unwrap();
+
+    let cp1251 = dir.path().join("cp1251.fb2");
+    let mut bytes =
+        b"<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n<FictionBook><description><title-info><book-title>"
+            .to_vec();
+    // "Война и мир" in windows-1251.
+    bytes.extend_from_slice(&[
+        0xc2, 0xee, 0xe9, 0xed, 0xe0, b' ', 0xe8, b' ', 0xec, 0xe8, 0xf0,
+    ]);
+    bytes.extend_from_slice(b"</book-title></title-info></description></FictionBook>");
+    fs::write(&cp1251, &bytes).unwrap();
+    assert_eq!(detect_import_format(&cp1251).unwrap(), ImportFormat::Fb2);
+
+    let split = dir.path().join("split.fb2");
+    let mut bytes = b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<FictionBook><body><p>".to_vec();
+    // Fill so the 8 KiB header ends after the first byte of "я" (0xD1 0x8F).
+    while bytes.len() < 8 * 1024 - 1 {
+        bytes.push(b'a');
+    }
+    bytes.extend_from_slice("я</p></body></FictionBook>".as_bytes());
+    fs::write(&split, &bytes).unwrap();
+    assert_eq!(detect_import_format(&split).unwrap(), ImportFormat::Fb2);
+}
+
 #[test]
 fn text_import_copies_source_and_defers_preparation() {
     let (dir, db) = setup();
@@ -1351,6 +1382,20 @@ fn pagination_returns_first_page() {
     assert_eq!(page.books.len(), 3);
     assert_eq!(page.total, 5);
     assert!(page.next_cursor.is_some());
+}
+
+#[test]
+fn pagination_survives_zero_and_huge_limits() {
+    let (_dir, db) = setup();
+    for i in 0..3 {
+        insert_book_with_ts(&db, &format!("b{i}"), "reading", 1000 + i);
+    }
+    let page = query_books(&db, None, None, None, None, 0).unwrap();
+    assert_eq!(page.books.len(), 1);
+    assert!(page.next_cursor.is_some());
+    let page = query_books(&db, None, None, None, None, usize::MAX).unwrap();
+    assert_eq!(page.books.len(), 3);
+    assert!(page.next_cursor.is_none());
 }
 
 #[test]
@@ -2902,4 +2947,37 @@ fn delete_book_removes_the_converted_epub_artifact() {
         artifact.display()
     );
     let _ = dir;
+}
+
+/// A page turn far from the end must not pay for the auto-finish coverage
+/// queries (a full scan of every dwell row the reader ever recorded). With
+/// the dwell table gone, a save at 50% must still succeed because it never
+/// touches it; at 97% the same save reaches the queries and fails.
+#[test]
+fn progress_save_below_finish_floor_skips_coverage_queries() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    insert_done_book_difficulty(&db, "b1", 20_000);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute("DROP TABLE reading_screen_dwells", [])
+        .unwrap();
+
+    let finished = do_update_reading_progress("b1", 50, Some("epubcfi(/6/8!)"), &db, &sync)
+        .expect("a mid-book save must not touch reading_screen_dwells");
+    assert!(!finished);
+    let progress: i32 = db
+        .reader()
+        .query_row("SELECT progress FROM books WHERE id = 'b1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(progress, 50);
+
+    assert!(
+        do_update_reading_progress("b1", 97, Some("epubcfi(/6/9!)"), &db, &sync).is_err(),
+        "at the finish floor the coverage check still runs"
+    );
 }

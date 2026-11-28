@@ -19,6 +19,7 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { useSettings } from "../hooks/useSettings";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { isPaletteRowActivation } from "./command-palette/palette-model";
 import { platform } from "../services/platform";
 import {
   aliasAmbiguities,
@@ -132,18 +133,23 @@ export default function PersonAliasesSection({
       .catch(() => setAvailability({ available: false }));
   }, []);
 
+  /** Resolves whether the action itself went through, so a form can stay
+   * open with what the reader typed when it did not. */
   const run = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
     setError(null);
     setCopiedDetail(false);
+    let done = false;
     try {
       await action();
+      done = true;
       await load();
     } catch (reason) {
       setError(reason);
     } finally {
       setBusy(null);
     }
+    return done;
   };
 
   const building = busy === "build" || busy === "rebuild";
@@ -246,7 +252,7 @@ export default function PersonAliasesSection({
     if (!alias) { cancelAddAlias(); return; }
     void run(`add-alias-${canonical}`, () => invoke("add_person_alias", {
       bookId, canonical, alias, kind: "name", sourceQuery: null,
-    })).then(cancelAddAlias);
+    })).then((done) => { if (done) cancelAddAlias(); });
   };
 
   const cancelAddPerson = () => {
@@ -261,7 +267,7 @@ export default function PersonAliasesSection({
     if (!canonical || !alias) return;
     void run("add-person", () => invoke("add_person_alias", {
       bookId, canonical, alias, kind: "name", sourceQuery: null,
-    })).then(cancelAddPerson);
+    })).then((done) => { if (done) cancelAddPerson(); });
   };
 
   /** `delete_person_alias` also drops the row's vectors, so this is the one
@@ -789,7 +795,7 @@ export default function PersonAliasesSection({
                         value={addAliasText}
                         onChange={(event) => setAddAliasText(event.target.value)}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter") submitAddAlias(row.canonical);
+                          if (isPaletteRowActivation(event.nativeEvent)) submitAddAlias(row.canonical);
                           if (event.key === "Escape") cancelAddAlias();
                         }}
                         onBlur={cancelAddAlias}

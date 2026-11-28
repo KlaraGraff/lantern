@@ -1,3 +1,8 @@
+import { createSectionRetention } from './section-retention.js'
+
+// Pages kept loaded besides the ones on screen: three two-page spreads.
+const RETAINED_SECTIONS = 6
+
 const parseViewport = str => str
     ?.split(/[,;\s]/) // NOTE: technically, only the comma is valid
     ?.filter(x => x)
@@ -48,6 +53,12 @@ export class FixedLayout extends HTMLElement {
     #center
     #side
     #zoom
+    #retention = createSectionRetention({
+        keep: RETAINED_SECTIONS,
+        // Only called for pages no longer on screen, so their iframes are
+        // already gone and a revoked blob URL has no document behind it.
+        unload: index => this.book?.sections?.[index]?.unload?.(),
+    })
     constructor() {
         super()
 
@@ -320,17 +331,24 @@ export class FixedLayout extends HTMLElement {
         const spread = this.#spreads[index]
         if (spread.center) {
             const index = this.book.sections.indexOf(spread.center)
+            this.#retention.touch(index)
             const src = await spread.center?.load?.()
             await this.#showSpread({ center: { index, src } })
         } else {
             const indexL = this.book.sections.indexOf(spread.left)
             const indexR = this.book.sections.indexOf(spread.right)
+            // Marked before loading, so a page still loading for a newer
+            // turn counts as recent and is not unloaded under it.
+            this.#retention.touch(indexL)
+            this.#retention.touch(indexR)
             const srcL = await spread.left?.load?.()
             const srcR = await spread.right?.load?.()
             const left = { index: indexL, src: srcL }
             const right = { index: indexR, src: srcR }
             await this.#showSpread({ left, right, side })
         }
+        this.#retention.trim(new Set([this.#left, this.#right, this.#center]
+            .map(frame => frame?.index).filter(index => index >= 0)))
         this.#reportLocation(reason)
     }
     async select(target) {

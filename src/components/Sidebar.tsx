@@ -433,7 +433,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
               : "R"}
           </div>
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-text-primary truncate">{userName || "Reader"}</p>
+            <p className="text-[13px] font-medium text-text-primary truncate">{userName || t("settings.general.displayNameDefault")}</p>
             <p className="text-[11px] text-text-muted">{t("settings.title")}</p>
           </div>
         </button>

@@ -421,7 +421,7 @@ fn load_lookup_targets(
 ) -> AppResult<Vec<VocabTarget>> {
     let mut stmt = tx.prepare(
         "SELECT id, word, mastery FROM vocab_words
-          WHERE word = ?1 COLLATE NOCASE OR word = ?2 COLLATE NOCASE
+          WHERE word COLLATE NOCASE IN (?1, ?2)
           ORDER BY (book_id = ?3) DESC, created_at ASC, id ASC",
     )?;
     let rows = stmt

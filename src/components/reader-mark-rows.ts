@@ -24,6 +24,23 @@ export function readerNoteDraftKey(bookId: string, noteId: string | null, anchor
 }
 
 /**
+ * The note 「记笔记」 opens for a selected passage: the one already written on
+ * that range, or null for a new one. Undefined while the book's notes are still
+ * loading, because an empty list then means "not known yet", and a blank editor
+ * opened on it would save a second note over the same passage.
+ */
+export function noteForSelection(
+  notes: readonly ReaderNote[],
+  anchor: ReaderNoteAnchor,
+  loading: boolean,
+): ReaderNote | null | undefined {
+  if (loading) return undefined;
+  return notes.find(
+    (note) => note.anchor_kind === "selection" && note.location && note.location === anchor.location,
+  ) ?? null;
+}
+
+/**
  * A `notes` row as the reader panel reads it. `anchor_kind` is deliberately a
  * plain string: the panel keeps only the kinds it renders and drops the rest,
  * so a kind it has never heard of is skipped rather than mis-drawn.

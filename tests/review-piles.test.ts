@@ -276,7 +276,7 @@ describe("review board empty-state copy", () => {
   const i18nDir = path.join(rootDir, "src/i18n");
   const en = JSON.parse(readFileSync(path.join(i18nDir, "en.json"), "utf8")) as Record<string, string>;
   const zh = JSON.parse(readFileSync(path.join(i18nDir, "zh.json"), "utf8")) as Record<string, string>;
-  const keys = ["reviewBoard.empty.heading", "reviewBoard.empty.body", "reviewBoard.empty.seeAllWords"];
+  const keys = ["reviewBoard.empty.heading", "reviewBoard.empty.body", "reviewBoard.empty.seeAllWords_one", "reviewBoard.empty.seeAllWords_other"];
 
   // A rough but effective net: most emoji live above the BMP (surrogate pairs)
   // or in the pictograph/symbol blocks below.

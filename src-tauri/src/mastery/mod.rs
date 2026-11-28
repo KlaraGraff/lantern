@@ -809,8 +809,14 @@ pub fn finish_coverage_met(normal_pace_screens: i64, total_screens: i64) -> bool
 /// no normal-pace dwell at all, which is exactly what the coverage half
 /// catches.
 pub fn should_auto_finish(progress: i32, normal_pace_screens: i64, total_screens: i64) -> bool {
-    progress >= AUTO_FINISH_PROGRESS_THRESHOLD
+    auto_finish_progress_reached(progress)
         && finish_coverage_met(normal_pace_screens, total_screens)
+}
+
+/// The cheap half of [`should_auto_finish`]. Callers check it first so the
+/// coverage queries only run near the end of a book, not on every page turn.
+pub fn auto_finish_progress_reached(progress: i32) -> bool {
+    progress >= AUTO_FINISH_PROGRESS_THRESHOLD
 }
 
 pub mod store;

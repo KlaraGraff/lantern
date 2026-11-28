@@ -671,11 +671,14 @@ pub fn sync_now(
 /// Returns an error when sync isn't enabled in this process — the
 /// settings UI surfaces it as a toast.
 #[tauri::command(async)]
-pub fn sync_compact(sync_state: State<'_, SyncState>) -> AppResult<SyncCompactResult> {
+pub fn sync_compact(
+    sync_state: State<'_, SyncState>,
+    db: State<'_, Db>,
+) -> AppResult<SyncCompactResult> {
     let engine = sync_state
         .engine_snapshot()?
         .ok_or_else(|| AppError::Other("sync is not enabled on this device".into()))?;
-    let report = snapshot::compact_own_log(&engine.shared_dir, &engine.own_log)?;
+    let report = snapshot::compact_own_log(&engine.shared_dir, &engine.own_log, &db)?;
     Ok(report.into())
 }
 

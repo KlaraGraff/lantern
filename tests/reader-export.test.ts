@@ -60,6 +60,16 @@ describe("reader export", () => {
     assert.equal((text.match(/### One/g) ?? []).length, 1);
     assert.equal((text.match(/### Two/g) ?? []).length, 1);
   });
+  it("separates consecutive markdown records with a blank line", () => {
+    // In Markdown a single newline continues the paragraph (and a line after a
+    // `>` quote continues the quote), so records joined by "\n" alone rendered
+    // as one run-on blockquote.
+    const text = serializeMarkdown([
+      { ...highlight, sourceText: "first", note: "one", createdAt: "D1" },
+      { ...highlight, sourceText: "second", note: "two", createdAt: "D2" },
+    ], "A Book", false);
+    assert.ok(text.includes("### One\n\n> first\n**Note**: one\nD1\n\n> second\n**Note**: two\nD2\n"), JSON.stringify(text));
+  });
   it("sanitizes filenames and previews/counts records", () => {
     assert.equal(sanitizeExportFilename(" /:\u0000 "), "Lantern");
     assert.equal(exportFilename("A/B", "markdown", false), "A B-study-export.md");

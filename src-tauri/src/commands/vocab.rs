@@ -2102,7 +2102,7 @@ fn preview_vocab_import_words(
         }
         let existing: Option<String> = known_words
             .query_row(params![word.book_id, word.word], |row| row.get(0))
-            .ok();
+            .optional()?;
         if existing.is_some() {
             preview.conflicts += 1;
         } else {
@@ -2175,7 +2175,10 @@ pub(crate) fn do_import_vocab_backup(
                     params![word.book_id, word.word],
                     |row| row.get(0),
                 )
-                .ok();
+                // Only "no such word" means no conflict. Any other failure
+                // has to stop the import: treating it as "not there" inserts
+                // a second copy of a word the reader already has.
+                .optional()?;
             if let Some(existing_id) = existing {
                 if matches!(
                     conflict_policy,
@@ -2349,7 +2352,10 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
                         ))
                     },
                 )
-                .ok();
+                // A word deleted meanwhile is skipped; a row that can't be
+                // read fails the batch instead of being dropped from it
+                // without a word.
+                .optional()?;
             let Some((word, review, previous_mastery)) = found else {
                 continue;
             };
@@ -3018,6 +3024,33 @@ mod tests {
         assert_eq!(stored_word(&db, &other).mastery, "new");
     }
 
+    #[test]
+    fn bulk_mastery_change_fails_rather_than_skipping_an_unreadable_word() {
+        let (_dir, db, sync, a, _b, other) = setup_sibling_db();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET word = CAST(word AS BLOB) WHERE id = ?1",
+                params![other],
+            )
+            .unwrap();
+
+        let result = bulk_update_vocab_mastery_inner(
+            &[a.clone(), other.clone()],
+            "mastered",
+            None,
+            &db,
+            &sync,
+        );
+
+        assert!(
+            result.is_err(),
+            "an unreadable word must not be skipped silently"
+        );
+        assert_eq!(stored_word(&db, &a).mastery, "new", "the batch rolls back");
+    }
+
     /// The "我其实不认识" button lands here. Overruling an automatic tier has
     /// to clear the automatic mark *and* the sentence that justified it —
     /// otherwise the word-detail page keeps showing "自动判定" next to a tier
@@ -3412,6 +3445,48 @@ mod tests {
             "ephemeral"
         );
         result.imported
+    }
+
+    #[test]
+    fn vocab_import_stops_instead_of_duplicating_when_the_conflict_check_fails() {
+        let (_dir, db, writer) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        do_import_vocab_backup(
+            &backup_csv(VOCAB_BACKUP_SCHEMA),
+            VocabImportFormat::Csv,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+        // Make reading the existing row's id fail, the way a damaged row
+        // would, so the conflict lookup errors rather than finds nothing.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute_batch("UPDATE vocab_words SET id = CAST(id AS BLOB)")
+            .unwrap();
+
+        let second = do_import_vocab_backup(
+            &backup_csv(VOCAB_BACKUP_SCHEMA),
+            VocabImportFormat::Csv,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        );
+
+        assert!(second.is_err(), "a failed conflict check must not import");
+        let copies: i64 = db
+            .reader()
+            .query_row(
+                "SELECT COUNT(*) FROM vocab_words WHERE word = 'ephemeral'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(copies, 1);
     }
 
     #[test]

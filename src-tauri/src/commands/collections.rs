@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::Db;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::sync::events::EventBody;
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
@@ -113,10 +113,16 @@ pub(crate) fn do_rename_collection(
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
-        tx.execute(
+        let renamed = tx.execute(
             "UPDATE collections SET name = ?1, updated_at = ?2, updated_by_device = ?3 WHERE id = ?4",
             params![name, now, device, id],
         )?;
+        // A stale or mistyped id used to report success (the MCP tool even
+        // said "renamed") and publish a rename for a collection that does
+        // not exist here.
+        if renamed == 0 {
+            return Err(AppError::Other("COLLECTION_NOT_FOUND".to_string()));
+        }
         events.push(EventBody::CollectionRename {
             id: id.to_string(),
             name: name.to_string(),
@@ -352,6 +358,31 @@ mod tests {
     use crate::sync::merge::apply_event;
     use rusqlite::params;
     use tempfile::TempDir;
+
+    #[test]
+    fn renaming_a_missing_collection_fails_without_publishing() {
+        let (_dir, db, sync) = setup();
+        sync.set_should_queue(true);
+        insert_collection(&db, "c1", "Kept");
+
+        let result = do_rename_collection("missing", "New", &db, &sync);
+
+        assert!(matches!(
+            result,
+            Err(AppError::Other(code)) if code == "COLLECTION_NOT_FOUND"
+        ));
+        let queued: i64 = db
+            .reader()
+            .query_row("SELECT COUNT(*) FROM _pending_publish", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            queued, 0,
+            "no rename event for a collection that is not here"
+        );
+        do_rename_collection("c1", "Renamed", &db, &sync).unwrap();
+    }
 
     fn setup() -> (TempDir, Db, SyncWriter) {
         let dir = TempDir::new().unwrap();

@@ -63,6 +63,11 @@ export function useProgressReadout({
   // `defaultProgressReadoutMode`.
   const [progressReadoutSaved, setProgressReadoutSaved] = useState(false);
   const paceSnapshotRef = useRef<PageTurnSnapshot | null>(null);
+  // The window is collected on every forward turn but only the two time-left
+  // modes read it. Keeping it in a ref and copying it into state only while
+  // one of those modes is showing spares the whole reader a second render on
+  // every page turn in the default modes.
+  const paceWindowRef = useRef<PaceSample[]>([]);
   const [paceWindow, setPaceWindow] = useState<PaceSample[]>([]);
 
   /** Called when the reader switches books, before the new one's rows arrive. */
@@ -70,6 +75,7 @@ export function useProgressReadout({
     setProgressReadoutMode("bookProgress");
     setProgressReadoutSaved(false);
     paceSnapshotRef.current = null;
+    paceWindowRef.current = [];
     setPaceWindow([]);
   }, []);
 
@@ -99,6 +105,22 @@ export function useProgressReadout({
     });
   }, [bookId]);
 
+  // The global progress-display toggles keep authority over the click-cycle:
+  // with all three off, a book that has never had its readout clicked starts
+  // hidden instead of showing the page number.
+  const effectiveProgressReadoutMode = progressReadoutSaved
+    ? progressReadoutMode
+    : defaultProgressReadoutMode(readerSettings);
+  const showsPace = effectiveProgressReadoutMode === "chapterTime"
+    || effectiveProgressReadoutMode === "bookTime";
+  const showsPaceRef = useRef(showsPace);
+  // Declared before the sampling effect so a commit that switches into a
+  // time-left mode and turns a page sees the new mode first.
+  useEffect(() => {
+    showsPaceRef.current = showsPace;
+    if (showsPace) setPaceWindow(paceWindowRef.current);
+  }, [showsPace]);
+
   useEffect(() => {
     if (!supportsScrubber || !bookReady || !pageInfo || currentSectionIndex < 0) return;
     const next: PageTurnSnapshot = {
@@ -109,15 +131,11 @@ export function useProgressReadout({
     };
     const sample = derivePaceSample(paceSnapshotRef.current, next);
     paceSnapshotRef.current = next;
-    if (sample) setPaceWindow((prev) => pushPaceSample(prev, sample));
+    if (!sample) return;
+    paceWindowRef.current = pushPaceSample(paceWindowRef.current, sample);
+    if (showsPaceRef.current) setPaceWindow(paceWindowRef.current);
   }, [supportsScrubber, bookReady, pageInfo, currentSectionIndex, progress]);
 
-  // The global progress-display toggles keep authority over the click-cycle:
-  // with all three off, a book that has never had its readout clicked starts
-  // hidden instead of showing the page number.
-  const effectiveProgressReadoutMode = progressReadoutSaved
-    ? progressReadoutMode
-    : defaultProgressReadoutMode(readerSettings);
   // `null` means "render nothing" (hidden mode); every other mode always
   // renders *something* — a number once there are enough pace samples,
   // "calculating…" otherwise, never a wrong number. A plain computation (not

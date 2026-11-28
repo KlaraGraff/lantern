@@ -622,6 +622,9 @@ export default function ReadingSettings({
                 } catch (error) {
                   console.error("Failed to import fonts:", error);
                   setFontError(t("settings.layout.fontImportFailed"));
+                  // Files picked alongside the one that failed are still
+                  // imported, so show them.
+                  await refreshCustomFonts().catch(() => null);
                 } finally {
                   setFontBusy(false);
                 }

@@ -112,10 +112,16 @@ pub(super) fn detect_import_format(path: &Path) -> AppResult<ImportFormat> {
     {
         return Ok(ImportFormat::Mobi);
     }
+    // Search the raw bytes, not a decoded string: FB2 files are often
+    // windows-1251 or KOI8-R (declared in the XML prolog, which the
+    // reader honours), and an 8 KiB read can end mid-character in a
+    // UTF-8 file. Either made `from_utf8` fail and the book was
+    // rejected as unsupported. The root tag is ASCII in every
+    // single-byte or UTF-8 encoding.
     if ext.eq_ignore_ascii_case("fb2")
-        && std::str::from_utf8(header)
-            .ok()
-            .is_some_and(|text| text.to_ascii_lowercase().contains("<fictionbook"))
+        && header
+            .windows(b"<fictionbook".len())
+            .any(|window| window.eq_ignore_ascii_case(b"<fictionbook"))
     {
         return Ok(ImportFormat::Fb2);
     }
