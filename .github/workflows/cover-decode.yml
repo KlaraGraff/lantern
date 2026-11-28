@@ -57,7 +57,7 @@ jobs:
         run: |
           $exe = cargo test --lib --no-run --message-format=json |
             ForEach-Object { $_ | ConvertFrom-Json } |
-            Where-Object { $_.reason -eq 'compiler-artifact' -and $_.executable -and $_.target.kind -contains 'lib' } |
+            Where-Object { $_.reason -eq 'compiler-artifact' -and $_.executable -and $_.profile.test } |
             Select-Object -Last 1 -ExpandProperty executable
           if (-not $exe) { throw 'no lib test binary was built' }
           $mt = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\mt.exe" |
