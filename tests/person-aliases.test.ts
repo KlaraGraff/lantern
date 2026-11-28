@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   aliasBuildError,
@@ -196,6 +197,26 @@ describe("aliasBuildError", () => {
     assert.equal(view.canPickModel, true);
     assert.equal(view.canRetry, false);
     assert.equal(view.detail, null);
+  });
+
+  // The band also reports a failed add, which read "The build didn't finish"
+  // and offered a retry that rebuilds the whole table.
+  it("says a failed add didn't add, rather than that a build didn't finish", () => {
+    const en = JSON.parse(readFileSync(new URL("../src/i18n/en.json", import.meta.url), "utf8")) as Record<string, string>;
+    const zh = JSON.parse(readFileSync(new URL("../src/i18n/zh.json", import.meta.url), "utf8")) as Record<string, string>;
+    const raw = "database is locked";
+    for (const action of ["add-alias-Mr. Collins", "add-person"]) {
+      const view = aliasBuildError(raw, action);
+      assert.equal(en[view.titleKey], "Couldn't add the alias");
+      assert.equal(zh[view.titleKey], "别名没加上");
+      assert.equal(view.canRetry, false, "the band's retry is a rebuild");
+      assert.equal(view.tableKeptNote, false, "the note is about a failed rebuild");
+      assert.equal(view.detail, raw);
+    }
+    const build = aliasBuildError(raw, "rebuild");
+    assert.equal(en[build.titleKey], "The build didn't finish");
+    assert.equal(build.canRetry, true);
+    assert.equal(build.tableKeptNote, true);
   });
 
   it("keeps the raw text only when no layer can name the failure", () => {

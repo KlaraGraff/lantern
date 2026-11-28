@@ -1978,6 +1978,8 @@
   "indexManager.aliases.buildError.alreadyRunningBody": "上一次还没跑完。等它结束就行，不用再点一次。",
   "indexManager.aliases.buildError.unknownTitle": "建表没能完成",
   "indexManager.aliases.buildError.unknownBody": "这次没跑完，原因不在预料之内。可以直接再试一次；一直是同样的结果，就把下面的详情附上报给我们。",
+  "indexManager.aliases.addError.title": "别名没加上",
+  "indexManager.aliases.addError.body": "这次什么都没加进表里，你输入的还在框里。可以再试一次；一直是同样的结果，就把下面的详情附上报给我们。",
   "indexManager.aliases.buildError.tableKept": "下面这张表没有动过——重建失败不会清掉已经建好的，你教过的那几条也都在。",
   "indexManager.aliases.buildError.retry": "再试一次",
   "indexManager.aliases.buildError.pickModel": "去选模型",
