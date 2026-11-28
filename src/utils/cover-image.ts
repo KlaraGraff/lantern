@@ -1,10 +1,22 @@
 /**
- * What the cover picker offers. HEIC is decoded by the backend (it is what an
- * iPhone saves photos as), so only those files go through a converted preview:
- * outside Apple's webview an `<img>` cannot draw one.
+ * What the cover picker offers. The backend stores every one of them as a
+ * JPEG, so anything that is not already a JPEG is previewed from that
+ * converted copy: it shows what will be saved (transparency turns white), and
+ * webviews other than Safari cannot draw a TIFF or a HEIC at all.
  */
-export const COVER_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "heic", "heif"];
+export const COVER_IMAGE_EXTENSIONS = [
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "bmp",
+  "tif",
+  "tiff",
+  "heic",
+  "heif",
+];
 
-export function isHeicPath(path: string): boolean {
-  return /\.hei[cf]$/i.test(path);
+export function needsConvertedPreview(path: string): boolean {
+  return !/\.jpe?g$/i.test(path);
 }
