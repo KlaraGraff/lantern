@@ -1234,6 +1234,23 @@ export const FIXTURES: Record<string, Fixture> = {
     LIBRARY_BACKUP_STATE.auto = Boolean(a.enabled);
     return { ...LIBRARY_BACKUP_STATE };
   },
+  // 启动失败提示页（`startup_failure.rs` 的 `StartupFailureInfo`）。平时是 null；
+  // `?startupFailure=library|library-full|secrets` 换成三种失败，方便截图。
+  startup_failure: () => {
+    const kind = new URLSearchParams(location.search).get("startupFailure");
+    if (kind === "library") {
+      return { store: "library", reason: "damaged", detail: "Database error: file is not a database", can_restore: true };
+    }
+    if (kind === "library-full") {
+      return { store: "library", reason: "disk_full", detail: "Database error: database or disk is full", can_restore: true };
+    }
+    if (kind === "secrets") {
+      return { store: "secrets", reason: "unknown", detail: "CREDENTIAL_DB_JOURNAL_MODE_UNSAFE:wal", can_restore: false };
+    }
+    return null;
+  },
+  startup_restore_choose: (a: Args) => resolveFixture("library_restore_choose", a),
+  startup_restore_apply: null,
   // 从备份恢复：选好文件夹后列出最近三天的数据快照（`RestorePreview`）。
   library_restore_choose: () => ({
     dir: LIBRARY_BACKUP_STATE.dir ?? "/Volumes/NAS/Lantern 备份",

@@ -17,6 +17,7 @@ mod pdfium;
 mod reset;
 mod restore;
 mod secrets;
+mod startup_failure;
 mod sync;
 mod word_frequency;
 
@@ -280,6 +281,24 @@ fn is_mcp_write_enabled(db_path: &Path) -> bool {
     )
     .map(|v| v == "true")
     .unwrap_or(false)
+}
+
+/// Open the library database and the API-key store, seeding the default AI
+/// profile. Any failure becomes the startup failure page rather than a panic
+/// before the window exists.
+fn open_stores(
+    local_dir: &Path,
+    data_dir: &Path,
+) -> Result<(Db, bool, Secrets), startup_failure::StartupFailure> {
+    use startup_failure::{FailedStore, StartupFailure};
+    let library_failed =
+        |error: error::AppError| StartupFailure::new(FailedStore::Library, &error, local_dir, data_dir);
+    let (db, needs_cover_backfill) = Db::init_split(local_dir, data_dir).map_err(library_failed)?;
+    ai::router::ensure_default_ai_profile(&db).map_err(library_failed)?;
+    let secrets = Secrets::init(&local_dir.to_path_buf()).map_err(|error| {
+        StartupFailure::new(FailedStore::Secrets, &error, local_dir, data_dir)
+    })?;
+    Ok((db, needs_cover_backfill, secrets))
 }
 
 /// Boot the sync engine: open EventLog, create ReplayEngine, spawn
@@ -622,8 +641,25 @@ pub fn run() {
                     .allow_directory(shared_dir, true)
                     .expect("failed to allow selected sync folder in asset scope");
             }
-            let (db, needs_cover_backfill) =
-                Db::init_split(&local_dir, &data_dir).expect("failed to initialize database");
+            // Registered before either store opens: the exit and window-close
+            // paths read it, and they run on the startup failure page too.
+            app.manage(commands::reader_exit::ReaderExit::default());
+            let (db, needs_cover_backfill, secrets) = match open_stores(&local_dir, &data_dir) {
+                Ok(stores) => stores,
+                Err(failure) => {
+                    log::error!(
+                        "lantern start v{version} failed: {store:?} would not open: {detail}",
+                        version = env!("CARGO_PKG_VERSION"),
+                        store = failure.info.store,
+                        detail = failure.info.detail,
+                    );
+                    // Nothing else is registered: the main window asks for
+                    // this first and renders the failure page instead of the
+                    // app, so no command that needs the library is reached.
+                    app.manage(failure);
+                    return Ok(());
+                }
+            };
 
             // DB cover backfill for non-sync users. When sync boots, the
             // initial-tick thread handles both DB and .img backfill sequentially.
@@ -673,9 +709,6 @@ pub fn run() {
             // mid-write the first time the user swipes the app away.
             lifecycle::install(db.clone());
 
-            let secrets = Secrets::init(&local_dir).expect("failed to initialize secrets store");
-            ai::router::ensure_default_ai_profile(&db)
-                .expect("failed to seed the default AI profile");
             let sync_writer = SyncWriter::new(device.device_uuid.clone());
             sync_writer.set_process_lock_path(local_dir.join(".sync-transition.lock"));
             if sync_enabled {
@@ -705,7 +738,6 @@ pub fn run() {
                 }
                 manager
             };
-            app.manage(commands::reader_exit::ReaderExit::default());
             app.manage(LocalDir(local_dir.clone()));
             app.manage(db);
             app.manage(secrets);
@@ -799,6 +831,11 @@ pub fn run() {
             commands::app::reveal_logs,
             commands::app::app_build_info,
             commands::app::log_webview_warning,
+            startup_failure::startup_failure,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::startup_restore_choose,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::library_backup::startup_restore_apply,
             // Self-update. Desktop-only for the same reason as the OCR block
             // below — see the cfgs in `commands::app_update`.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -1211,6 +1248,33 @@ pub fn run() {
 mod tests {
     use super::{resolve_log_dir, resolve_log_level};
     use log::LevelFilter;
+
+    /// E3 in the 2026-11-27 audit: a damaged `lantern.db` used to panic in
+    /// `setup()` before any window existed. It must come back as a failure
+    /// the startup page can show.
+    #[test]
+    fn a_damaged_library_is_a_startup_failure_not_a_panic() {
+        use crate::startup_failure::{FailedStore, FailureReason};
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(crate::db::DB_FILE_NAME),
+            b"not a database, just enough bytes to look like a header to sqlite",
+        )
+        .unwrap();
+        let failure = match super::open_stores(dir.path(), dir.path()) {
+            Ok(_) => panic!("a damaged library must not open"),
+            Err(failure) => failure,
+        };
+        assert_eq!(failure.info.store, FailedStore::Library);
+        assert_eq!(failure.info.reason, FailureReason::Damaged);
+        assert!(failure.info.can_restore);
+    }
+
+    #[test]
+    fn a_healthy_data_dir_opens_both_stores() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(super::open_stores(dir.path(), dir.path()).is_ok());
+    }
 
     /// Regression guard: `tauri-plugin-log` resolves the file target's
     /// directory via the bundle identifier in `tauri.conf.json`. Renaming

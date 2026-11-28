@@ -621,8 +621,12 @@ pub async fn import_book_from_dialog(
 /// `book-import-started` / `book-imported` / `book-import-finished` events.
 pub(crate) fn import_external_paths(paths: Vec<PathBuf>, app: AppHandle) {
     tauri::async_runtime::spawn_blocking(move || {
-        let db = app.state::<Db>();
-        let sync = app.state::<SyncWriter>();
+        // Absent on the startup failure page, where there is no library to
+        // import into.
+        let (Some(db), Some(sync)) = (app.try_state::<Db>(), app.try_state::<SyncWriter>()) else {
+            log::warn!("import: ignoring {} dropped file(s), the library is not open", paths.len());
+            return;
+        };
         import_paths(paths, &db, &sync, &app);
     });
 }
