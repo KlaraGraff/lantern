@@ -29,8 +29,10 @@ import {
   BookmarkCheck,
   ClipboardList,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
 import Button from "./ui/Button";
+import Toast from "./ui/Toast";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import { notifyReaders } from "../utils/notifyReaders";
@@ -205,6 +207,9 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
   const [bulkMastery, setBulkMastery] = useState<"new" | "learning" | "mastered">("learning");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  // How many selected words a failed bulk status change left as they were.
+  const [bulkMasteryFailed, setBulkMasteryFailed] = useState<number | null>(null);
+  const bulkMasteryFailedTimer = useRef<number | null>(null);
   const [deleteEntry, setDeleteEntry] = useState<MergedVocabEntry | null>(null);
   // "review" starts the list collapsed behind the divider; "all" starts it
   // open. Re-synced on prop change (not just on mount) so switching sidebar
@@ -287,6 +292,9 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
   useEffect(() => () => {
     if (clearConfirmationTimer.current !== null) {
       window.clearTimeout(clearConfirmationTimer.current);
+    }
+    if (bulkMasteryFailedTimer.current !== null) {
+      window.clearTimeout(bulkMasteryFailedTimer.current);
     }
   }, []);
 
@@ -659,17 +667,26 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
   const applyBulkMastery = async () => {
     if (selectedWordIds.size === 0) return;
     const nextReviewAt = bulkMastery === "learning" ? Date.now() + 24 * 60 * 60 * 1000 : null;
+    const ids = Array.from(selectedWordIds);
     setBulkBusy(true);
     try {
-      await invoke<number>("bulk_update_vocab_mastery", {
-        ids: Array.from(selectedWordIds),
-        mastery: bulkMastery,
-        nextReviewAt,
-      });
+      try {
+        await invoke<number>("bulk_update_vocab_mastery", { ids, mastery: bulkMastery, nextReviewAt });
+      } catch (error) {
+        // The backend changes the whole batch in one transaction, so a failure
+        // leaves every selected word as it was: the list is still right, and
+        // the selection stays for another try.
+        console.error("Failed to update vocabulary mastery in bulk:", error);
+        setBulkMasteryFailed(ids.length);
+        if (bulkMasteryFailedTimer.current !== null) window.clearTimeout(bulkMasteryFailedTimer.current);
+        bulkMasteryFailedTimer.current = window.setTimeout(() => {
+          setBulkMasteryFailed(null);
+          bulkMasteryFailedTimer.current = null;
+        }, 3200);
+        return;
+      }
       await refreshWords();
       setSelectedWordIds(new Set());
-    } catch (error) {
-      console.error("Failed to update vocabulary mastery in bulk:", error);
     } finally {
       setBulkBusy(false);
     }
@@ -1456,6 +1473,11 @@ export default function DictionaryContent({ initialView = "all", menuButton, foc
             </div>
           </div>
         </div>
+      )}
+      {bulkMasteryFailed !== null && (
+        <Toast icon={<AlertCircle size={14} className="shrink-0 text-danger-text" />}>
+          {t("vocab.bulk.masteryFailed", { count: bulkMasteryFailed })}
+        </Toast>
       )}
     </div>
   );
