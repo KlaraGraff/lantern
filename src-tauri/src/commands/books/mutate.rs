@@ -12,6 +12,12 @@ fn validated_cover_bytes(path: &Path) -> AppResult<Vec<u8>> {
         return Err(AppError::Other("BOOK_COVER_SIZE_INVALID".to_string()));
     }
     let bytes = fs::read(path)?;
+    if is_hevc_heif(&bytes) {
+        // Stored as JPEG: no webview but Safari's can draw HEIC, and the cover
+        // only ever shows small.
+        return heic_cover_jpeg(&bytes)
+            .ok_or_else(|| AppError::Other("BOOK_COVER_FORMAT_INVALID".to_string()));
+    }
     let supported = bytes.starts_with(b"\x89PNG\r\n\x1a\n")
         || bytes.starts_with(b"\xFF\xD8\xFF")
         || (bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP");
@@ -21,6 +27,112 @@ fn validated_cover_bytes(path: &Path) -> AppResult<Vec<u8>> {
     image::load_from_memory(&bytes)
         .map_err(|_| AppError::Other("BOOK_COVER_FORMAT_INVALID".to_string()))?;
     Ok(bytes)
+}
+
+/// A HEIF file whose images are HEVC-coded (what an iPhone writes as `.heic`).
+/// AVIF shares the container and the `mif1` brand, so only the HEVC brands count.
+fn is_hevc_heif(bytes: &[u8]) -> bool {
+    const HEVC_BRANDS: [&[u8]; 8] = [
+        b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"hevm", b"hevs",
+    ];
+    if bytes.len() < 16 || &bytes[4..8] != b"ftyp" {
+        return false;
+    }
+    let box_len = (u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize)
+        .clamp(16, bytes.len());
+    // Major brand at 8..12, minor version at 12..16, compatible brands after.
+    std::iter::once(&bytes[8..12])
+        .chain(bytes[16..box_len].chunks_exact(4))
+        .any(|brand| HEVC_BRANDS.contains(&brand))
+}
+
+/// Longest edge a converted HEIC cover keeps. A 48 MP phone photo would
+/// otherwise become a multi-megabyte JPEG that sync carries for a thumbnail.
+const HEIC_COVER_MAX_EDGE: u32 = 2048;
+
+/// Apple platforms decode HEIC in ImageIO, which the OS ships and licenses.
+#[cfg(target_vendor = "apple")]
+fn heic_cover_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
+    use objc2_core_foundation::{
+        CFBoolean, CFData, CFDictionary, CFMutableData, CFNumber, CFString, CFType,
+    };
+    use objc2_image_io::{
+        kCGImageDestinationLossyCompressionQuality, kCGImageSourceCreateThumbnailFromImageAlways,
+        kCGImageSourceCreateThumbnailWithTransform, kCGImageSourceThumbnailMaxPixelSize,
+        CGImageDestination, CGImageSource,
+    };
+
+    let data = CFData::from_bytes(bytes);
+    // SAFETY: each dictionary maps ImageIO's own CFString keys to the value
+    // type its documentation gives for that key.
+    unsafe {
+        let source = CGImageSource::with_data(&data, None)?;
+        let max_edge = CFNumber::new_i32(HEIC_COVER_MAX_EDGE as i32);
+        // `WithTransform` applies the photo's orientation, as the other
+        // decoder below does.
+        let thumbnail_options = CFDictionary::<CFString, CFType>::from_slices(
+            &[
+                kCGImageSourceCreateThumbnailFromImageAlways,
+                kCGImageSourceCreateThumbnailWithTransform,
+                kCGImageSourceThumbnailMaxPixelSize,
+            ],
+            &[
+                CFBoolean::new(true).as_ref(),
+                CFBoolean::new(true).as_ref(),
+                max_edge.as_ref(),
+            ],
+        );
+        let image = source.thumbnail_at_index(0, Some(thumbnail_options.as_opaque()))?;
+
+        let jpeg = CFMutableData::new(None, 0)?;
+        let destination = CGImageDestination::with_data(
+            &jpeg,
+            &CFString::from_static_str("public.jpeg"),
+            1,
+            None,
+        )?;
+        let quality = CFNumber::new_f64(0.9);
+        let encode_options = CFDictionary::<CFString, CFType>::from_slices(
+            &[kCGImageDestinationLossyCompressionQuality],
+            &[quality.as_ref()],
+        );
+        destination.add_image(&image, Some(encode_options.as_opaque()));
+        if !destination.finalize() {
+            return None;
+        }
+        Some(CFData::to_vec(&jpeg))
+    }
+}
+
+/// Elsewhere the decoder ships in the app: Windows can only decode HEIC with
+/// a paid Store extension, and Linux has no system decoder at all.
+#[cfg(not(target_vendor = "apple"))]
+fn heic_cover_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
+    // The preview decoder never holds the full-size canvas, and it applies
+    // the photo's rotation and converts its colour (iPhones tag Display P3)
+    // to sRGB.
+    let options = heifer::PreviewOptions::new(HEIC_COVER_MAX_EDGE, HEIC_COVER_MAX_EDGE);
+    let decoded = heifer::decode_preview_rgba8(bytes, &options).ok()?;
+    let rgb = decoded
+        .data
+        .chunks_exact(4)
+        .flat_map(|pixel| {
+            let alpha = u16::from(pixel[3]);
+            let over_white =
+                |channel: u8| ((u16::from(channel) * alpha + 255 * (255 - alpha)) / 255) as u8;
+            [
+                over_white(pixel[0]),
+                over_white(pixel[1]),
+                over_white(pixel[2]),
+            ]
+        })
+        .collect();
+    let image = image::RgbImage::from_raw(decoded.width, decoded.height, rgb)?;
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 90)
+        .encode_image(&image)
+        .ok()?;
+    Some(jpeg)
 }
 
 pub(crate) fn do_delete_book_with_note_policy(
@@ -464,6 +576,13 @@ pub fn update_book_metadata(
     Ok(())
 }
 
+/// The picked cover as `update_book_cover` would store it, for the edit
+/// dialog's preview: a webview outside Apple's cannot draw a HEIC file itself.
+#[tauri::command]
+pub fn cover_image_preview(image_path: String) -> AppResult<tauri::ipc::Response> {
+    validated_cover_bytes(Path::new(&image_path)).map(tauri::ipc::Response::new)
+}
+
 #[tauri::command]
 pub fn update_book_cover(
     id: String,
@@ -553,5 +672,61 @@ mod cover_tests {
                 "{name} was rejected"
             );
         }
+    }
+
+    /// 48×32 stored, red with a green square top-left and a blue one
+    /// bottom-right, tagged to be shown turned 90° clockwise — the way an
+    /// iPhone saves a portrait photo. Written by libheif 1.23 with x265.
+    const ROTATED_HEIC: &[u8] = include_bytes!("../../../tests/fixtures/cover-rotated.heic");
+
+    #[test]
+    fn custom_cover_converts_heic_to_an_upright_jpeg() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("IMG_0001.HEIC");
+        fs::write(&path, ROTATED_HEIC).unwrap();
+
+        let bytes = validated_cover_bytes(&path).unwrap();
+        assert!(
+            bytes.starts_with(b"\xFF\xD8\xFF"),
+            "stored cover is not a JPEG"
+        );
+        let cover = image::load_from_memory(&bytes).unwrap().to_rgb8();
+        assert_eq!(cover.dimensions(), (32, 48), "rotation was not applied");
+        let near = |x: u32, y: u32, want: [u8; 3]| {
+            let got = cover.get_pixel(x, y).0;
+            got.iter().zip(want).all(|(g, w)| g.abs_diff(w) < 40)
+        };
+        assert!(near(28, 3, [30, 200, 40]), "green square is not top-right");
+        assert!(near(3, 44, [30, 40, 220]), "blue square is not bottom-left");
+        assert!(near(16, 24, [220, 30, 30]), "body is not red");
+    }
+
+    #[test]
+    fn custom_cover_rejects_a_broken_heic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.heic");
+        fs::write(&path, &ROTATED_HEIC[..ROTATED_HEIC.len() / 2]).unwrap();
+        assert!(validated_cover_bytes(&path).is_err());
+    }
+
+    #[test]
+    fn only_hevc_coded_heif_counts_as_heic() {
+        let ftyp = |major: &[u8], compatible: &[&[u8]]| {
+            let mut bytes = ((16 + 4 * compatible.len()) as u32).to_be_bytes().to_vec();
+            bytes.extend_from_slice(b"ftyp");
+            bytes.extend_from_slice(major);
+            bytes.extend_from_slice(&[0; 4]);
+            compatible
+                .iter()
+                .for_each(|brand| bytes.extend_from_slice(brand));
+            bytes.extend_from_slice(b"\0\0\0\x08meta");
+            bytes
+        };
+        assert!(is_hevc_heif(ROTATED_HEIC));
+        assert!(is_hevc_heif(&ftyp(b"mif1", &[b"heic"])));
+        assert!(is_hevc_heif(&ftyp(b"heix", &[])));
+        assert!(!is_hevc_heif(&ftyp(b"avif", &[b"mif1", b"miaf"])));
+        assert!(!is_hevc_heif(&ftyp(b"isom", &[b"mp41"])));
+        assert!(!is_hevc_heif(b"\xFF\xD8\xFF\xE0"));
     }
 }

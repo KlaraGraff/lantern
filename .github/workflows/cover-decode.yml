@@ -1,0 +1,46 @@
+name: Cover decoding
+
+# HEIC covers decode through a different path on each platform
+# (commands/books/mutate.rs): ImageIO on macOS and iOS, the bundled `heifer`
+# decoder everywhere else. The Backend job in ci.yaml only ever exercises the
+# Linux half, so this runs the cover tests on the two platforms users actually
+# have — macOS for the system decoder, Windows for the bundled one — whenever
+# that code, its fixture or its dependencies change.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/cover-decode.yml
+      - src-tauri/src/commands/books/mutate.rs
+      - src-tauri/tests/fixtures/cover-rotated.heic
+      - src-tauri/Cargo.toml
+      - src-tauri/Cargo.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cover-decode-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cover-tests:
+    name: Cover tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: cargo test --lib commands::books::mutate::cover_tests

@@ -139,6 +139,18 @@ minisign-verify = "0.2"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSFileCoordinator", "NSString", "NSURL", "NSError", "NSNotification", "NSOperation", "NSValue", "NSArray", "NSMetadata", "NSPredicate", "block2"] }
 block2 = "0.6"
+# HEIC covers (commands/books/mutate.rs) decode through ImageIO, which every
+# macOS and iOS version Lantern runs on ships with its HEVC licence.
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFData", "CFDictionary", "CFString", "CFNumber"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGImage"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "CGImageDestination", "objc2-core-graphics"] }
+
+# Off Apple platforms HEIC covers need a decoder in the app: Windows decodes
+# HEVC only through a paid Store extension, Linux not at all. Pure Rust, so no
+# C toolchain on the Windows runner; decoder only (the encoder is a default
+# feature). About 1 MB of release binary.
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+heifer = { version = "0.9", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # Not used directly. It arrives through msedge-tts, which enables reqwest's

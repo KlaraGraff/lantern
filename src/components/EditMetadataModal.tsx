@@ -5,8 +5,9 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { ImagePlus, Loader2 } from "lucide-react";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
-import { updateBookCover, updateBookMetadata } from "../hooks/useBooks";
+import { coverImagePreview, updateBookCover, updateBookMetadata } from "../hooks/useBooks";
 import { pickedFilePath } from "../utils/picked-file";
+import { COVER_IMAGE_EXTENSIONS, isHeicPath } from "../utils/cover-image";
 
 interface EditMetadataModalProps {
   bookId: string;
@@ -68,12 +69,23 @@ export default function EditMetadataModal({
     const selected = await open({
       multiple: false,
       directory: false,
-      filters: [{ name: t("editInfo.cover"), extensions: ["jpg", "jpeg", "png", "webp"] }],
+      filters: [{ name: t("editInfo.cover"), extensions: COVER_IMAGE_EXTENSIONS }],
     });
     if (!selected || Array.isArray(selected)) return;
     const path = pickedFilePath(selected);
-    setCoverPath(path);
-    setCoverPreview(convertFileSrc(path));
+    setError(null);
+    if (!isHeicPath(path)) {
+      setCoverPath(path);
+      setCoverPreview(convertFileSrc(path));
+      return;
+    }
+    try {
+      setCoverPreview(URL.createObjectURL(new Blob([await coverImagePreview(path)])));
+      setCoverPath(path);
+    } catch (err) {
+      console.error("Failed to preview cover:", err);
+      setError(t("editInfo.saveFailed"));
+    }
   };
 
   return (
