@@ -285,6 +285,29 @@ const makeTOCItem = item => ({
     subitems: item.items.length ? item.items.map(makeTOCItem) : null,
 })
 
+// One resolve per href, shared by every caller. Destinations never change
+// within a document; a failed resolve is dropped so a later call retries.
+export const cacheDestResolver = resolve => {
+    const cache = new Map()
+    return href => {
+        let pending = cache.get(href)
+        if (!pending) {
+            pending = Promise.resolve().then(() => resolve(href))
+            pending.catch(() => cache.delete(href))
+            cache.set(href, pending)
+        }
+        return pending
+    }
+}
+
+// Starts resolving every outline entry (depth first) without awaiting any.
+export const prefetchOutline = (items, resolve) => {
+    for (const item of items ?? []) {
+        if (item.href) resolve(item.href).catch(() => {})
+        prefetchOutline(item.subitems, resolve)
+    }
+}
+
 export const makePDF = async file => {
     const { pdfjsLib, workerUrl } = await loadPdfJs()
     const transport = new pdfjsLib.PDFDataRangeTransport(file.size, [])
@@ -448,10 +471,18 @@ export const makePDF = async file => {
             const { height } = await book.getPageSize(index)
             return { index, anchor: { top: Math.max(0, height - top) } }
         }
+        // Every outline entry is resolved at least once while the book
+        // opens (view.open's TOC progress walks them one by one), and again
+        // whenever the TOC or a link is followed. Each resolve is up to three
+        // worker round trips, so remember the answer per href and start them
+        // all at once: the serial walk then mostly awaits work already in
+        // flight instead of paying each round trip in turn.
+        const resolveDestCached = cacheDestResolver(resolveDest)
+        prefetchOutline(book.toc, resolveDestCached)
         book.isExternal = uri => /^\w+:/i.test(uri)
-        book.resolveHref = resolveDest
+        book.resolveHref = resolveDestCached
         book.splitTOCHref = async href => {
-            const resolved = await resolveDest(href)
+            const resolved = await resolveDestCached(href)
             if (!resolved) return null
             return [resolved.index, null]
         }

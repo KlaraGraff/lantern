@@ -273,7 +273,7 @@ async function resolveTocSectionIndex(
   href?: string,
 ): Promise<number | undefined> {
   if (!href || typeof book.resolveHref !== "function") return undefined;
-  try {
+        try {
     const target = await withTimeout(
       Promise.resolve(book.resolveHref(href)),
       1_500,
@@ -627,22 +627,32 @@ export function useFoliateView({
       // "Preparing book…" with no error surfaced. Guard it, and degrade to no
       // chapter-start markers rather than failing the whole open — reading
       // works without them, and the timeout gives us a diagnostic anchor.
-      logReaderDiagnostic("reader.open.chapter-marker-start");
       let markChapterStarts: (doc: Document, index: number) => number;
-      try {
-        markChapterStarts = await withTimeout(
-          createChapterPaginationMarker(view.book, (done, total) => {
-            // Frozen at the hang point, `done/total` says how many chapters
-            // resolved before a section wedged — the key "Preparing" signal.
-            setDiagnosticContext("chapter.resolve", `${done}/${total}`);
-          }),
-          20_000,
-          "READER_CHAPTER_MARKER_TIMEOUT",
-        );
-        logReaderDiagnostic("reader.open.chapter-marker-done");
-      } catch (error) {
-        logReaderDiagnostic("reader.open.chapter-marker-timeout", error);
+      if (!openedCapabilities.supportsReflowSettings) {
+        // Fixed-layout books (PDF, pre-paginated EPUB) have no columns for a
+        // chapter-start break to act on, so the markers would change nothing
+        // on screen. Resolving every TOC entry for them only held up the
+        // first page — for a PDF, a second pass over an outline `view.open`
+        // had just resolved, with one worker round trip per entry.
+        logReaderDiagnostic("reader.open.chapter-marker-skipped", "fixed-layout");
         markChapterStarts = () => 0;
+      } else {
+        try {
+          logReaderDiagnostic("reader.open.chapter-marker-start");
+          markChapterStarts = await withTimeout(
+            createChapterPaginationMarker(view.book, (done, total) => {
+              // Frozen at the hang point, `done/total` says how many chapters
+              // resolved before a section wedged — the key "Preparing" signal.
+              setDiagnosticContext("chapter.resolve", `${done}/${total}`);
+            }),
+            20_000,
+            "READER_CHAPTER_MARKER_TIMEOUT",
+          );
+          logReaderDiagnostic("reader.open.chapter-marker-done");
+        } catch (error) {
+          logReaderDiagnostic("reader.open.chapter-marker-timeout", error);
+          markChapterStarts = () => 0;
+        }
       }
       if (cancelled) return;
       if (openedCapabilities.supportsReflowSettings) {
