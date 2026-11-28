@@ -248,6 +248,11 @@ export async function updateBookMetadata(
   return invoke("update_book_metadata", { id, title, author });
 }
 
+/** The picked file converted the way `updateBookCover` stores it (HEIC becomes JPEG). */
+export async function coverImagePreview(imagePath: string): Promise<ArrayBuffer> {
+  return invoke("cover_image_preview", { imagePath });
+}
+
 export async function updateBookCover(id: string, imagePath: string): Promise<void> {
   return invoke("update_book_cover", { id, imagePath });
 }

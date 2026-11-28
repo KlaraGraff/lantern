@@ -479,6 +479,7 @@ export const FIXTURES: Record<string, Fixture> = {
   update_book_status: null,
   update_book_metadata: null,
   update_book_cover: null,
+  cover_image_preview: () => new ArrayBuffer(0),
   /**
    * The parsed text book. Offsets are computed from the block texts here rather
    * than written down, so the fixture cannot drift out of agreement with
