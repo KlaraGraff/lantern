@@ -25,6 +25,8 @@ export interface Book {
   created_at: number;
   updated_at: number;
   available: boolean;
+  /** The stored file path can't be resolved: listed as "file not found". */
+  file_missing?: boolean;
   cover_data: string | null;
 }
 

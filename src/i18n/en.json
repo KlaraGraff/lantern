@@ -695,6 +695,7 @@
   "bookGrid.finished": "Finished",
   "bookGrid.readingOnly": "Reading only",
   "bookGrid.readingOnlyTitle": "This format can be read, but words can't be looked up, highlighted or explained by AI",
+  "bookGrid.fileMissing": "File not found",
   "editInfo.title": "Edit Info",
   "editInfo.bookTitle": "Title",
   "editInfo.bookAuthor": "Author",

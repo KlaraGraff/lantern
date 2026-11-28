@@ -145,6 +145,7 @@ pub(crate) fn do_import_epub(file_path: &str, db: &Db, sync: &SyncWriter) -> App
         created_at: now,
         updated_at: now,
         available: true,
+        file_missing: false,
         cover_data: cover_data_b64,
     };
 
@@ -229,6 +230,7 @@ pub(crate) fn do_import_text(
         created_at: now,
         updated_at: now,
         available: true,
+        file_missing: false,
         cover_data: None,
     };
     // Plain text/markdown/html sources have no embedded title/author/language
@@ -317,6 +319,7 @@ fn do_import_native(
         created_at: now,
         updated_at: now,
         available: true,
+        file_missing: false,
         cover_data: None,
     };
     // MOBI/FB2/FBZ/CBZ sources aren't EPUB containers the `epub` crate can
@@ -388,6 +391,7 @@ pub(crate) fn do_import_pdf(file_path: &str, db: &Db, sync: &SyncWriter) -> AppR
         created_at: now,
         updated_at: now,
         available: true,
+        file_missing: false,
         cover_data: cover_data_b64,
     };
 

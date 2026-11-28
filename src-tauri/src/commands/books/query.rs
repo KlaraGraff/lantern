@@ -57,6 +57,7 @@ fn row_to_book(row: &rusqlite::Row<'_>, cover_data: Option<String>) -> rusqlite:
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
         available: true,
+        file_missing: false,
         cover_data,
     })
 }
@@ -470,10 +471,23 @@ pub fn list_books(
         page_size,
         sort.as_deref() == Some("manual"),
     )?;
-    for book in &mut page.books {
-        resolve_book_paths(book, &db, Some(&app))?;
-    }
+    resolve_listed_books(&mut page.books, &db, Some(&app));
     Ok(page)
+}
+
+/// Resolve each listed book's paths. One book whose stored path can't be
+/// resolved is marked `file_missing` rather than failing the whole library,
+/// so it still shows up — and can be removed.
+pub(super) fn resolve_listed_books(books: &mut [Book], db: &Db, app: Option<&AppHandle>) {
+    for book in books {
+        if let Err(error) = resolve_book_paths(book, db, app) {
+            log::warn!(
+                "library: book {} has a file path that can't be resolved: {error}",
+                book.id
+            );
+            book.file_missing = true;
+        }
+    }
 }
 
 pub(crate) fn move_book_in_manual_order(
