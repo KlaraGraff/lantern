@@ -544,6 +544,8 @@
   "vocab.bulk.deleteTitle": "删除已选词汇？",
   "vocab.bulk.deleteBody_one": "将永久删除已选的 {{count}} 个词汇。",
   "vocab.bulk.deleteBody_other": "将永久删除已选的 {{count}} 个词汇。",
+  "vocab.bulk.masteryFailed_one": "有 {{count}} 个词没改成功",
+  "vocab.bulk.masteryFailed_other": "有 {{count}} 个词没改成功",
   "vocab.mastery.new": "新词",
   "vocab.mastery.learning": "学习中",
   "vocab.mastery.familiar": "眼熟",

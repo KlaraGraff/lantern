@@ -544,6 +544,8 @@
   "vocab.bulk.deleteTitle": "Delete selected words?",
   "vocab.bulk.deleteBody_one": "{{count}} selected word will be permanently deleted.",
   "vocab.bulk.deleteBody_other": "{{count}} selected words will be permanently deleted.",
+  "vocab.bulk.masteryFailed_one": "{{count}} word wasn't changed",
+  "vocab.bulk.masteryFailed_other": "{{count}} words weren't changed",
   "vocab.mastery.new": "New",
   "vocab.mastery.learning": "Learning",
   "vocab.mastery.familiar": "Familiar",
