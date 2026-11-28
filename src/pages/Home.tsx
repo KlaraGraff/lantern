@@ -368,7 +368,7 @@ export default function Home() {
 
   const searchParam = debouncedSearchQuery || undefined;
 
-  const { books, loading, hasMore, loadMore, loadingMore, refresh, reorderVisible } = useBooks(statusFilter, searchParam, collectionId, sortMode);
+  const { books, loading, failed: booksFailed, hasMore, loadMore, loadingMore, refresh, reorderVisible } = useBooks(statusFilter, searchParam, collectionId, sortMode);
 
   // Book counts for sidebar badges — lightweight, no book data loaded.
   const [bookCounts, setBookCounts] = useState({ all: 0, reading: 0, finished: 0 });
@@ -790,6 +790,13 @@ export default function Home() {
 
   const shelfBooks = loading ? (
     <p className="text-text-muted text-[14px]">{t("home.loading")}</p>
+  ) : booksFailed && displayBooks.length === 0 ? (
+    <div role="alert" className={`flex flex-col items-center justify-center gap-4 ${isNarrow ? "h-full" : "py-16"}`}>
+      <p className="text-text-muted text-[14px]">{t("home.loadFailed")}</p>
+      <Button variant="secondary" size="md" onClick={() => void refresh()}>
+        {t("common.retry")}
+      </Button>
+    </div>
   ) : displayBooks.length === 0 ? (
     <div className={`flex flex-col items-center justify-center gap-4 ${isNarrow ? "h-full" : "py-16"}`}>
       <p className="text-text-muted text-[14px]">
