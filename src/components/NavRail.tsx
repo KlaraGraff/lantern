@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { BarChart3, GraduationCap, House, MessageCircleQuestion, Search, StickyNote, type LucideIcon } from "lucide-react";
 import LanternLogo from "./LanternLogo";
 import { platform } from "../services/platform";
+import { avatarInitials } from "../utils/avatar-initials";
 import { memoRowBadgeCount } from "./sidebar-badges";
 import { isShelfFilter, openCommandPalette } from "./library-actions";
 
@@ -42,9 +43,7 @@ const WORKSPACES: readonly Workspace[] = [
  */
 export default function NavRail({ activeFilter, onFilterChange, dueForReviewCount, userName, onOpenSettings }: NavRailProps) {
   const { t } = useTranslation();
-  const initials = userName
-    ? userName.split(" ").map((part) => part[0]).join("").toUpperCase().slice(0, 2)
-    : "R";
+  const initials = avatarInitials(userName || t("settings.general.displayNameDefault"));
 
   return (
     <nav
