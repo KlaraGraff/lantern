@@ -529,7 +529,7 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn validate_chat_message_replace_payload(payload: &ChatMessagePayload) -> AppResult<()> {
+pub(crate) fn validate_chat_message_replace_payload(payload: &ChatMessagePayload) -> AppResult<()> {
     validate_entity_id(&payload.id)?;
     validate_entity_id(&payload.chat_id)?;
     if payload.role != "assistant"
