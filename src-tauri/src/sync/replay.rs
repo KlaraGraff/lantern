@@ -599,27 +599,22 @@ impl ReplayEngine {
         }
 
         // Read watermarks through the reader — no write lock needed.
-        let mut all_events: Vec<Event> = Vec::new();
+        let mut pending_by_peer: Vec<Vec<Event>> = Vec::with_capacity(peer_logs.len());
         {
             let reader = db.reader();
             for (device, events) in &peer_logs {
                 let last_id = read_last_event_id(&reader, device)?;
-                for ev in events {
-                    if let Some(w) = last_id.as_deref() {
-                        if ev.id.as_str() <= w {
-                            continue;
-                        }
-                    }
-                    all_events.push(ev.clone());
+                let pending: Vec<Event> = events
+                    .iter()
+                    .filter(|ev| last_id.as_deref().is_none_or(|w| ev.id.as_str() > w))
+                    .cloned()
+                    .collect();
+                if !pending.is_empty() {
+                    pending_by_peer.push(pending);
                 }
             }
         }
-
-        // Event ids are monotonic within a device. Include the id in the
-        // global order so two mutations emitted by one device in the same
-        // millisecond retain their append order instead of depending on the
-        // input vectors' incidental order.
-        all_events.sort_by(|a, b| (a.ts, &a.device, &a.id).cmp(&(b.ts, &b.device, &b.id)));
+        let all_events = interleave_peer_logs(pending_by_peer);
 
         let total_events = all_events.len();
         if total_events == 0 {
@@ -693,6 +688,39 @@ impl ReplayEngine {
 
         Ok((snapshots_applied, events_applied))
     }
+}
+
+/// Merge each peer's pending events into one apply order.
+///
+/// A peer's watermark is the id of the last event applied from it, so its
+/// events must be applied in id (append) order: the watermark then always
+/// marks a contiguous prefix of its log. `ts` is not guaranteed to follow
+/// id within one device — two commands can take their timestamps in one
+/// order and commit in the other, and the logical clock restarts from the
+/// wall clock on every launch — so a plain sort by `ts` could apply a later
+/// event first and move the watermark past an earlier one that then never
+/// applies. Across peers the merge still goes by `(ts, device, id)` of each
+/// peer's next event, which is the old global order whenever a device's
+/// timestamps do follow its ids.
+fn interleave_peer_logs(mut peers: Vec<Vec<Event>>) -> Vec<Event> {
+    let total = peers.iter().map(Vec::len).sum();
+    let mut order = Vec::with_capacity(total);
+    for events in &mut peers {
+        events.reverse(); // pop() from the end yields id order
+    }
+    loop {
+        let next = peers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, events)| events.last().map(|ev| (index, ev)))
+            .min_by(|(_, a), (_, b)| (a.ts, &a.device, &a.id).cmp(&(b.ts, &b.device, &b.id)))
+            .map(|(index, _)| index);
+        let Some(index) = next else {
+            break;
+        };
+        order.extend(peers[index].pop());
+    }
+    order
 }
 
 /// Drain `_pending_publish` into `log` as a single batched write. All
@@ -1780,6 +1808,83 @@ mod tests {
             })
             .unwrap();
         assert_eq!(progress, 25, "later peer-A event must remain deferred");
+    }
+
+    #[test]
+    fn a_peer_event_with_an_earlier_ts_does_not_jump_the_watermark() {
+        let env = setup("self");
+        // peer-A's log in append (id) order. The third event carries an
+        // earlier ts than the second, as when two commands take their
+        // timestamps in one order and commit in the other.
+        let mut events = [
+            ev(1000, "peer-A", import("b1")),
+            ev(
+                3000,
+                "peer-A",
+                EventBody::BookMetadataSet {
+                    book: "b1".into(),
+                    field: "title".into(),
+                    value: serde_json::json!(42), // rejected by merge
+                },
+            ),
+            ev(
+                2000,
+                "peer-A",
+                EventBody::BookProgressSet {
+                    book: "b1".into(),
+                    progress: 75,
+                    cfi: Some("c75".into()),
+                },
+            ),
+        ];
+        for (n, event) in events.iter_mut().enumerate() {
+            event.id = format!("01HYZX00000000000000000{:03}", n + 1);
+        }
+        write_peer_log(&env.shared, "peer-A", &events);
+
+        let report = env.engine.tick(&env.db).unwrap();
+        assert_eq!(report.events_applied, 1, "only the import applies");
+        let watermark: Option<String> = env
+            .conn()
+            .query_row(
+                "SELECT last_event_id FROM _replay_state WHERE peer_device = 'peer-A'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            watermark.as_deref(),
+            Some(events[0].id.as_str()),
+            "the failed event must stay ahead of the watermark so it retries"
+        );
+        let progress: i32 = env
+            .conn()
+            .query_row("SELECT progress FROM books WHERE id = 'b1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(progress, 0, "an event after the failed one waits behind it");
+    }
+
+    #[test]
+    fn interleave_keeps_each_peers_id_order_and_merges_by_ts() {
+        let mut a = [
+            ev(100, "peer-A", import("a1")),
+            ev(400, "peer-A", import("a2")),
+            ev(200, "peer-A", import("a3")),
+        ];
+        for (n, event) in a.iter_mut().enumerate() {
+            event.id = format!("01HYZX00000000000000000A{:02}", n);
+        }
+        let b = [
+            ev(300, "peer-B", import("b1")),
+            ev(500, "peer-B", import("b2")),
+        ];
+        let order: Vec<i64> = interleave_peer_logs(vec![a.to_vec(), b.to_vec()])
+            .iter()
+            .map(|ev| ev.ts)
+            .collect();
+        assert_eq!(order, vec![100, 300, 400, 200, 500]);
     }
 
     /// Regression for umbrella-PR review finding #3: every successful
