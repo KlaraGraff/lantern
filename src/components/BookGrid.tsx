@@ -135,6 +135,10 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
       onBooksChanged?.();
       return;
     }
+    // A book whose file can't be found has nothing for the reader to open,
+    // which would only wait on a load that never comes. Its badge says why,
+    // and the context menu still offers Delete Book.
+    if (book.file_missing) return;
     if (!isPendingPreparation(book)) requestOpen(book, newWindow ? { newWindow: true } : undefined);
   };
 
@@ -182,7 +186,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
             onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
-            className={`block w-full min-w-0 text-left group ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
+            className={`block w-full min-w-0 text-left group ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false || book.file_missing ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
             style={staggerEntrance ? ({ "--motion-stagger-index": Math.min(index, STAGGER_CAP) } as React.CSSProperties) : undefined}
           >
             <div data-book-cover className={`relative bg-border overflow-hidden shadow-card aspect-[3/4] ${paper ? "rounded-[4px_8px_8px_4px] transition-transform duration-[var(--motion-instant)] ease-[var(--ease-out-soft)] group-hover:-translate-y-[3px] motion-reduce:transition-none motion-reduce:group-hover:translate-y-0" : "rounded-lg"}`}>
@@ -227,7 +231,12 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
               {/* Bottom-left: the top-right corner already belongs to 已读完,
                   and a cover that is dimmed or still being prepared has
                   nothing to say about how readable it is. */}
-              {book.available !== false && !isPendingPreparation(book) && (() => {
+              {book.file_missing && (
+                <div className="absolute bottom-2 left-2 rounded-full bg-black/55 px-2 py-1 text-[12px] font-medium text-white">
+                  {t("bookGrid.fileMissing")}
+                </div>
+              )}
+              {book.available !== false && !book.file_missing && !isPendingPreparation(book) && (() => {
                 const percent = coverageOf(book.id);
                 return percent === null ? null : (
                   <div

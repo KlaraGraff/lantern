@@ -210,6 +210,10 @@ pub struct Book {
     /// Whether the book file is locally available (not an iCloud placeholder).
     #[serde(default = "default_true")]
     pub available: bool,
+    /// The stored file path can't be resolved, so the library lists the book
+    /// as "file not found" instead of failing the whole list over it.
+    #[serde(default)]
+    pub file_missing: bool,
     /// Base64-encoded cover image bytes. Rendered as data URI on the frontend.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover_data: Option<String>,

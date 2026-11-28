@@ -698,6 +698,7 @@
   "bookGrid.finished": "已读完",
   "bookGrid.readingOnly": "只能阅读",
   "bookGrid.readingOnlyTitle": "这种格式不支持查词、划线和 AI 解释，只能阅读",
+  "bookGrid.fileMissing": "文件找不到",
   "editInfo.title": "编辑信息",
   "editInfo.bookTitle": "标题",
   "editInfo.bookAuthor": "作者",

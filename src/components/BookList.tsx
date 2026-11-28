@@ -82,6 +82,10 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
       onBooksChanged?.();
       return;
     }
+    // A book whose file can't be found has nothing for the reader to open,
+    // which would only wait on a load that never comes. Its badge says why,
+    // and the context menu still offers Delete Book.
+    if (book.file_missing) return;
     if (!isPendingPreparation(book)) requestOpen(book, newWindow ? { newWindow: true } : undefined);
   };
 
@@ -102,7 +106,7 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
             onContextMenu={(e) => handleContextMenu(e, book)}
             {...longPress}
             onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
-            className={`flex items-start gap-4 p-4 border border-border rounded-lg text-left hover:bg-bg-muted transition-colors ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
+            className={`flex items-start gap-4 p-4 border border-border rounded-lg text-left hover:bg-bg-muted transition-colors ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${book.available === false || book.file_missing ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
           >
             {/* Cover */}
             <div data-book-cover className="relative w-[96px] h-[144px] shrink-0 rounded-lg overflow-hidden bg-border shadow-card">
@@ -138,6 +142,11 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
                 {book.title}
               </h3>
               <p className="text-[14px] text-text-secondary tracking-[-0.15px] leading-5">
+                {book.file_missing && (
+                  <span className="mr-2 rounded-full bg-bg-muted px-2 py-0.5 text-[12px] text-danger-text">
+                    {t("bookGrid.fileMissing")}
+                  </span>
+                )}
                 {isReadingOnlyBook(book) && (
                   <span className="mr-2 rounded-full bg-bg-muted px-2 py-0.5 text-[12px] text-text-muted" title={t("bookGrid.readingOnlyTitle")}>
                     {t("bookGrid.readingOnly")}
