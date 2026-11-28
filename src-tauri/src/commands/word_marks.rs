@@ -1059,6 +1059,18 @@ pub fn set_lookup_occurrence_mark_enabled(
     set_lookup_occurrence_mark_inner(&book_id, &word, &location, enabled, &db, &sync)
 }
 
+/// Unaided encounters per marked word in one book; see
+/// `list_lookup_occurrence_marks_inner`.
+const MARKED_WORD_UNAIDED_SQL: &str = "SELECT normalized_word,
+        SUM(MAX(encounter_count - encounters_on_lookup_active_screen, 0)) AS unaided
+     FROM reading_word_exposures
+     WHERE book_id = ?1
+       AND normalized_word IN (
+           SELECT normalized_word FROM lookup_occurrence_marks
+           WHERE book_id = ?1 AND enabled = 1
+       )
+     GROUP BY normalized_word";
+
 #[tauri::command]
 pub fn list_lookup_occurrence_marks(
     book_id: String,
@@ -1066,20 +1078,24 @@ pub fn list_lookup_occurrence_marks(
 ) -> AppResult<Vec<LookupOccurrenceMark>> {
     validate_entity_id(&book_id)?;
     let conn = db.reader();
+    list_lookup_occurrence_marks_inner(&conn, &book_id)
+}
 
+fn list_lookup_occurrence_marks_inner(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+) -> AppResult<Vec<LookupOccurrenceMark>> {
     // One pass over this book's exposure rows instead of one query per mark:
     // a book can carry hundreds of marks, and each would otherwise repeat the
     // same per-chapter SUM that `lookup_mark_fade` runs for a single word.
+    // Only the marked words are summed: a long novel holds tens of thousands
+    // of exposure rows, nearly all for words that carry no mark, and this
+    // runs on every book open and every lookup. The `(book_id,
+    // normalized_word)` index turns the IN list into one seek per word.
     let mut unaided_by_word: std::collections::HashMap<String, i64> =
         std::collections::HashMap::new();
     {
-        let mut exposure_statement = conn.prepare(
-            "SELECT normalized_word,
-                    SUM(MAX(encounter_count - encounters_on_lookup_active_screen, 0)) AS unaided
-             FROM reading_word_exposures
-             WHERE book_id = ?1
-             GROUP BY normalized_word",
-        )?;
+        let mut exposure_statement = conn.prepare(MARKED_WORD_UNAIDED_SQL)?;
         let mut exposure_rows = exposure_statement.query(params![book_id])?;
         while let Some(row) = exposure_rows.next()? {
             let word: String = row.get("normalized_word")?;
@@ -1700,6 +1716,65 @@ mod tests {
             ],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn listing_occurrence_marks_sums_only_the_marked_words() {
+        let (_dir, db, sync) = setup();
+        ensure_lookup_occurrence_mark_inner("book", "Running", "textloc:v2:10:17", &db, &sync)
+            .unwrap();
+        ensure_lookup_occurrence_mark_inner("book", "Quiet", "textloc:v2:40:45", &db, &sync)
+            .unwrap();
+        ensure_lookup_occurrence_mark_inner("book", "Removed", "textloc:v2:90:97", &db, &sync)
+            .unwrap();
+        set_lookup_occurrence_mark_inner("book", "Removed", "textloc:v2:90:97", false, &db, &sync)
+            .unwrap();
+        insert_exposure(&db, "book", "ch1", "Running", 2, 0);
+        insert_exposure(&db, "book", "ch2", "Running", 3, 0);
+        insert_exposure(&db, "book", "ch1", "Quiet", 4, 1);
+        insert_exposure(&db, "book", "ch1", "Removed", 9, 0);
+        for word in ["the", "and", "of"] {
+            insert_exposure(&db, "book", "ch1", word, 500, 0);
+        }
+
+        let marks = list_lookup_occurrence_marks_inner(&db.reader(), "book").unwrap();
+        let by_word: Vec<(&str, LookupMarkFade)> = marks
+            .iter()
+            .map(|mark| (mark.normalized_word.as_str(), mark.fade))
+            .collect();
+        assert_eq!(
+            by_word,
+            vec![
+                ("running", LookupMarkFade::Gone),
+                ("quiet", LookupMarkFade::Faded)
+            ],
+            "disabled marks stay out, and each fade matches its word's own exposures"
+        );
+        for mark in &marks {
+            assert_eq!(
+                lookup_mark_fade(&db.reader(), "book", &mark.normalized_word).unwrap(),
+                mark.fade,
+                "the batched sum agrees with the single-word query for {}",
+                mark.normalized_word
+            );
+        }
+
+        let plan: Vec<String> = {
+            let conn = db.reader();
+            let mut statement = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {MARKED_WORD_UNAIDED_SQL}"))
+                .unwrap();
+            statement
+                .query_map(params!["book"], |row| row.get::<_, String>(3))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert!(
+            plan.iter().any(|step| step.contains("reading_word_exposures")
+                && step.contains("normalized_word=?")),
+            "exposures are read by (book_id, normalized_word) seeks, not a book-wide scan: {plan:?}"
+        );
     }
 
     #[test]
