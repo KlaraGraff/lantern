@@ -42,7 +42,13 @@ fn is_hevc_heif(bytes: &[u8]) -> bool {
         .clamp(16, bytes.len());
     // Major brand at 8..12, minor version at 12..16, compatible brands after.
     std::iter::once(&bytes[8..12])
-        .chain(bytes[16..box_len].chunks_exact(4))
+        .chain(
+            bytes[16..box_len]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|brand| &brand[..]),
+        )
         .any(|brand| HEVC_BRANDS.contains(&brand))
 }
 
@@ -115,7 +121,9 @@ fn heic_cover_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
     let decoded = heifer::decode_preview_rgba8(bytes, &options).ok()?;
     let rgb = decoded
         .data
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|pixel| {
             let alpha = u16::from(pixel[3]);
             let over_white =

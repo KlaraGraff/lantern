@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/cover-decode.yml
+      - .github/windows-test.manifest
       - src-tauri/src/commands/books/mutate.rs
       - src-tauri/tests/fixtures/cover-rotated.heic
       - src-tauri/Cargo.toml
@@ -43,4 +44,26 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-      - run: cargo test --lib commands::books::mutate::cover_tests
+      - if: runner.os != 'Windows'
+        run: cargo test --lib commands::books::mutate::cover_tests
+      # The lib's test binary imports Common Controls v6 entry points through
+      # Tauri, which Windows only resolves for an executable that carries a
+      # manifest asking for them. tauri-build embeds one in the app binary
+      # alone, so without this the binary dies on load with
+      # STATUS_ENTRYPOINT_NOT_FOUND before any test runs. The app build is
+      # left as it is; only this test binary gets Tauri's default manifest.
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = cargo test --lib --no-run --message-format=json |
+            ForEach-Object { $_ | ConvertFrom-Json } |
+            Where-Object { $_.reason -eq 'compiler-artifact' -and $_.executable -and $_.target.kind -contains 'lib' } |
+            Select-Object -Last 1 -ExpandProperty executable
+          if (-not $exe) { throw 'no lib test binary was built' }
+          $mt = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\mt.exe" |
+            Sort-Object FullName | Select-Object -Last 1 -ExpandProperty FullName
+          if (-not $mt) { throw 'mt.exe not found' }
+          & $mt -nologo -manifest ..\.github\windows-test.manifest "-outputresource:$exe;#1"
+          if ($LASTEXITCODE -ne 0) { throw "mt.exe failed ($LASTEXITCODE)" }
+          & $exe commands::books::mutate::cover_tests
+          if ($LASTEXITCODE -ne 0) { throw "cover tests failed ($LASTEXITCODE)" }
