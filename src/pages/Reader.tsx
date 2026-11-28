@@ -141,6 +141,7 @@ import { isCoarsePointer } from "../hooks/useCoarsePointer";
 import type { PanelSelectionSource } from "../hooks/usePanelTextSelection";
 import {
   fileStatusExplainsFailure,
+  isAwaitingRoutedBook,
   toReaderOpenError,
   type ReaderOpenError,
 } from "./reader/reader-open-error";
@@ -276,6 +277,9 @@ function ReaderSession({ bookId }: { bookId?: string }) {
   );
   const supportsCfiNavigation = capabilities.supportsCfiNavigation;
   const [loading, setLoading] = useState(true);
+  // The routed book whose metadata lookup failed (or found nothing), so the
+  // reader stops waiting for it and says it can't be found.
+  const [failedBookId, setFailedBookId] = useState<string | null>(null);
   // Width, not input type. A 900px iPad still has room to dock a panel beside
   // the page; a macOS window dragged to phone width does not. `useIsNarrow`
   // asks the same `min-width: 48rem` question `md:` asks, so the JavaScript
@@ -1616,6 +1620,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     dbSettingsLoadedRef.current = null;
     setSettingsSettledBookId(null);
     setLoading(true);
+    setFailedBookId(null);
     setReaderError(null);
     setBook(null);
     resetAnnotationState();
@@ -1648,7 +1653,9 @@ function ReaderSession({ bookId }: { bookId?: string }) {
         }
       })
       .catch(() => {
-        if (!cancelled) setBook(null);
+        if (cancelled) return;
+        setBook(null);
+        setFailedBookId(bookId);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -2268,7 +2275,7 @@ function ReaderSession({ bookId }: { bookId?: string }) {
     navigateToQuote(quote);
   }, [closeNarrowPanels, navigateToQuote]);
 
-  if (loading || (bookId !== undefined && book?.id !== bookId)) {
+  if (isAwaitingRoutedBook(loading, bookId, book?.id, failedBookId)) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3" style={BOOK_TRANSITION_TARGET}>
         <Loader2 size={24} className="animate-spin text-text-muted" />
@@ -2421,8 +2428,12 @@ function ReaderSession({ bookId }: { bookId?: string }) {
 
   if (!book) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p>{t("reader.bookNotFound")}</p>
+      <div role="alert" className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        <p className="max-w-[420px] text-[14px] text-text-muted">{t("reader.bookNotFound")}</p>
+        <Button variant="ghost" size="sm" onClick={returnToLibrary}>
+          <ArrowLeft size={14} />
+          {t("reader.returnToLibrary")}
+        </Button>
       </div>
     );
   }
